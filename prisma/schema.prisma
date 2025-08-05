@@ -1,0 +1,276 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// Multi-tenant Company Model
+model Company {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  description String?
+  address     String?
+  phone       String?
+  email       String?
+  website     String?
+  logo        String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  employees    Employee[]
+  departments  Department[]
+  roles        Role[]
+  permissions  Permission[]
+  leads        Lead[]
+  attendance   Attendance[]
+  auditLogs    AuditLog[]
+  notifications Notification[]
+  
+  @@map("companies")
+}
+
+// Department Model
+model Department {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  companyId   String
+  managerId   String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  company  Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  manager  Employee? @relation("DepartmentManager", fields: [managerId], references: [id])
+  employees Employee[]
+  
+  @@unique([companyId, name])
+  @@unique([managerId])
+  @@map("departments")
+}
+
+// Role Model
+model Role {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  companyId   String
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  company     Company       @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  permissions RolePermission[]
+  employees   Employee[]
+  
+  @@unique([companyId, name])
+  @@map("roles")
+}
+
+// Permission Model
+model Permission {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  resource    String
+  action      String   // CREATE, READ, UPDATE, DELETE, etc.
+  companyId   String
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  company     Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  roles       RolePermission[]
+  
+  @@unique([companyId, resource, action])
+  @@map("permissions")
+}
+
+// Role-Permission Junction Table
+model RolePermission {
+  id           String @id @default(cuid())
+  roleId       String
+  permissionId String
+  createdAt    DateTime @default(now())
+
+  // Relations
+  role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+  
+  @@unique([roleId, permissionId])
+  @@map("role_permissions")
+}
+
+// Employee Model
+model Employee {
+  id            String   @id @default(cuid())
+  employeeId    String   @unique // Unique employee identifier
+  firstName     String
+  lastName      String
+  email         String   @unique
+  phone         String?
+  address       String?
+  dateOfBirth   DateTime?
+  hireDate      DateTime
+  terminationDate DateTime?
+  position      String
+  departmentId  String
+  roleId        String
+  managerId     String? // For hierarchical structure
+  salary        Float?
+  status        String   @default("ACTIVE") // ACTIVE, INACTIVE, TERMINATED, ON_LEAVE
+  profileImage  String?
+  companyId     String
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  // Relations
+  company     Company      @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  department  Department   @relation(fields: [departmentId], references: [id])
+  role        Role         @relation(fields: [roleId], references: [id])
+  manager     Employee?    @relation("EmployeeManager", fields: [managerId], references: [id])
+  subordinates Employee[]  @relation("EmployeeManager")
+  departmentManager Department? @relation("DepartmentManager")
+  leads       Lead[]
+  attendance  Attendance[]
+  auditLogs   AuditLog[]
+  notifications Notification[]
+  leadHistory LeadHistory[]
+  
+  @@map("employees")
+}
+
+// Lead Model
+model Lead {
+  id              String   @id @default(cuid())
+  leadNumber      String   @unique // Unique lead identifier
+  firstName       String
+  lastName        String
+  email           String?
+  phone           String
+  address         String?
+  loanAmount      Float?
+  propertyType    String?
+  propertyValue   Float?
+  creditScore     Int?
+  income          Float?
+  source          String   // Website, Referral, Campaign, etc.
+  status          String   @default("NEW") // NEW, CONTACTED, QUALIFIED, APPLICATION, APPROVED, REJECTED, CLOSED
+  priority        String   @default("MEDIUM") // LOW, MEDIUM, HIGH, URGENT
+  assignedToId    String?
+  companyId       String
+  notes           String?
+  tags            String?  // JSON array of tags
+  metadata        String?  // JSON for additional fields
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  // Relations
+  company   Company    @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  assignedTo Employee?  @relation(fields: [assignedToId], references: [id])
+  history   LeadHistory[]
+  
+  @@map("leads")
+}
+
+// Lead History Model for tracking lead lifecycle
+model LeadHistory {
+  id          String   @id @default(cuid())
+  leadId      String
+  employeeId  String?
+  action      String   // CREATED, ASSIGNED, STATUS_CHANGED, NOTE_ADDED, etc.
+  oldValue    String?  // JSON for previous state
+  newValue    String?  // JSON for new state
+  notes       String?
+  createdAt   DateTime @default(now())
+
+  // Relations
+  lead     Lead     @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  employee Employee? @relation(fields: [employeeId], references: [id])
+  
+  @@map("lead_history")
+}
+
+// Attendance Model
+model Attendance {
+  id            String   @id @default(cuid())
+  employeeId    String
+  companyId     String
+  checkInTime   DateTime
+  checkOutTime  DateTime?
+  checkInLat    Float?   // GPS coordinates
+  checkInLng    Float?
+  checkOutLat   Float?
+  checkOutLng   Float?
+  checkInAddress String?
+  checkOutAddress String?
+  breakStartTime DateTime?
+  breakEndTime  DateTime?
+  totalHours    Float?
+  status        String   @default("PRESENT") // PRESENT, ABSENT, LATE, HALF_DAY
+  notes         String?
+  isVerified    Boolean  @default(false)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  // Relations
+  company  Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  employee Employee @relation(fields: [employeeId], references: [id])
+  
+  @@map("attendance")
+}
+
+// Notification Model
+model Notification {
+  id        String   @id @default(cuid())
+  title     String
+  message   String
+  type      String   // INFO, WARNING, ERROR, SUCCESS
+  category  String   // LEAD, ATTENDANCE, SYSTEM, etc.
+  companyId String
+  employeeId String?
+  isRead    Boolean  @default(false)
+  metadata  String?  // JSON for additional data
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  company  Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  employee Employee? @relation(fields: [employeeId], references: [id])
+  
+  @@map("notifications")
+}
+
+// Audit Log Model for tracking all critical operations
+model AuditLog {
+  id          String   @id @default(cuid())
+  action      String   // CREATE, UPDATE, DELETE, LOGIN, etc.
+  entity      String   // Employee, Lead, Attendance, etc.
+  entityId    String
+  employeeId  String?
+  companyId   String
+  oldValues   String?  // JSON for previous state
+  newValues   String?  // JSON for new state
+  ipAddress   String?
+  userAgent   String?
+  createdAt   DateTime @default(now())
+
+  // Relations
+  company  Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  employee Employee? @relation(fields: [employeeId], references: [id])
+  
+  @@map("audit_logs")
+}
