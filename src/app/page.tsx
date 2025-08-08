@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -15,6 +15,11 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { ProtectedRoute } from '@/components/auth/protected-route'
 import { useAuth } from '@/hooks/use-auth'
 import { useToast } from '@/hooks/use-toast'
+import { useLenis } from '@/hooks/use-lenis'
+import { LeadImportModal } from '@/components/LeadImportModal'
+import { GeofenceAttendance } from '@/components/GeofenceAttendance'
+import { TaskManagement } from '@/components/TaskManagement'
+import { DocumentManager } from '@/components/DocumentManager'
 import { 
   Users, 
   Building2, 
@@ -40,14 +45,18 @@ import {
   X,
   Check,
   Navigation,
-  LogOut
+  LogOut,
+  CheckSquare,
+  FolderOpen
 } from 'lucide-react'
 
 export default function Home() {
   const { user, logout } = useAuth()
   const router = useRouter()
   const { toast } = useToast()
+  const { scrollToElement, scrollToTop } = useLenis()
   const [activeTab, setActiveTab] = useState('overview')
+  const [showBulkImportModal, setShowBulkImportModal] = useState(false)
   const [notifications, setNotifications] = useState([
     { id: 1, title: 'New lead assigned', message: 'John Smith - $450,000 mortgage', type: 'info', time: '2 min ago' },
     { id: 2, title: 'Attendance alert', message: '3 employees haven\'t checked in', type: 'warning', time: '15 min ago' },
@@ -169,6 +178,7 @@ export default function Home() {
 
   // Lead Form State
   const [showAddLeadModal, setShowAddLeadModal] = useState(false)
+  const [showGeofenceAttendance, setShowGeofenceAttendance] = useState(false)
   const [newLead, setNewLead] = useState({
     firstName: '',
     lastName: '',
@@ -412,6 +422,16 @@ export default function Home() {
     a.click()
     window.URL.revokeObjectURL(url)
     console.log('✅ Leads exported')
+  }
+
+  const handleBulkImportComplete = (importedLeads: any[]) => {
+    setLeads([...leads, ...importedLeads])
+    toast({
+      title: "Bulk Import Successful",
+      description: `Successfully imported ${importedLeads.length} leads`,
+      duration: 4000,
+    })
+    console.log('✅ Bulk leads imported:', importedLeads.length)
   }
 
   const handleImportLeads = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -830,18 +850,16 @@ Average Credit Score: ${Math.round(leads.reduce((sum, lead) => sum + lead.credit
   const handleNavigation = (section: string) => {
     setActiveTab(section)
     console.log(`✅ Navigation: Switched to ${section} tab`)
-    // Visual feedback could be added here
+    // Smooth scroll to top when changing tabs
+    scrollToTop()
   }
 
   const handleNotificationsClick = () => {
     setActiveTab('overview')
     console.log('✅ Notifications: Opening notifications panel')
-    // Scroll to notifications section
+    // Smooth scroll to notifications section with Lenis
     setTimeout(() => {
-      const notificationsSection = document.getElementById('notifications-section')
-      if (notificationsSection) {
-        notificationsSection.scrollIntoView({ behavior: 'smooth' })
-      }
+      scrollToElement('#notifications-section', { offset: -100 })
     }, 100)
   }
 
@@ -881,6 +899,91 @@ Average Credit Score: ${Math.round(leads.reduce((sum, lead) => sum + lead.credit
 
   const handleAddLeadClick = () => {
     setShowAddLeadModal(true)
+  }
+
+  const handleBulkImportClick = () => {
+    setShowBulkImportModal(true)
+  }
+
+  const handleGeofenceAttendanceClick = () => {
+    setShowGeofenceAttendance(!showGeofenceAttendance)
+  }
+
+  const handleAttendanceCheckIn = async (data: any) => {
+    console.log('✅ Geofence Check-in:', data)
+    
+    const userName = user?.name || "Admin User"
+    const timeString = new Date().toLocaleTimeString('en-US', { 
+      hour: '2-digit', 
+      minute: '2-digit',
+      hour12: true 
+    })
+    
+    // Update attendance records
+    const userRecord = attendanceRecords.find(record => record.name === userName)
+    
+    if (userRecord) {
+      const updatedRecords = attendanceRecords.map(record => 
+        record.name === userName 
+          ? { 
+              ...record, 
+              checkIn: timeString, 
+              status: "PRESENT", 
+              location: data.locationName || "Geofenced Location",
+              coordinates: { lat: data.latitude, lng: data.longitude }
+            }
+          : record
+      )
+      setAttendanceRecords(updatedRecords)
+    } else {
+      const newRecord = {
+        id: attendanceRecords.length + 1,
+        name: userName,
+        department: "Administration",
+        checkIn: timeString,
+        checkOut: "-",
+        status: "PRESENT",
+        location: data.locationName || "Geofenced Location",
+        coordinates: { lat: data.latitude, lng: data.longitude }
+      }
+      setAttendanceRecords([...attendanceRecords, newRecord])
+    }
+    
+    toast({
+      title: "Geofence Check-in Successful",
+      description: `Checked in at ${data.locationName || 'work location'} with location verification`,
+      duration: 4000,
+    })
+  }
+
+  const handleAttendanceCheckOut = async (data: any) => {
+    console.log('✅ Geofence Check-out:', data)
+    
+    const userName = user?.name || "Admin User"
+    const timeString = new Date().toLocaleTimeString('en-US', { 
+      hour: '2-digit', 
+      minute: '2-digit',
+      hour12: true 
+    })
+    
+    // Update attendance records
+    const updatedRecords = attendanceRecords.map(record => 
+      record.name === userName 
+        ? { 
+            ...record, 
+            checkOut: timeString,
+            location: data.locationName || "Outside work area",
+            coordinates: { lat: data.latitude, lng: data.longitude }
+          }
+        : record
+    )
+    setAttendanceRecords(updatedRecords)
+    
+    toast({
+      title: "Geofence Check-out Successful",
+      description: `Checked out from ${data.locationName || 'location'} with location verification`,
+      duration: 4000,
+    })
   }
 
   const handleCheckInClick = () => {
@@ -1007,6 +1110,22 @@ Average Credit Score: ${Math.round(leads.reduce((sum, lead) => sum + lead.credit
             <Button 
               variant="ghost" 
               className="w-full justify-start gap-2"
+              onClick={() => handleNavigation('tasks')}
+            >
+              <CheckSquare className="h-4 w-4" />
+              Tasks
+            </Button>
+            <Button 
+              variant="ghost" 
+              className="w-full justify-start gap-2"
+              onClick={() => handleNavigation('documents')}
+            >
+              <FolderOpen className="h-4 w-4" />
+              Documents
+            </Button>
+            <Button 
+              variant="ghost" 
+              className="w-full justify-start gap-2"
               onClick={() => handleNavigation('analytics')}
             >
               <BarChart3 className="h-4 w-4" />
@@ -1065,13 +1184,15 @@ Average Credit Score: ${Math.round(leads.reduce((sum, lead) => sum + lead.credit
         </header>
 
         {/* Dashboard Content */}
-        <main className="flex-1 overflow-y-auto p-6">
+        <main className="flex-1 overflow-y-auto p-6" data-lenis-prevent>
           <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-            <TabsList className="grid w-full grid-cols-5">
+            <TabsList className="grid w-full grid-cols-7">
               <TabsTrigger value="overview">Overview</TabsTrigger>
               <TabsTrigger value="employees">Employees</TabsTrigger>
               <TabsTrigger value="leads">Leads</TabsTrigger>
               <TabsTrigger value="attendance">Attendance</TabsTrigger>
+              <TabsTrigger value="tasks">Tasks</TabsTrigger>
+              <TabsTrigger value="documents">Documents</TabsTrigger>
               <TabsTrigger value="analytics">Analytics</TabsTrigger>
             </TabsList>
 
@@ -1461,10 +1582,24 @@ Average Credit Score: ${Math.round(leads.reduce((sum, lead) => sum + lead.credit
                     />
                     <Button 
                       variant="outline"
+                      onClick={handleBulkImportClick}
+                    >
+                      <Upload className="h-4 w-4 mr-2" />
+                      Smart Import
+                    </Button>
+                    <input
+                      type="file"
+                      accept=".csv"
+                      onChange={handleImportLeads}
+                      style={{ display: 'none' }}
+                      id="leads-import"
+                    />
+                    <Button 
+                      variant="outline"
                       onClick={() => document.getElementById('leads-import')?.click()}
                     >
                       <Upload className="h-4 w-4 mr-2" />
-                      Import
+                      Simple Import
                     </Button>
                     <Button 
                       variant="outline"
@@ -1652,6 +1787,26 @@ Average Credit Score: ${Math.round(leads.reduce((sum, lead) => sum + lead.credit
 
             <TabsContent value="attendance">
               <div className="space-y-6">
+                {/* Geofence Attendance Section */}
+                {showGeofenceAttendance && (
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="flex items-center gap-2">
+                        <Map className="h-5 w-5" />
+                        Geofence Attendance System
+                      </CardTitle>
+                      <CardDescription>
+                        Location-verified attendance with automatic geofencing
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      <GeofenceAttendance 
+                        onCheckIn={handleAttendanceCheckIn}
+                        onCheckOut={handleAttendanceCheckOut}
+                      />
+                    </CardContent>
+                  </Card>
+                )}
                 {/* Attendance Header */}
                 <div className="flex items-center justify-between">
                   <div>
@@ -1691,6 +1846,13 @@ Average Credit Score: ${Math.round(leads.reduce((sum, lead) => sum + lead.credit
                       Export
                     </Button>
                     <Button 
+                      onClick={handleGeofenceAttendanceClick}
+                      className="bg-blue-600 hover:bg-blue-700"
+                    >
+                      <Map className="h-4 w-4 mr-2" />
+                      {showGeofenceAttendance ? 'Hide' : 'Show'} Geofence
+                    </Button>
+                    <Button 
                       onClick={handleCheckIn}
                       disabled={checkInStatus === 'checking'}
                       className="bg-green-600 hover:bg-green-700"
@@ -1700,7 +1862,7 @@ Average Credit Score: ${Math.round(leads.reduce((sum, lead) => sum + lead.credit
                       ) : (
                         <Map className="h-4 w-4 mr-2" />
                       )}
-                      Check In
+                      Quick Check In
                     </Button>
                     <Button 
                       variant="outline"
@@ -1874,6 +2036,18 @@ Average Credit Score: ${Math.round(leads.reduce((sum, lead) => sum + lead.credit
                     </div>
                   </CardContent>
                 </Card>
+              </div>
+            </TabsContent>
+
+            <TabsContent value="tasks">
+              <div className="space-y-6">
+                <TaskManagement companyId="default-company" />
+              </div>
+            </TabsContent>
+
+            <TabsContent value="documents">
+              <div className="space-y-6">
+                <DocumentManager companyId="default-company" />
               </div>
             </TabsContent>
 
@@ -2296,6 +2470,13 @@ Average Credit Score: ${Math.round(leads.reduce((sum, lead) => sum + lead.credit
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Bulk Lead Import Modal */}
+      <LeadImportModal 
+        open={showBulkImportModal}
+        onOpenChange={setShowBulkImportModal}
+        onImportComplete={handleBulkImportComplete}
+      />
     </div>
     </ProtectedRoute>
   )
