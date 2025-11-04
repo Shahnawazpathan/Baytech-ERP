@@ -45,7 +45,7 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
     // Transform the updated lead to match expected format
     const transformedLead = {
       id: updatedLead.id,
-      name: `${updatedLead.firstName} ${updatedLead.lastName}`,
+      name: `${updatedLead.firstName || ''} ${updatedLead.lastName || ''}`.trim(),
       email: updatedLead.email,
       phone: updatedLead.phone,
       loanAmount: updatedLead.loanAmount,
@@ -96,7 +96,7 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
     // Transform the lead to match expected format
     const transformedLead = {
       id: lead.id,
-      name: `${lead.firstName} ${lead.lastName}`,
+      name: `${lead.firstName || ''} ${lead.lastName || ''}`.trim(),
       email: lead.email,
       phone: lead.phone,
       loanAmount: lead.loanAmount,

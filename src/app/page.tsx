@@ -1048,8 +1048,8 @@ export default function Home() {
   const handleEditLeadClick = async (lead: any) => {
     setEditingLead(lead);
     setNewLead({
-      firstName: lead.firstName || lead.name.split(' ')[0],
-      lastName: lead.lastName || lead.name.split(' ').slice(1).join(' ') || '',
+      firstName: lead.firstName || lead.name?.split(' ')[0] || '',
+      lastName: lead.lastName || lead.name?.split(' ').slice(1).join(' ') || '',
       email: lead.email,
       phone: lead.phone,
       loanAmount: lead.loanAmount?.toString() || '',
@@ -1315,8 +1315,8 @@ export default function Home() {
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
                 ...lead,
-                firstName: lead.name.split(' ')[0],
-                lastName: lead.name.split(' ').slice(1).join(' ') || '',
+                firstName: lead.name?.split(' ')[0] || '',
+                lastName: lead.name?.split(' ').slice(1).join(' ') || '',
                 companyId: 'default-company'
               })
             })
@@ -2424,7 +2424,7 @@ Average Credit Score: ${Math.round(leads.reduce((sum, lead) => sum + (lead.credi
                             >
                               <div className="flex items-center gap-3">
                                 <Avatar>
-                                  <AvatarFallback>{lead.name.split(' ').map(n => n[0]).join('')}</AvatarFallback>
+                                  <AvatarFallback>{(lead.name || 'U').split(' ').map(n => n[0]).join('')}</AvatarFallback>
                                 </Avatar>
                                 <div>
                                   <p className="font-medium">{lead.name}</p>
@@ -2966,7 +2966,7 @@ Average Credit Score: ${Math.round(leads.reduce((sum, lead) => sum + (lead.credi
                                   <td className="p-3">
                                     <div className="flex items-center gap-3">
                                       <Avatar>
-                                        <AvatarFallback>{lead.name.split(' ').map(n => n[0]).join('')}</AvatarFallback>
+                                        <AvatarFallback>{(lead.name || 'U').split(' ').map(n => n[0]).join('')}</AvatarFallback>
                                       </Avatar>
                                       <div>
                                         <p className="font-medium">{lead.name}</p>
@@ -3013,7 +3013,7 @@ Average Credit Score: ${Math.round(leads.reduce((sum, lead) => sum + (lead.credi
                                   </td>
                                   <td className="p-3">
                                     <div className="flex gap-2">
-                                      {lead.assignedToId && (user?.id === lead.assignedToId || user?.role === 'Administrator' || user?.role === 'Manager') && (
+                                      {lead.assignedToId && (user?.id === lead.assignedToId || user?.role === 'Administrator' || user?.role === 'Manager') && !lead.contactedAt && (
                                         <Button 
                                           variant="outline"
                                           size="sm"

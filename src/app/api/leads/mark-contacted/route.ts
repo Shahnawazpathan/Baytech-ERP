@@ -47,11 +47,12 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Update the lead to mark as contacted
+    // Update the lead to mark as contacted and set status to CONTACTED
     const updatedLead = await db.lead.update({
       where: { id: leadId },
       data: { 
         contactedAt: new Date(),
+        status: 'CONTACTED', // Set status to CONTACTED as per the lead lifecycle
         updatedAt: new Date()
       }
     });

@@ -34,7 +34,7 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
     // Transform the updated lead to match expected format
     const transformedLead = {
       id: updatedLead.id,
-      name: `${updatedLead.firstName} ${updatedLead.lastName}`,
+      name: `${updatedLead.firstName || ''} ${updatedLead.lastName || ''}`.trim(),
       email: updatedLead.email,
       phone: updatedLead.phone,
       loanAmount: updatedLead.loanAmount,
