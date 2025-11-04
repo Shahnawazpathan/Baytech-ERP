@@ -128,14 +128,6 @@ export default function LoginPage() {
                 {isLoading ? 'Signing in...' : 'Sign In'}
               </Button>
             </form>
-            
-            <div className="mt-6 text-center text-sm text-gray-600">
-              <p className="mb-2">
-                <strong>Demo Credentials:</strong>
-              </p>
-              <p>Email: admin@baytech.com</p>
-              <p>Password: Admin@123</p>
-            </div>
           </CardContent>
         </Card>
       </div>
