@@ -1,6 +1,27 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 
+// Mark a single notification as read
+export async function PATCH(request: NextRequest, { params }: { params: { id: string } }) {
+  try {
+    const { id } = params
+    
+    const updatedNotification = await db.notification.update({
+      where: { id },
+      data: { isRead: true }
+    })
+
+    return NextResponse.json(updatedNotification)
+  } catch (error) {
+    console.error('Error updating notification:', error)
+    return NextResponse.json(
+      { error: 'Failed to update notification' },
+      { status: 500 }
+    )
+  }
+}
+
+// Get all notifications for a user
 export async function GET(request: NextRequest) {
   try {
     const userId = request.headers.get('x-user-id')
@@ -17,9 +38,7 @@ export async function GET(request: NextRequest) {
     
     const notifications = await db.notification.findMany({
       where: whereClause,
-      orderBy: { 
-        createdAt: 'desc' 
-      },
+      orderBy: { createdAt: 'desc' },
       take: 20
     })
 

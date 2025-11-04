@@ -1,211 +1,187 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { hasPermission } from '@/lib/rbac'
 
-export async function GET(
-  request: NextRequest,
-  { params }: { params: { id: string } }
-) {
+// Update an employee
+export async function PUT(request: NextRequest, { params }: { params: { id: string } }) {
   try {
-    const employee = await db.employee.findUnique({
-      where: { id: params.id },
-      include: {
-        company: true,
-        department: true,
-        role: true,
-        manager: {
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true,
-            email: true
-          }
-        },
-        subordinates: {
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true,
-            email: true
-          }
-        }
-      }
-    })
-
-    if (!employee) {
-      return NextResponse.json(
-        { success: false, error: 'Employee not found' },
-        { status: 404 }
-      )
-    }
-
-    return NextResponse.json({
-      success: true,
-      data: employee
-    })
-  } catch (error) {
-    console.error('Error fetching employee:', error)
-    return NextResponse.json(
-      { success: false, error: 'Failed to fetch employee' },
-      { status: 500 }
-    )
-  }
-}
-
-export async function PUT(
-  request: NextRequest,
-  { params }: { params: { id: string } }
-) {
-  try {
+    const userId = request.headers.get('x-user-id');
+    const { id } = params
     const body = await request.json()
     
-    const {
-      firstName,
-      lastName,
-      email,
-      phone,
-      address,
-      dateOfBirth,
-      hireDate,
-      terminationDate,
-      position,
-      departmentId,
-      roleId,
-      managerId,
-      salary,
-      status
-    } = body
-
-    // Get existing employee for audit log
+    // Check permission to UPDATE employees
+    if (!userId || !(await hasPermission(userId, 'employee', 'UPDATE'))) {
+      return NextResponse.json(
+        { error: 'Insufficient permissions to update employee' },
+        { status: 403 }
+      )
+    }
+    
+    // Check if employee exists
     const existingEmployee = await db.employee.findUnique({
-      where: { id: params.id }
+      where: { id }
     })
-
+    
     if (!existingEmployee) {
       return NextResponse.json(
-        { success: false, error: 'Employee not found' },
+        { error: 'Employee not found' },
         { status: 404 }
       )
     }
-
-    // Check if email already exists for different employee
-    if (email && email !== existingEmployee.email) {
-      const emailExists = await db.employee.findUnique({
-        where: { email }
-      })
-
-      if (emailExists) {
+    
+    // Additional check: only allow updating if user is admin or updating their own record
+    if (userId) {
+      const requestingUser = await db.employee.findUnique({
+        where: { id: userId },
+        include: { role: true }
+      });
+      
+      // If not admin, only allow updating own record
+      if (requestingUser?.role?.name !== 'Administrator' && userId !== id) {
         return NextResponse.json(
-          { success: false, error: 'Employee with this email already exists' },
-          { status: 400 }
+          { error: 'Cannot update other employee records' },
+          { status: 403 }
         )
       }
     }
-
-    const updateData: any = {}
     
-    if (firstName !== undefined) updateData.firstName = firstName
-    if (lastName !== undefined) updateData.lastName = lastName
-    if (email !== undefined) updateData.email = email
-    if (phone !== undefined) updateData.phone = phone
-    if (address !== undefined) updateData.address = address
-    if (dateOfBirth !== undefined) updateData.dateOfBirth = dateOfBirth ? new Date(dateOfBirth) : null
-    if (hireDate !== undefined) updateData.hireDate = new Date(hireDate)
-    if (terminationDate !== undefined) updateData.terminationDate = terminationDate ? new Date(terminationDate) : null
-    if (position !== undefined) updateData.position = position
-    if (departmentId !== undefined) updateData.departmentId = departmentId
-    if (roleId !== undefined) updateData.roleId = roleId
-    if (managerId !== undefined) updateData.managerId = managerId
-    if (salary !== undefined) updateData.salary = salary
-    if (status !== undefined) updateData.status = status
-
+    // Update the employee
     const updatedEmployee = await db.employee.update({
-      where: { id: params.id },
-      data: updateData,
-      include: {
-        company: true,
-        department: true,
-        role: true,
-        manager: {
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true,
-            email: true
-          }
-        }
-      }
-    })
-
-    // Create audit log
-    await db.auditLog.create({
+      where: { id },
       data: {
-        action: 'UPDATE',
-        entity: 'Employee',
-        entityId: params.id,
-        companyId: existingEmployee.companyId,
-        oldValues: JSON.stringify(existingEmployee),
-        newValues: JSON.stringify(updatedEmployee),
-        ipAddress: request.headers.get('x-forwarded-for') || 'unknown',
-        userAgent: request.headers.get('user-agent') || 'unknown'
+        firstName: body.firstName,
+        lastName: body.lastName,
+        email: body.email,
+        phone: body.phone,
+        position: body.position,
+        departmentId: body.departmentId,
+        roleId: body.roleId,
+        address: body.address,
+        status: body.status,
+        hireDate: new Date(body.hireDate),
+        updatedAt: new Date()
+      },
+      include: {
+        department: true,
+        role: true
       }
     })
 
-    return NextResponse.json({
-      success: true,
-      data: updatedEmployee
-    })
+    // Transform the updated employee to match expected format
+    const transformedEmployee = {
+      id: updatedEmployee.id,
+      name: `${updatedEmployee.firstName} ${updatedEmployee.lastName}`,
+      email: updatedEmployee.email,
+      phone: updatedEmployee.phone,
+      position: updatedEmployee.position,
+      department: updatedEmployee.department?.name || 'Unknown',
+      departmentId: updatedEmployee.departmentId,
+      roleId: updatedEmployee.roleId,
+      status: updatedEmployee.status,
+      hireDate: updatedEmployee.hireDate,
+      address: updatedEmployee.address || '',
+      firstName: updatedEmployee.firstName,
+      lastName: updatedEmployee.lastName,
+    }
+
+    return NextResponse.json(transformedEmployee)
   } catch (error) {
     console.error('Error updating employee:', error)
     return NextResponse.json(
-      { success: false, error: 'Failed to update employee' },
+      { error: 'Failed to update employee' },
       { status: 500 }
     )
   }
 }
 
-export async function DELETE(
-  request: NextRequest,
-  { params }: { params: { id: string } }
-) {
+// Get a single employee
+export async function GET(request: NextRequest, { params }: { params: { id: string } }) {
   try {
-    const existingEmployee = await db.employee.findUnique({
-      where: { id: params.id }
-    })
+    const userId = request.headers.get('x-user-id');
+    const { id } = params
+    
+    // Check permission to READ employees
+    if (userId) {
+      const canRead = await hasPermission(userId, 'employee', 'READ')
+      if (!canRead) {
+        return NextResponse.json(
+          { error: 'Insufficient permissions to view employee' },
+          { status: 403 }
+        )
+      }
+    }
+    
+    let includeClause = {
+      department: true,
+      role: true
+    };
+    
+    // Fetch employee
+    let employee = null;
+    
+    if (userId) {
+      const requestingUser = await db.employee.findUnique({
+        where: { id: userId },
+        include: { role: true }
+      });
+      
+      // If user is admin, can see any employee
+      if (requestingUser?.role?.name === 'Administrator') {
+        employee = await db.employee.findUnique({
+          where: { id },
+          include: includeClause
+        });
+      } else {
+        // Otherwise, can only see own record
+        if (userId === id) {
+          employee = await db.employee.findUnique({
+            where: { id },
+            include: includeClause
+          });
+        } else {
+          return NextResponse.json(
+            { error: 'Insufficient permissions to view this employee' },
+            { status: 403 }
+          );
+        }
+      }
+    } else {
+      // If no user ID provided, only show public information
+      employee = await db.employee.findUnique({
+        where: { id },
+        include: includeClause
+      });
+    }
 
-    if (!existingEmployee) {
+    if (!employee) {
       return NextResponse.json(
-        { success: false, error: 'Employee not found' },
+        { error: 'Employee not found' },
         { status: 404 }
       )
     }
 
-    // Soft delete by setting isActive to false
-    const deletedEmployee = await db.employee.update({
-      where: { id: params.id },
-      data: { isActive: false }
-    })
+    // Transform the employee to match expected format
+    const transformedEmployee = {
+      id: employee.id,
+      name: `${employee.firstName} ${employee.lastName}`,
+      email: employee.email,
+      phone: employee.phone,
+      position: employee.position,
+      department: employee.department?.name || 'Unknown',
+      departmentId: employee.departmentId,
+      roleId: employee.roleId,
+      status: employee.status,
+      hireDate: employee.hireDate,
+      address: employee.address || '',
+      firstName: employee.firstName,
+      lastName: employee.lastName,
+    }
 
-    // Create audit log
-    await db.auditLog.create({
-      data: {
-        action: 'DELETE',
-        entity: 'Employee',
-        entityId: params.id,
-        companyId: existingEmployee.companyId,
-        oldValues: JSON.stringify(existingEmployee),
-        ipAddress: request.headers.get('x-forwarded-for') || 'unknown',
-        userAgent: request.headers.get('user-agent') || 'unknown'
-      }
-    })
-
-    return NextResponse.json({
-      success: true,
-      message: 'Employee deleted successfully'
-    })
+    return NextResponse.json(transformedEmployee)
   } catch (error) {
-    console.error('Error deleting employee:', error)
+    console.error('Error fetching employee:', error)
     return NextResponse.json(
-      { success: false, error: 'Failed to delete employee' },
+      { error: 'Failed to fetch employee' },
       { status: 500 }
     )
   }

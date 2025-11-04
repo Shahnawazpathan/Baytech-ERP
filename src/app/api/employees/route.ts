@@ -1,55 +1,78 @@
 import { NextRequest, NextResponse } from 'next/server'
-
-// Mock database - in a real app, this would be connected to a real database
-let employees = [
-  {
-    id: 1,
-    name: "Alice Johnson",
-    email: "alice@company.com",
-    phone: "555-0101",
-    position: "Sales Manager",
-    department: "Sales",
-    status: "ACTIVE",
-    hireDate: "2022-01-15",
-    address: "123 Main St, City, State"
-  },
-  {
-    id: 2,
-    name: "Bob Smith",
-    email: "bob@company.com",
-    phone: "555-0102",
-    position: "Software Developer",
-    department: "IT",
-    status: "ACTIVE",
-    hireDate: "2022-03-20",
-    address: "456 Oak Ave, City, State"
-  }
-]
+import { db } from '@/lib/db'
+import { hasPermission } from '@/lib/rbac'
 
 export async function GET(request: NextRequest) {
-  const { searchParams } = new URL(request.url)
-  const search = searchParams.get('search') || ''
-  const department = searchParams.get('department') || 'ALL'
-  const status = searchParams.get('status') || 'ALL'
-
   try {
-    let filteredEmployees = employees.filter(employee => {
-      const matchesSearch = employee.name.toLowerCase().includes(search.toLowerCase()) ||
-                           employee.email.toLowerCase().includes(search.toLowerCase()) ||
-                           employee.position.toLowerCase().includes(search.toLowerCase())
-      const matchesDepartment = department === 'ALL' || employee.department === department
-      const matchesStatus = status === 'ALL' || employee.status === status
-      return matchesSearch && matchesDepartment && matchesStatus
+    const userId = request.headers.get('x-user-id')
+    const companyId = request.headers.get('x-company-id') || 'default-company'
+    
+    // Check permission to READ employees
+    if (userId) {
+      const canRead = await hasPermission(userId, 'employee', 'READ')
+      if (!canRead) {
+        return NextResponse.json(
+          { error: 'Insufficient permissions to view employees' },
+          { status: 403 }
+        )
+      }
+    }
+    
+    let whereClause: any = { 
+      companyId,
+      isActive: true
+    };
+    
+    // If it's not an admin, only show employees from same department or subordinates
+    if (userId) {
+      const requestingUser = await db.employee.findUnique({
+        where: { id: userId },
+        include: { role: true }
+      });
+      
+      // If user is not an admin, only return their own record or subordinates
+      if (requestingUser?.role?.name !== 'Administrator') {
+        whereClause = {
+          ...whereClause,
+          OR: [
+            { id: userId }, // Own record
+            { managerId: userId } // Direct reports
+          ]
+        }
+      }
+    }
+
+    const employees = await db.employee.findMany({
+      where: whereClause,
+      include: {
+        department: true,
+        role: true
+      }
     })
 
-    return NextResponse.json({
-      success: true,
-      data: filteredEmployees,
-      total: filteredEmployees.length
-    })
+    // Transform the data to match the expected format
+    const transformedEmployees = employees.map(emp => ({
+      id: emp.id,
+      name: `${emp.firstName} ${emp.lastName}`,
+      email: emp.email,
+      phone: emp.phone,
+      position: emp.position,
+      department: emp.department?.name || 'Unknown',
+      departmentId: emp.departmentId,
+      status: emp.status,
+      hireDate: emp.hireDate,
+      address: emp.address || '',
+      firstName: emp.firstName,
+      lastName: emp.lastName,
+      isActive: emp.isActive,
+      roleId: emp.roleId
+    }))
+
+    return NextResponse.json(transformedEmployees)
   } catch (error) {
+    console.error('Error fetching employees:', error)
     return NextResponse.json(
-      { success: false, error: 'Failed to fetch employees' },
+      { error: 'Failed to fetch employees' },
       { status: 500 }
     )
   }
@@ -57,38 +80,63 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
+    const userId = request.headers.get('x-user-id');
     const body = await request.json()
-    const { name, email, phone, position, department, address } = body
-
-    if (!name || !email || !position || !department) {
+    
+    // Check permission to CREATE employees
+    if (!userId || !(await hasPermission(userId, 'employee', 'CREATE'))) {
       return NextResponse.json(
-        { success: false, error: 'Missing required fields' },
-        { status: 400 }
+        { error: 'Insufficient permissions to create employees' },
+        { status: 403 }
       )
     }
+    
+    // Create a new employee
+    const employee = await db.employee.create({
+      data: {
+        employeeId: `EMP${Date.now()}`, // Generate employee ID
+        firstName: body.firstName,
+        lastName: body.lastName,
+        email: body.email,
+        phone: body.phone,
+        position: body.position,
+        departmentId: body.departmentId,
+        roleId: body.roleId,
+        companyId: body.companyId,
+        hireDate: new Date(body.hireDate),
+        address: body.address,
+        status: 'ACTIVE',
+        isActive: true
+      },
+      include: {
+        department: true,
+        role: true
+      }
+    })
 
-    const newEmployee = {
-      id: employees.length + 1,
-      name,
-      email,
-      phone: phone || '',
-      position,
-      department,
-      status: 'ACTIVE',
-      hireDate: new Date().toISOString().split('T')[0],
-      address: address || ''
+    // Transform the created employee to match expected format
+    const transformedEmployee = {
+      id: employee.id,
+      name: `${employee.firstName} ${employee.lastName}`,
+      email: employee.email,
+      phone: employee.phone,
+      position: employee.position,
+      department: employee.department?.name || 'Unknown',
+      departmentId: employee.departmentId,
+      status: employee.status,
+      hireDate: employee.hireDate,
+      address: employee.address || '',
+      firstName: employee.firstName,
+      lastName: employee.lastName,
+      isActive: employee.isActive,
+      roleId: employee.roleId
     }
 
-    employees.push(newEmployee)
-
-    return NextResponse.json({
-      success: true,
-      data: newEmployee,
-      message: 'Employee created successfully'
-    })
+    return NextResponse.json(transformedEmployee)
   } catch (error) {
+    console.error('Error creating employee:', error)
     return NextResponse.json(
-      { success: false, error: 'Failed to create employee' },
+      { error: 'Failed to create employee' },
       { status: 500 }
     )
   }

@@ -12,6 +12,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { ProtectedRoute } from '@/components/auth/protected-route'
 import { useAuth } from '@/hooks/use-auth'
 import { useToast } from '@/hooks/use-toast'
@@ -47,138 +48,167 @@ import {
   Navigation,
   LogOut,
   CheckSquare,
-  FolderOpen
+  FolderOpen,
+  Menu,
+  MoreVertical,
+  ChevronDown
 } from 'lucide-react'
+import { usePermissions } from '@/hooks/use-permissions'
+import { io, Socket } from 'socket.io-client'
 
 export default function Home() {
   const { user, logout } = useAuth()
+  const { canViewEmployees, canCreateEmployees, canViewLeads, canCreateLeads, canViewAttendance, canCreateAttendance, canViewReports, loading: permissionsLoading } = usePermissions();
   const router = useRouter()
   const { toast } = useToast()
   const { scrollToElement, scrollToTop } = useLenis()
   const [activeTab, setActiveTab] = useState('overview')
   const [showBulkImportModal, setShowBulkImportModal] = useState(false)
-  const [notifications, setNotifications] = useState([
-    { id: 1, title: 'New lead assigned', message: 'John Smith - $450,000 mortgage', type: 'info', time: '2 min ago' },
-    { id: 2, title: 'Attendance alert', message: '3 employees haven\'t checked in', type: 'warning', time: '15 min ago' },
-    { id: 3, title: 'Lead converted', message: 'Sarah Johnson application approved', type: 'success', time: '1 hour ago' }
-  ])
+  const [sidebarOpen, setSidebarOpen] = useState(true)
+  const [unreadNotifications, setUnreadNotifications] = useState(0)
+  const [socket, setSocket] = useState<Socket | null>(null)
+  
+  // Global state for all data
+  const [notifications, setNotifications] = useState<any[]>([])
+  const [employees, setEmployees] = useState<any[]>([])
+  const [leads, setLeads] = useState<any[]>([])
+  const [attendanceRecords, setAttendanceRecords] = useState<any[]>([])
+  const [reports, setReports] = useState<any[]>([])
+  
+  // Loading states
+  const [loading, setLoading] = useState({
+    employees: false,
+    leads: false,
+    attendance: false,
+    notifications: false,
+    stats: false
+  })
+  const [isRefreshing, setIsRefreshing] = useState(false)
 
-  // Employee Management State
-  const [employees, setEmployees] = useState([
-    {
-      id: 1,
-      name: "Alice Johnson",
-      email: "alice@company.com",
-      position: "Sales Manager",
-      department: "Sales",
-      status: "ACTIVE",
-      hireDate: "2022-01-15",
-      phone: "555-0101",
-      address: "123 Main St, City, State"
-    },
-    {
-      id: 2,
-      name: "Bob Smith",
-      email: "bob@company.com",
-      position: "Software Developer",
-      department: "IT",
-      status: "ACTIVE",
-      hireDate: "2022-03-20",
-      phone: "555-0102",
-      address: "456 Oak Ave, City, State"
-    },
-    {
-      id: 3,
-      name: "Carol Brown",
-      email: "carol@company.com",
-      position: "HR Specialist",
-      department: "HR",
-      status: "ON_LEAVE",
-      hireDate: "2021-11-10",
-      phone: "555-0103",
-      address: "789 Pine Rd, City, State"
-    },
-    {
-      id: 4,
-      name: "David Lee",
-      email: "david@company.com",
-      position: "Support Agent",
-      department: "Support",
-      status: "ACTIVE",
-      hireDate: "2023-02-01",
-      phone: "555-0104",
-      address: "321 Elm St, City, State"
+  // Initialize socket connection
+  useEffect(() => {
+    if (user) {
+      // Initialize socket connection
+      const newSocket = io(`${window.location.protocol}//${window.location.hostname}:${window.location.port}`, {
+        path: '/api/socketio',
+        withCredentials: true,
+      });
+
+      newSocket.on('connect', () => {
+        console.log('Connected to WebSocket server');
+        // Authenticate user after connection
+        newSocket.emit('authenticate', {
+          userId: user.id,
+          companyId: 'default-company' // This should be dynamic in a real app
+        });
+      });
+
+      // Listen for real-time notifications
+      newSocket.on('notification', (notification) => {
+        // Add notification to our list and update unread count
+        setNotifications(prev => [notification, ...prev]);
+        setUnreadNotifications(prev => prev + 1);
+        
+        // Show toast notification
+        toast({
+          title: notification.title,
+          description: notification.message,
+          duration: 5000,
+        });
+      });
+
+      // Listen for batch notifications
+      newSocket.on('notifications', (newNotifications) => {
+        setNotifications(newNotifications);
+        setUnreadNotifications(newNotifications.filter((n: any) => !n.isRead).length);
+      });
+
+      setSocket(newSocket);
+
+      // Clean up connection on unmount
+      return () => {
+        newSocket.disconnect();
+      };
     }
-  ])
+  }, [user]);
 
-  const [showAddEmployeeModal, setShowAddEmployeeModal] = useState(false)
+  // Fetch departments and roles when component mounts
+  useEffect(() => {
+    const fetchDepartmentsAndRoles = async () => {
+      try {
+        const [departmentsRes, rolesRes] = await Promise.all([
+          fetch('/api/departments', {
+            headers: {
+              'x-user-id': user?.id || '',
+              'x-company-id': 'default-company'
+            }
+          }),
+          fetch('/api/roles', {
+            headers: {
+              'x-user-id': user?.id || '',
+              'x-company-id': 'default-company'
+            }
+          })
+        ]);
+
+        if (departmentsRes.ok) {
+          const departmentsData = await departmentsRes.json();
+          setDepartments(departmentsData);
+        }
+
+        if (rolesRes.ok) {
+          const rolesData = await rolesRes.json();
+          setRoles(rolesData);
+        }
+      } catch (error) {
+        console.error('Error fetching departments/roles:', error);
+      }
+    };
+
+    fetchDepartmentsAndRoles();
+  }, [user]);
+  
+  // Filter states
   const [employeeFilter, setEmployeeFilter] = useState({
     search: '',
     department: 'ALL',
     status: 'ALL'
   })
-
-  // Lead Management State
-  const [leads, setLeads] = useState([
-    {
-      id: 1,
-      name: "John Smith",
-      email: "john@email.com",
-      phone: "555-1234",
-      loanAmount: 450000,
-      status: "NEW",
-      priority: "HIGH",
-      assignedTo: "Alice Johnson",
-      propertyAddress: "123 Main St, City, State",
-      creditScore: 750
-    },
-    {
-      id: 2,
-      name: "Sarah Johnson",
-      email: "sarah@email.com",
-      phone: "555-5678",
-      loanAmount: 320000,
-      status: "QUALIFIED",
-      priority: "MEDIUM",
-      assignedTo: "Bob Smith",
-      propertyAddress: "456 Oak Ave, City, State",
-      creditScore: 680
-    },
-    {
-      id: 3,
-      name: "Mike Davis",
-      email: "mike@email.com",
-      phone: "555-9012",
-      loanAmount: 680000,
-      status: "APPLICATION",
-      priority: "HIGH",
-      assignedTo: "Carol Brown",
-      propertyAddress: "789 Pine Rd, City, State",
-      creditScore: 720
-    },
-    {
-      id: 4,
-      name: "Emily Wilson",
-      email: "emily@email.com",
-      phone: "555-3456",
-      loanAmount: 290000,
-      status: "CONTACTED",
-      priority: "LOW",
-      assignedTo: "David Lee",
-      propertyAddress: "321 Elm St, City, State",
-      creditScore: 710
-    }
-  ])
-
+  
   const [leadFilter, setLeadFilter] = useState({
     search: '',
     status: 'ALL',
     priority: 'ALL'
   })
-
-  // Lead Form State
+  
+  const [attendanceFilter, setAttendanceFilter] = useState({
+    search: '',
+    department: 'ALL',
+    status: 'ALL'
+  })
+  
+  // Form states
+  const [showAddEmployeeModal, setShowAddEmployeeModal] = useState(false)
   const [showAddLeadModal, setShowAddLeadModal] = useState(false)
   const [showGeofenceAttendance, setShowGeofenceAttendance] = useState(false)
+  const [newEmployee, setNewEmployee] = useState({
+    firstName: '',
+    lastName: '',
+    email: '',
+    phone: '',
+    countryCode: '+1', // Default to US
+    position: '',
+    departmentId: '',
+    roleId: 'default-role',
+    address: '',
+    status: 'ACTIVE',
+    hireDate: new Date().toISOString().split('T')[0]
+  })
+  const [editingEmployee, setEditingEmployee] = useState<any>(null)
+  const [editingLead, setEditingLead] = useState<any>(null)
+  const [editingAttendance, setEditingAttendance] = useState<any>(null)
+  const [departments, setDepartments] = useState<any[]>([])
+  const [roles, setRoles] = useState<any[]>([])
   const [newLead, setNewLead] = useState({
     firstName: '',
     lastName: '',
@@ -192,118 +222,199 @@ export default function Home() {
     priority: 'MEDIUM',
     notes: ''
   })
-
-  // Attendance Management State
-  const [attendanceRecords, setAttendanceRecords] = useState([
-    {
-      id: 1,
-      name: "Alice Johnson",
-      department: "Sales",
-      checkIn: "09:00 AM",
-      checkOut: "05:30 PM",
-      status: "PRESENT",
-      location: "Office",
-      coordinates: { lat: 40.7128, lng: -74.0060 }
-    },
-    {
-      id: 2,
-      name: "Bob Smith",
-      department: "IT",
-      checkIn: "08:45 AM",
-      checkOut: "-",
-      status: "PRESENT",
-      location: "Remote",
-      coordinates: { lat: 40.7589, lng: -73.9851 }
-    },
-    {
-      id: 3,
-      name: "Carol Brown",
-      department: "HR",
-      checkIn: "09:15 AM",
-      checkOut: "-",
-      status: "LATE",
-      location: "Office",
-      coordinates: { lat: 40.7128, lng: -74.0060 }
-    },
-    {
-      id: 4,
-      name: "David Lee",
-      department: "Support",
-      checkIn: "-",
-      checkOut: "-",
-      status: "ABSENT",
-      location: "-",
-      coordinates: null
-    }
-  ])
-
+  
+  // Local states
   const [currentLocation, setCurrentLocation] = useState<{ lat: number; lng: number } | null>(null)
   const [checkInStatus, setCheckInStatus] = useState<'idle' | 'checking' | 'success' | 'error'>('idle')
-  
-  // Attendance Filter State
-  const [attendanceFilter, setAttendanceFilter] = useState({
-    search: '',
-    department: 'ALL',
-    status: 'ALL'
+  const [stats, setStats] = useState({
+    totalLeads: 0,
+    activeLeads: 0,
+    convertedLeads: 0,
+    totalEmployees: 0,
+    presentToday: 0,
+    conversionRate: 0
   })
 
-  // Analytics State
-  const [reports, setReports] = useState([
-    {
-      id: 1,
-      name: "Monthly Sales Report",
-      type: "Sales",
-      generatedDate: "2024-01-15",
-      status: "COMPLETED"
-    },
-    {
-      id: 2,
-      name: "Employee Performance Report",
-      type: "HR",
-      generatedDate: "2024-01-10",
-      status: "COMPLETED"
-    },
-    {
-      id: 3,
-      name: "Lead Conversion Analysis",
-      type: "Analytics",
-      generatedDate: "2024-01-08",
-      status: "COMPLETED"
+  // Fetch data from API
+  const fetchData = async () => {
+    try {
+      setLoading(prev => ({ ...prev, employees: true }))
+      const employeesRes = await fetch('/api/employees')
+      if (employeesRes.ok) {
+        const employeesData = await employeesRes.json()
+        setEmployees(employeesData)
+      }
+      
+      setLoading(prev => ({ ...prev, leads: true }))
+      const leadsRes = await fetch('/api/leads')
+      if (leadsRes.ok) {
+        const leadsData = await leadsRes.json()
+        setLeads(leadsData)
+      }
+      
+      setLoading(prev => ({ ...prev, attendance: true }))
+      const attendanceRes = await fetch('/api/attendance')
+      if (attendanceRes.ok) {
+        const attendanceData = await attendanceRes.json()
+        setAttendanceRecords(attendanceData)
+      }
+      
+      setLoading(prev => ({ ...prev, notifications: true }))
+      const notificationsRes = await fetch('/api/notifications', {
+        headers: {
+          'x-user-id': user?.id || '',
+          'x-company-id': 'default-company'
+        }
+      })
+      if (notificationsRes.ok) {
+        const notificationsData = await notificationsRes.json()
+        setNotifications(notificationsData)
+        // Update unread count
+        const unreadCount = notificationsData.filter(n => !n.isRead).length
+        setUnreadNotifications(unreadCount)
+      }
+      
+      setLoading(prev => ({ ...prev, stats: true }))
+      const statsRes = await fetch('/api/reports/overview-stats', {
+        headers: {
+          'x-user-id': user?.id || '',
+          'x-company-id': 'default-company'
+        }
+      })
+      if (statsRes.ok) {
+        const statsData = await statsRes.json()
+        setStats(statsData)
+      }
+    } catch (error) {
+      console.error('Error fetching data:', error)
+      toast({
+        title: "Error",
+        description: "Failed to load data. Please try again.",
+        variant: "destructive",
+      })
+    } finally {
+      setLoading(prev => ({
+        employees: false,
+        leads: false,
+        attendance: false,
+        notifications: false,
+        stats: false
+      }))
     }
-  ])
-
-  // New Employee Form State
-  const [newEmployee, setNewEmployee] = useState({
-    name: '',
-    email: '',
-    phone: '',
-    position: '',
-    department: '',
-    address: ''
-  })
-
-  const mockStats = {
-    totalLeads: 1247,
-    activeLeads: 342,
-    convertedLeads: 89,
-    totalEmployees: 45,
-    presentToday: 38,
-    conversionRate: 7.1
   }
 
-  const recentLeads = [
-    { id: 1, name: 'John Smith', amount: 450000, status: 'NEW', priority: 'HIGH', assignedTo: 'Alice Johnson' },
-    { id: 2, name: 'Sarah Johnson', amount: 320000, status: 'QUALIFIED', priority: 'MEDIUM', assignedTo: 'Bob Smith' },
-    { id: 3, name: 'Mike Davis', amount: 680000, status: 'APPLICATION', priority: 'HIGH', assignedTo: 'Carol Brown' },
-    { id: 4, name: 'Emily Wilson', amount: 290000, status: 'CONTACTED', priority: 'LOW', assignedTo: 'David Lee' }
-  ]
+  const refreshData = async () => {
+    setIsRefreshing(true)
+    await fetchData()
+    setIsRefreshing(false)
+    toast({
+      title: "Data Refreshed",
+      description: "All data has been updated successfully.",
+    })
+  }
 
-  const recentAttendance = [
-    { id: 1, name: 'Alice Johnson', checkIn: '09:00 AM', status: 'PRESENT', location: 'Office' },
-    { id: 2, name: 'Bob Smith', checkIn: '08:45 AM', status: 'PRESENT', location: 'Remote' },
-    { id: 3, name: 'Carol Brown', checkIn: '09:15 AM', status: 'LATE', location: 'Office' },
-    { id: 4, name: 'David Lee', checkIn: '-', status: 'ABSENT', location: '-' }
-  ]
+  // Mark notification as read
+  const markNotificationAsRead = async (notificationId: string) => {
+    try {
+      const response = await fetch(`/api/notifications/${notificationId}/read`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' }
+      })
+      
+      if (response.ok) {
+        // Update local state to reflect the change
+        const updatedNotifications = notifications.map(n => 
+          n.id === notificationId ? { ...n, isRead: true } : n
+        )
+        setNotifications(updatedNotifications)
+        setUnreadNotifications(prev => prev - 1)
+      }
+    } catch (error) {
+      console.error('Error marking notification as read:', error)
+    }
+  }
+
+  // Mark all notifications as read
+  const markAllNotificationsAsRead = async () => {
+    try {
+      const response = await fetch('/api/notifications/mark-all-read', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' }
+      })
+      
+      if (response.ok) {
+        // Update local state to reflect the change
+        const updatedNotifications = notifications.map(n => ({ ...n, isRead: true }))
+        setNotifications(updatedNotifications)
+        setUnreadNotifications(0)
+      }
+    } catch (error) {
+      console.error('Error marking all notifications as read:', error)
+    }
+  }
+
+  // Initial data fetch
+  useEffect(() => {
+    fetchData()
+  }, [])
+
+  // Refresh data when tab changes
+  useEffect(() => {
+    if (activeTab === 'overview') {
+      fetchData() // Refresh all data for overview
+    } else {
+      // Refresh specific tab data
+      const refreshTabData = async () => {
+        setIsRefreshing(true)
+        try {
+          switch (activeTab) {
+            case 'employees':
+              const employeesRes = await fetch('/api/employees', {
+                headers: {
+                  'x-user-id': user?.id || '',
+                  'x-company-id': 'default-company'
+                }
+              })
+              if (employeesRes.ok) {
+                const data = await employeesRes.json()
+                setEmployees(data)
+              }
+              break
+            case 'leads':
+              const leadsRes = await fetch('/api/leads', {
+                headers: {
+                  'x-user-id': user?.id || '',
+                  'x-company-id': 'default-company'
+                }
+              })
+              if (leadsRes.ok) {
+                const data = await leadsRes.json()
+                setLeads(data)
+              }
+              break
+            case 'attendance':
+              const attendanceRes = await fetch('/api/attendance', {
+                headers: {
+                  'x-user-id': user?.id || '',
+                  'x-company-id': 'default-company'
+                }
+              })
+              if (attendanceRes.ok) {
+                const data = await attendanceRes.json()
+                setAttendanceRecords(data)
+              }
+              break
+          }
+        } catch (error) {
+          console.error(`Error refreshing ${activeTab} data:`, error)
+        } finally {
+          setIsRefreshing(false)
+        }
+      }
+      
+      refreshTabData()
+    }
+  }, [activeTab])
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -329,28 +440,131 @@ export default function Home() {
     }
   }
 
-  // Employee Management Functions
+  // Filtered data
   const filteredEmployees = employees.filter(employee => {
     const matchesSearch = employee.name.toLowerCase().includes(employeeFilter.search.toLowerCase()) ||
                          employee.email.toLowerCase().includes(employeeFilter.search.toLowerCase()) ||
                          employee.position.toLowerCase().includes(employeeFilter.search.toLowerCase())
-    const matchesDepartment = employeeFilter.department === 'ALL' || employee.department === employeeFilter.department
+    const matchesDepartment = employeeFilter.department === 'ALL' || employee.departmentId === employeeFilter.department
     const matchesStatus = employeeFilter.status === 'ALL' || employee.status === employeeFilter.status
     return matchesSearch && matchesDepartment && matchesStatus
   })
 
-  const handleAddEmployee = () => {
-    if (newEmployee.name && newEmployee.email && newEmployee.position && newEmployee.department) {
-      const employee = {
-        id: employees.length + 1,
-        ...newEmployee,
-        status: "ACTIVE",
-        hireDate: new Date().toISOString().split('T')[0]
+  const filteredLeads = leads.filter(lead => {
+    const matchesSearch = lead.name.toLowerCase().includes(leadFilter.search.toLowerCase()) ||
+                         lead.email.toLowerCase().includes(leadFilter.search.toLowerCase())
+    const matchesStatus = leadFilter.status === 'ALL' || lead.status === leadFilter.status
+    const matchesPriority = leadFilter.priority === 'ALL' || lead.priority === leadFilter.priority
+    
+    // Role-based filtering
+    let roleMatches = true;
+    if (user?.role !== 'Administrator' && user?.role !== 'Manager') {
+      // Employee can only see leads assigned to them
+      roleMatches = lead.assignedToId === user?.id;
+    }
+    
+    return matchesSearch && matchesStatus && matchesPriority && roleMatches
+  })
+
+  const filteredAttendance = attendanceRecords.filter(record => {
+    const matchesSearch = record.name.toLowerCase().includes(attendanceFilter.search.toLowerCase()) ||
+                         record.department.toLowerCase().includes(attendanceFilter.search.toLowerCase()) ||
+                         record.location.toLowerCase().includes(attendanceFilter.search.toLowerCase())
+    const matchesDepartment = attendanceFilter.department === 'ALL' || record.department === attendanceFilter.department
+    const matchesStatus = attendanceFilter.status === 'ALL' || record.status === attendanceFilter.status
+    return matchesSearch && matchesDepartment && matchesStatus
+  })
+
+  // Recent data for overview
+  const recentLeads = leads.slice(0, 4).map(lead => ({
+    id: lead.id,
+    name: lead.name,
+    amount: lead.loanAmount,
+    status: lead.status,
+    priority: lead.priority,
+    assignedTo: lead.assignedTo
+  }))
+
+  const recentAttendance = attendanceRecords.slice(0, 4).map(record => ({
+    id: record.id,
+    name: record.name,
+    checkIn: record.checkIn,
+    status: record.status,
+    location: record.location
+  }))
+
+  // Employee Management Functions
+  const handleAddEmployee = async () => {
+    if (newEmployee.firstName && newEmployee.email && newEmployee.position && newEmployee.departmentId) {
+      try {
+        const fullPhoneNumber = `${newEmployee.countryCode}${newEmployee.phone}`;
+        const response = await fetch('/api/employees', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            firstName: newEmployee.firstName,
+            lastName: newEmployee.lastName,
+            email: newEmployee.email,
+            phone: fullPhoneNumber,
+            position: newEmployee.position,
+            departmentId: newEmployee.departmentId,
+            roleId: newEmployee.roleId,
+            companyId: 'default-company', // Default company ID
+            address: newEmployee.address,
+            status: newEmployee.status,
+            hireDate: new Date(newEmployee.hireDate).toISOString()
+          })
+        })
+
+        if (response.ok) {
+          const createdEmployee = await response.json()
+          setEmployees([...employees, createdEmployee])
+          setNewEmployee({
+            firstName: '',
+            lastName: '',
+            email: '',
+            phone: '',
+            position: '',
+            departmentId: '',
+            roleId: 'default-role',
+            address: '',
+            status: 'ACTIVE',
+            hireDate: new Date().toISOString().split('T')[0]
+          })
+          setShowAddEmployeeModal(false)
+          fetchData() // Refresh data
+          
+          // Emit real-time event for employee update
+          if (socket) {
+            socket.emit('employee_update', {
+              employeeId: createdEmployee.id,
+              companyId: 'default-company',
+              action: 'added',
+              updatedBy: user?.name || 'System'
+            });
+          }
+          
+          toast({
+            title: "Success",
+            description: "Employee added successfully",
+          })
+        } else {
+          const errorData = await response.json();
+          throw new Error(errorData.error || 'Failed to add employee');
+        }
+      } catch (error: any) {
+        toast({
+          title: "Error",
+          description: error.message || "Failed to add employee",
+          variant: "destructive",
+        })
       }
-      setEmployees([...employees, employee])
-      setNewEmployee({ name: '', email: '', phone: '', position: '', department: '', address: '' })
-      setShowAddEmployeeModal(false)
-      console.log('✅ Employee added:', employee)
+    } else {
+      toast({
+        title: "Validation Error",
+        description: "Please fill in all required fields (First Name, Email, Position, Department)",
+        variant: "destructive",
+      })
     }
   }
 
@@ -369,42 +583,225 @@ export default function Home() {
     a.download = `employees_${new Date().toISOString().split('T')[0]}.csv`
     a.click()
     window.URL.revokeObjectURL(url)
-    console.log('✅ Employees exported')
   }
+
+  // Function to handle editing an employee
+  const handleEditEmployeeClick = async (employee: any) => {
+    setEditingEmployee(employee);
+    // Parse phone number to extract country code and number
+    let countryCode = '+1'; // Default
+    let phone = employee.phone || '';
+    
+    if (employee.phone) {
+      // Simple parsing: look for common country codes at the beginning
+      const phoneStr = employee.phone.toString();
+      if (phoneStr.startsWith('+')) {
+        // Find the country code part (e.g., +1, +44, etc.)
+        const codeMatch = phoneStr.match(/^(\+\d{1,4})/);
+        if (codeMatch) {
+          countryCode = codeMatch[1];
+          phone = phoneStr.substring(codeMatch[1].length);
+        } else {
+          phone = phoneStr;
+        }
+      } else {
+        // If no explicit country code, default to +1
+        phone = phoneStr;
+      }
+    }
+    
+    setNewEmployee({
+      firstName: employee.firstName || employee.name.split(' ')[0],
+      lastName: employee.lastName || employee.name.split(' ').slice(1).join(' ') || '',
+      email: employee.email,
+      phone: phone,
+      countryCode: countryCode,
+      position: employee.position,
+      departmentId: employee.departmentId || employee.department,
+      roleId: employee.roleId || 'default-role',
+      address: employee.address || '',
+      status: employee.status,
+      hireDate: employee.hireDate ? new Date(employee.hireDate).toISOString().split('T')[0] : new Date().toISOString().split('T')[0]
+    });
+    setShowAddEmployeeModal(true);
+  };
+
+  // Function to update an employee
+  const handleUpdateEmployee = async () => {
+    if (editingEmployee && newEmployee.firstName && newEmployee.email && newEmployee.position && newEmployee.departmentId) {
+      try {
+        const fullPhoneNumber = `${newEmployee.countryCode}${newEmployee.phone}`;
+        const response = await fetch(`/api/employees/${editingEmployee.id}`, {
+          method: 'PUT',
+          headers: { 
+            'Content-Type': 'application/json',
+            'x-user-id': user?.id || '',
+            'x-company-id': 'default-company'
+          },
+          body: JSON.stringify({
+            firstName: newEmployee.firstName,
+            lastName: newEmployee.lastName,
+            email: newEmployee.email,
+            phone: fullPhoneNumber,
+            position: newEmployee.position,
+            departmentId: newEmployee.departmentId,
+            roleId: newEmployee.roleId,
+            companyId: 'default-company',
+            address: newEmployee.address,
+            status: newEmployee.status,
+            hireDate: new Date(newEmployee.hireDate).toISOString()
+          })
+        })
+
+        if (response.ok) {
+          const updatedEmployee = await response.json()
+          setEmployees(employees.map(emp => 
+            emp.id === updatedEmployee.id ? updatedEmployee : emp
+          ))
+          setEditingEmployee(null);
+          setNewEmployee({
+            firstName: '',
+            lastName: '',
+            email: '',
+            phone: '',
+            position: '',
+            departmentId: '',
+            roleId: 'default-role',
+            address: '',
+            status: 'ACTIVE',
+            hireDate: new Date().toISOString().split('T')[0]
+          });
+          setShowAddEmployeeModal(false);
+          
+          // Emit real-time event for employee update
+          if (socket) {
+            socket.emit('employee_update', {
+              employeeId: updatedEmployee.id,
+              companyId: 'default-company',
+              action: 'updated',
+              updatedBy: user?.name || 'System'
+            });
+          }
+          
+          toast({
+            title: "Success",
+            description: "Employee updated successfully",
+          });
+        } else {
+          throw new Error('Failed to update employee');
+        }
+      } catch (error) {
+        toast({
+          title: "Error",
+          description: "Failed to update employee",
+          variant: "destructive",
+        });
+      }
+    }
+  };
+
+  // Function to toggle employee status (activate/deactivate)
+  const toggleEmployeeStatus = async (employeeId: string, currentStatus: string) => {
+    try {
+      const newStatus = currentStatus === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE';
+      const response = await fetch(`/api/employees/${employeeId}/status`, {
+        method: 'PATCH',
+        headers: { 
+          'Content-Type': 'application/json',
+          'x-user-id': user?.id || '',
+          'x-company-id': 'default-company'
+        },
+        body: JSON.stringify({ status: newStatus })
+      });
+
+      if (response.ok) {
+        const updatedEmployee = await response.json();
+        setEmployees(employees.map(emp => 
+          emp.id === employeeId ? updatedEmployee : emp
+        ));
+        
+        // Emit real-time event for employee status update
+        if (socket) {
+          socket.emit('employee_update', {
+            employeeId,
+            companyId: 'default-company',
+            action: `marked as ${newStatus.toLowerCase()}`,
+            updatedBy: user?.name || 'System'
+          });
+        }
+        
+        toast({
+          title: "Success",
+          description: `Employee ${newStatus.toLowerCase()} successfully`,
+        });
+      } else {
+        throw new Error('Failed to update employee status');
+      }
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to update employee status",
+        variant: "destructive",
+      });
+    }
+  };
 
   const handleImportEmployees = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
     if (file) {
       const reader = new FileReader()
-      reader.onload = (e) => {
-        const text = e.target?.result as string
-        const lines = text.split('\n')
-        const importedEmployees = lines.slice(1).filter(line => line.trim()).map((line, index) => {
-          const [name, email, phone, position, department] = line.split(',').map(item => item.trim())
-          return {
-            id: employees.length + index + 1,
-            name, email, phone, position, department,
-            status: "ACTIVE",
-            hireDate: new Date().toISOString().split('T')[0],
-            address: ""
+      reader.onload = async (e) => {
+        try {
+          const text = e.target?.result as string
+          const lines = text.split('\n')
+          const importedEmployees = lines.slice(1).filter(line => line.trim()).map((line, index) => {
+            const [name, email, phone, position, department] = line.split(',').map(item => item.trim())
+            return {
+              id: employees.length + index + 1,
+              name, email, phone, position, department,
+              status: "ACTIVE",
+              hireDate: new Date().toISOString().split('T')[0],
+              address: ""
+            }
+          })
+
+          // Here you would send the data to the API
+          for (const emp of importedEmployees) {
+            await fetch('/api/employees', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                firstName: emp.name.split(' ')[0] || emp.name,
+                lastName: emp.name.split(' ').slice(1).join(' ') || '',
+                email: emp.email,
+                phone: emp.phone,
+                position: emp.position,
+                departmentId: emp.department, // This would need to be the actual department ID
+                roleId: 'default-role', // Default role ID
+                companyId: 'default-company', // Default company ID
+                hireDate: new Date().toISOString()
+              })
+            })
           }
-        })
-        setEmployees([...employees, ...importedEmployees])
-        console.log('✅ Employees imported:', importedEmployees.length)
+
+          fetchData() // Refresh data after import
+          toast({
+            title: "Import Success",
+            description: `Successfully imported ${importedEmployees.length} employees`,
+          })
+        } catch (error) {
+          toast({
+            title: "Import Error",
+            description: "Failed to import employees",
+            variant: "destructive",
+          })
+        }
       }
       reader.readAsText(file)
     }
   }
 
   // Lead Management Functions
-  const filteredLeads = leads.filter(lead => {
-    const matchesSearch = lead.name.toLowerCase().includes(leadFilter.search.toLowerCase()) ||
-                         lead.email.toLowerCase().includes(leadFilter.search.toLowerCase())
-    const matchesStatus = leadFilter.status === 'ALL' || lead.status === leadFilter.status
-    const matchesPriority = leadFilter.priority === 'ALL' || lead.priority === leadFilter.priority
-    return matchesSearch && matchesStatus && matchesPriority
-  })
-
   const handleExportLeads = () => {
     const csvContent = [
       ['Name', 'Email', 'Phone', 'Loan Amount', 'Status', 'Priority', 'Assigned To', 'Property Address', 'Credit Score'],
@@ -421,82 +818,283 @@ export default function Home() {
     a.download = `leads_${new Date().toISOString().split('T')[0]}.csv`
     a.click()
     window.URL.revokeObjectURL(url)
-    console.log('✅ Leads exported')
   }
 
   const handleBulkImportComplete = (importedLeads: any[]) => {
     setLeads([...leads, ...importedLeads])
+    fetchData() // Refresh data
     toast({
       title: "Bulk Import Successful",
       description: `Successfully imported ${importedLeads.length} leads`,
       duration: 4000,
     })
-    console.log('✅ Bulk leads imported:', importedLeads.length)
   }
+
+  // Function to handle editing a lead
+  const handleEditLeadClick = async (lead: any) => {
+    setEditingLead(lead);
+    setNewLead({
+      firstName: lead.firstName || lead.name.split(' ')[0],
+      lastName: lead.lastName || lead.name.split(' ').slice(1).join(' ') || '',
+      email: lead.email,
+      phone: lead.phone,
+      loanAmount: lead.loanAmount?.toString() || '',
+      propertyAddress: lead.propertyAddress || '',
+      propertyType: lead.propertyType || '',
+      creditScore: lead.creditScore?.toString() || '',
+      source: lead.source || 'Website',
+      priority: lead.priority || 'MEDIUM',
+      notes: lead.notes || ''
+    });
+    setShowAddLeadModal(true);
+  };
+
+  // Function to update a lead
+  const handleUpdateLead = async () => {
+    if (editingLead && newLead.firstName && newLead.lastName && newLead.email && newLead.phone) {
+      try {
+        const response = await fetch(`/api/leads/${editingLead.id}`, {
+          method: 'PUT',
+          headers: { 
+            'Content-Type': 'application/json',
+            'x-user-id': user?.id || '',
+            'x-company-id': 'default-company'
+          },
+          body: JSON.stringify({
+            firstName: newLead.firstName,
+            lastName: newLead.lastName,
+            email: newLead.email,
+            phone: newLead.phone,
+            loanAmount: parseInt(newLead.loanAmount) || 0,
+            status: editingLead.status, // Keep current status
+            priority: newLead.priority,
+            assignedToId: editingLead.assignedToId, // Keep current assignment
+            propertyAddress: newLead.propertyAddress,
+            creditScore: parseInt(newLead.creditScore) || 0,
+            source: newLead.source,
+            companyId: 'default-company',
+            notes: newLead.notes
+          })
+        })
+
+        if (response.ok) {
+          const updatedLead = await response.json()
+          setLeads(leads.map(lead => 
+            lead.id === updatedLead.id ? updatedLead : lead
+          ))
+          setEditingLead(null);
+          setNewLead({
+            firstName: '',
+            lastName: '',
+            email: '',
+            phone: '',
+            loanAmount: '',
+            propertyAddress: '',
+            propertyType: '',
+            creditScore: '',
+            source: 'Website',
+            priority: 'MEDIUM',
+            notes: ''
+          });
+          setShowAddLeadModal(false);
+          
+          // Emit real-time event for lead update
+          if (socket) {
+            socket.emit('lead_update', {
+              leadId: updatedLead.id,
+              companyId: 'default-company',
+              action: 'updated',
+              updatedBy: user?.name || 'System'
+            });
+          }
+          
+          toast({
+            title: "Success",
+            description: "Lead updated successfully",
+          });
+        } else {
+          throw new Error('Failed to update lead');
+        }
+      } catch (error) {
+        toast({
+          title: "Error",
+          description: "Failed to update lead",
+          variant: "destructive",
+        });
+      }
+    }
+  };
+
+  // Function to toggle lead status
+  const toggleLeadStatus = async (leadId: string, currentStatus: string) => {
+    try {
+      // Define the next status in the pipeline
+      const statusOrder = ['NEW', 'CONTACTED', 'QUALIFIED', 'APPLICATION', 'APPROVED', 'REJECTED', 'CLOSED'];
+      const currentIndex = statusOrder.indexOf(currentStatus);
+      const nextIndex = (currentIndex + 1) % statusOrder.length;
+      const newStatus = statusOrder[nextIndex];
+      
+      const response = await fetch(`/api/leads/${leadId}/status`, {
+        method: 'PATCH',
+        headers: { 
+          'Content-Type': 'application/json',
+          'x-user-id': user?.id || '',
+          'x-company-id': 'default-company'
+        },
+        body: JSON.stringify({ status: newStatus })
+      });
+
+      if (response.ok) {
+        const updatedLead = await response.json();
+        setLeads(leads.map(lead => 
+          lead.id === leadId ? updatedLead : lead
+        ));
+        
+        // Emit real-time event for lead status update
+        if (socket) {
+          socket.emit('lead_update', {
+            leadId,
+            companyId: 'default-company',
+            action: `status changed to ${newStatus}`,
+            updatedBy: user?.name || 'System'
+          });
+        }
+        
+        toast({
+          title: "Success",
+          description: `Lead status updated to ${newStatus}`,
+        });
+      } else {
+        throw new Error('Failed to update lead status');
+      }
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to update lead status",
+        variant: "destructive",
+      });
+    }
+  };
 
   const handleImportLeads = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
     if (file) {
       const reader = new FileReader()
-      reader.onload = (e) => {
-        const text = e.target?.result as string
-        const lines = text.split('\n')
-        const importedLeads = lines.slice(1).filter(line => line.trim()).map((line, index) => {
-          const [name, email, phone, loanAmount, status, priority] = line.split(',').map(item => item.trim())
-          return {
-            id: leads.length + index + 1,
-            name, email, phone,
-            loanAmount: parseInt(loanAmount) || 0,
-            status: status || "NEW",
-            priority: priority || "MEDIUM",
-            assignedTo: "Unassigned",
-            propertyAddress: "",
-            creditScore: 0
+      reader.onload = async (e) => {
+        try {
+          const text = e.target?.result as string
+          const lines = text.split('\n')
+          const importedLeads = lines.slice(1).filter(line => line.trim()).map((line, index) => {
+            const [name, email, phone, loanAmount, status, priority] = line.split(',').map(item => item.trim())
+            return {
+              id: leads.length + index + 1,
+              name, email, phone,
+              loanAmount: parseInt(loanAmount) || 0,
+              status: status || "NEW",
+              priority: priority || "MEDIUM",
+              assignedTo: "Unassigned",
+              propertyAddress: "",
+              creditScore: 0
+            }
+          })
+
+          // Send data to API
+          for (const lead of importedLeads) {
+            await fetch('/api/leads', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                ...lead,
+                firstName: lead.name.split(' ')[0],
+                lastName: lead.name.split(' ').slice(1).join(' ') || '',
+                companyId: 'default-company'
+              })
+            })
           }
-        })
-        setLeads([...leads, ...importedLeads])
-        console.log('✅ Leads imported:', importedLeads.length)
+
+          fetchData() // Refresh data after import
+          toast({
+            title: "Import Success",
+            description: `Successfully imported ${importedLeads.length} leads`,
+          })
+        } catch (error) {
+          toast({
+            title: "Import Error",
+            description: "Failed to import leads",
+            variant: "destructive",
+          })
+        }
       }
       reader.readAsText(file)
     }
   }
 
   // Lead Form Functions
-  const handleAddLead = () => {
+  const handleAddLead = async () => {
     if (newLead.firstName && newLead.lastName && newLead.email && newLead.phone) {
-      const lead = {
-        id: leads.length + 1,
-        name: `${newLead.firstName} ${newLead.lastName}`,
-        email: newLead.email,
-        phone: newLead.phone,
-        loanAmount: parseInt(newLead.loanAmount) || 0,
-        status: "NEW",
-        priority: newLead.priority,
-        assignedTo: "Unassigned",
-        propertyAddress: newLead.propertyAddress,
-        creditScore: parseInt(newLead.creditScore) || 0
+      try {
+        const response = await fetch('/api/leads', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            firstName: newLead.firstName,
+            lastName: newLead.lastName,
+            email: newLead.email,
+            phone: newLead.phone,
+            loanAmount: parseInt(newLead.loanAmount) || 0,
+            status: "NEW",
+            priority: newLead.priority,
+            assignedToId: null, // Initially unassigned
+            propertyAddress: newLead.propertyAddress,
+            creditScore: parseInt(newLead.creditScore) || 0,
+            source: newLead.source,
+            companyId: 'default-company'
+          })
+        })
+
+        if (response.ok) {
+          const createdLead = await response.json()
+          setLeads([...leads, createdLead])
+          setNewLead({
+            firstName: '',
+            lastName: '',
+            email: '',
+            phone: '',
+            loanAmount: '',
+            propertyAddress: '',
+            propertyType: '',
+            creditScore: '',
+            source: 'Website',
+            priority: 'MEDIUM',
+            notes: ''
+          })
+          setShowAddLeadModal(false)
+          fetchData() // Refresh data
+          
+          // Emit real-time event for lead update
+          if (socket) {
+            socket.emit('lead_update', {
+              leadId: createdLead.id,
+              companyId: 'default-company',
+              action: 'created',
+              updatedBy: user?.name || 'System'
+            });
+          }
+          
+          toast({
+            title: "Success",
+            description: "Lead added successfully",
+          })
+        } else {
+          throw new Error('Failed to add lead')
+        }
+      } catch (error) {
+        toast({
+          title: "Error",
+          description: "Failed to add lead",
+          variant: "destructive",
+        })
       }
-      setLeads([...leads, lead])
-      setNewLead({
-        firstName: '',
-        lastName: '',
-        email: '',
-        phone: '',
-        loanAmount: '',
-        propertyAddress: '',
-        propertyType: '',
-        creditScore: '',
-        source: 'Website',
-        priority: 'MEDIUM',
-        notes: ''
-      })
-      setShowAddLeadModal(false)
-      toast({
-        title: "Lead Added Successfully",
-        description: `${lead.name} has been added to the system`,
-        duration: 4000,
-      })
-      console.log('✅ Lead added:', lead)
     } else {
       toast({
         title: "Validation Error",
@@ -515,15 +1113,6 @@ export default function Home() {
   }
 
   // Attendance Management Functions
-  const filteredAttendance = attendanceRecords.filter(record => {
-    const matchesSearch = record.name.toLowerCase().includes(attendanceFilter.search.toLowerCase()) ||
-                         record.department.toLowerCase().includes(attendanceFilter.search.toLowerCase()) ||
-                         record.location.toLowerCase().includes(attendanceFilter.search.toLowerCase())
-    const matchesDepartment = attendanceFilter.department === 'ALL' || record.department === attendanceFilter.department
-    const matchesStatus = attendanceFilter.status === 'ALL' || record.status === attendanceFilter.status
-    return matchesSearch && matchesDepartment && matchesStatus
-  })
-
   const getCurrentLocation = () => {
     return new Promise<{ lat: number; lng: number }>((resolve, reject) => {
       if (navigator.geolocation) {
@@ -550,74 +1139,46 @@ export default function Home() {
       const location = await getCurrentLocation()
       setCurrentLocation(location)
       
-      // Try API call first, fallback to local state if API fails
-      let apiSuccess = false
-      let result = null
-      
-      try {
-        const response = await fetch('/api/attendance/check-in', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            employeeId: user?.id || '1',
-            companyId: 'default-company',
-            latitude: location?.lat,
-            longitude: location?.lng,
-            address: 'Office Location',
-            notes: ''
-          })
+      const response = await fetch('/api/attendance/check-in', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          employeeId: user?.id || 'default-employee',
+          companyId: 'default-company',
+          latitude: location?.lat,
+          longitude: location?.lng,
+          address: 'Office Location',
+          notes: ''
         })
+      })
 
-        result = await response.json()
-        if (result.success) {
-          apiSuccess = true
+      const result = await response.json()
+      
+      if (result.success) {
+        fetchData() // Refresh attendance data
+        
+        // Emit real-time event for attendance update
+        if (socket) {
+          socket.emit('attendance_update', {
+            employeeId: user?.id || 'default-employee',
+            companyId: 'default-company',
+            action: 'checked in',
+            timestamp: new Date()
+          });
         }
-      } catch (apiError) {
-        console.log('API call failed, using local state fallback:', apiError)
-      }
-      
-      const now = new Date()
-      const timeString = now.toLocaleTimeString('en-US', { 
-        hour: '2-digit', 
-        minute: '2-digit',
-        hour12: true 
-      })
-      
-      // Update local state (works with both API success and fallback)
-      const userName = user?.name || "Admin User"
-      const userRecord = attendanceRecords.find(record => record.name === userName)
-      
-      if (userRecord) {
-        const updatedRecords = attendanceRecords.map(record => 
-          record.name === userName 
-            ? { ...record, checkIn: timeString, status: result?.data?.status || "PRESENT", location: "Office", coordinates: location }
-            : record
-        )
-        setAttendanceRecords(updatedRecords)
+        
+        setCheckInStatus('success')
+        toast({
+          title: "Check-in Successful",
+          description: `Checked in successfully`,
+          duration: 4000,
+        })
+        setTimeout(() => setCheckInStatus('idle'), 2000)
       } else {
-        const newRecord = {
-          id: attendanceRecords.length + 1,
-          name: userName,
-          department: "Administration",
-          checkIn: timeString,
-          checkOut: "-",
-          status: result?.data?.status || "PRESENT",
-          location: "Office",
-          coordinates: location
-        }
-        setAttendanceRecords([...attendanceRecords, newRecord])
+        throw new Error(result.error || 'Check-in failed')
       }
-      
-      setCheckInStatus('success')
-      toast({
-        title: "Check-in Successful",
-        description: `Checked in at ${timeString}${!apiSuccess ? ' (offline mode)' : ''}`,
-        duration: 4000,
-      })
-      console.log('✅ Check-in successful:', { time: timeString, location, apiSuccess })
-      setTimeout(() => setCheckInStatus('idle'), 2000)
     } catch (error) {
       setCheckInStatus('error')
       toast({
@@ -626,7 +1187,6 @@ export default function Home() {
         variant: "destructive",
         duration: 4000,
       })
-      console.error('❌ Check-in failed:', error)
       setTimeout(() => setCheckInStatus('idle'), 2000)
     }
   }
@@ -637,72 +1197,46 @@ export default function Home() {
       const location = await getCurrentLocation()
       setCurrentLocation(location)
       
-      // Try API call first, fallback to local state if API fails
-      let apiSuccess = false
-      let result = null
-      
-      try {
-        const response = await fetch('/api/attendance/check-out', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            employeeId: user?.id || '1',
-            companyId: 'default-company',
-            latitude: location?.lat,
-            longitude: location?.lng,
-            address: 'Office Location',
-            notes: ''
-          })
+      const response = await fetch('/api/attendance/check-out', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          employeeId: user?.id || 'default-employee',
+          companyId: 'default-company',
+          latitude: location?.lat,
+          longitude: location?.lng,
+          address: 'Office Location',
+          notes: ''
         })
-
-        result = await response.json()
-        if (result.success) {
-          apiSuccess = true
-        }
-      } catch (apiError) {
-        console.log('API call failed, using local state fallback:', apiError)
-      }
-      
-      const now = new Date()
-      const timeString = now.toLocaleTimeString('en-US', { 
-        hour: '2-digit', 
-        minute: '2-digit',
-        hour12: true 
       })
+
+      const result = await response.json()
       
-      // Update local state (works with both API success and fallback)
-      const userName = user?.name || "Admin User"
-      const userRecord = attendanceRecords.find(record => record.name === userName)
-      
-      if (userRecord) {
-        const updatedRecords = attendanceRecords.map(record => 
-          record.name === userName 
-            ? { ...record, checkOut: timeString, location: "Office", coordinates: location }
-            : record
-        )
-        setAttendanceRecords(updatedRecords)
+      if (result.success) {
+        fetchData() // Refresh attendance data
+        
+        // Emit real-time event for attendance update
+        if (socket) {
+          socket.emit('attendance_update', {
+            employeeId: user?.id || 'default-employee',
+            companyId: 'default-company',
+            action: 'checked out',
+            timestamp: new Date()
+          });
+        }
         
         setCheckInStatus('success')
         toast({
           title: "Check-out Successful",
-          description: `Checked out at ${timeString}${!apiSuccess ? ' (offline mode)' : ''}`,
+          description: `Checked out successfully`,
           duration: 4000,
         })
-        console.log('✅ Check-out successful:', { time: timeString, location, apiSuccess })
+        setTimeout(() => setCheckInStatus('idle'), 2000)
       } else {
-        setCheckInStatus('error')
-        toast({
-          title: "Check-out Failed",
-          description: "No check-in record found for today",
-          variant: "destructive",
-          duration: 4000,
-        })
-        console.error('❌ Check-out failed: No check-in record found')
+        throw new Error(result.error || 'Check-out failed')
       }
-      
-      setTimeout(() => setCheckInStatus('idle'), 2000)
     } catch (error) {
       setCheckInStatus('error')
       toast({
@@ -711,15 +1245,106 @@ export default function Home() {
         variant: "destructive",
         duration: 4000,
       })
-      console.error('❌ Check-out failed:', error)
       setTimeout(() => setCheckInStatus('idle'), 2000)
     }
   }
 
+  // Function to handle editing an attendance record
+  const handleEditAttendanceClick = async (attendance: any) => {
+    setEditingAttendance(attendance);
+    toast({
+      title: "Attendance Record",
+      description: `Editing attendance for ${attendance.name} on ${attendance.checkIn || 'N/A'}`,
+      duration: 6000,
+    });
+  };
+
+  // Function to update an attendance record
+  const handleUpdateAttendance = async (attendanceId: string, updatedData: any) => {
+    try {
+      const response = await fetch(`/api/attendance/${attendanceId}`, {
+        method: 'PUT',
+        headers: { 
+          'Content-Type': 'application/json',
+          'x-user-id': user?.id || '',
+          'x-company-id': 'default-company'
+        },
+        body: JSON.stringify(updatedData)
+      });
+
+      if (response.ok) {
+        const updatedAttendance = await response.json();
+        
+        // Update the local state
+        setAttendanceRecords(attendanceRecords.map(record => 
+          record.id === attendanceId ? updatedAttendance : record
+        ));
+        
+        // Emit real-time event for attendance update
+        if (socket) {
+          socket.emit('attendance_update', {
+            employeeId: updatedAttendance.employeeId,
+            companyId: 'default-company',
+            action: 'attendance updated',
+            updatedBy: user?.name || 'System'
+          });
+        }
+        
+        toast({
+          title: "Success",
+          description: "Attendance record updated successfully",
+        });
+      } else {
+        throw new Error('Failed to update attendance');
+      }
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to update attendance record",
+        variant: "destructive",
+      });
+    }
+  };
+
+  // Function to delete an attendance record
+  const handleDeleteAttendance = async (attendanceId: string) => {
+    if (!window.confirm('Are you sure you want to delete this attendance record?')) {
+      return;
+    }
+    
+    try {
+      const response = await fetch(`/api/attendance/${attendanceId}`, {
+        method: 'DELETE',
+        headers: { 
+          'x-user-id': user?.id || '',
+          'x-company-id': 'default-company'
+        }
+      });
+
+      if (response.ok) {
+        // Update the local state
+        setAttendanceRecords(attendanceRecords.filter(record => record.id !== attendanceId));
+        
+        toast({
+          title: "Success",
+          description: "Attendance record deleted successfully",
+        });
+      } else {
+        throw new Error('Failed to delete attendance');
+      }
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to delete attendance record",
+        variant: "destructive",
+      });
+    }
+  };
+
   const handleExportAttendance = () => {
     const csvContent = [
       ['Name', 'Department', 'Check In', 'Check Out', 'Status', 'Location'],
-      ...attendanceRecords.map(record => [
+      ...filteredAttendance.map(record => [
         record.name, record.department, record.checkIn, record.checkOut, record.status, record.location
       ])
     ].map(row => row.join(',')).join('\n')
@@ -731,21 +1356,18 @@ export default function Home() {
     a.download = `attendance_${new Date().toISOString().split('T')[0]}.csv`
     a.click()
     window.URL.revokeObjectURL(url)
-    console.log('✅ Attendance exported')
   }
 
   // Analytics Functions
   const generateReport = (type: string) => {
-    const reportData = {
+    // In a real implementation, this would call an API endpoint
+    return {
       id: reports.length + 1,
       name: `${type} Report - ${new Date().toLocaleDateString()}`,
       type: type,
       generatedDate: new Date().toISOString().split('T')[0],
       status: "COMPLETED"
     }
-    setReports([...reports, reportData])
-    console.log('✅ Report generated:', reportData)
-    return reportData
   }
 
   const handleGenerateReport = (type: string) => {
@@ -781,7 +1403,7 @@ export default function Home() {
     const totalLeads = leads.length
     const convertedLeads = leads.filter(lead => lead.status === 'APPLICATION').length
     const conversionRate = ((convertedLeads / totalLeads) * 100).toFixed(2)
-    const totalLoanAmount = leads.reduce((sum, lead) => sum + lead.loanAmount, 0)
+    const totalLoanAmount = leads.reduce((sum, lead) => sum + (lead.loanAmount || 0), 0)
     
     return `Sales Report
 Generated: ${new Date().toLocaleDateString()}
@@ -801,15 +1423,15 @@ ${leads.reduce((acc, lead) => {
   }
 
   const generateEmployeePerformanceReport = () => {
-    const activeEmployees = employees.filter(emp => emp.status === 'ACTIVE')
-    const onLeaveEmployees = employees.filter(emp => emp.status === 'ON_LEAVE')
+    const activeEmployees = employees.filter(emp => emp.status === 'ACTIVE').length
+    const onLeaveEmployees = employees.filter(emp => emp.status === 'ON_LEAVE').length
     
     return `Employee Performance Report
 Generated: ${new Date().toLocaleDateString()}
 
 Total Employees: ${employees.length}
-Active Employees: ${activeEmployees.length}
-Employees on Leave: ${onLeaveEmployees.length}
+Active Employees: ${activeEmployees}
+Employees on Leave: ${onLeaveEmployees}
 
 Department Breakdown:
 ${employees.reduce((acc, emp) => {
@@ -843,43 +1465,31 @@ High: ${leads.filter(l => l.priority === 'HIGH').length}
 Medium: ${leads.filter(l => l.priority === 'MEDIUM').length}
 Low: ${leads.filter(l => l.priority === 'LOW').length}
 
-Average Credit Score: ${Math.round(leads.reduce((sum, lead) => sum + lead.creditScore, 0) / leads.length)}
+Average Credit Score: ${Math.round(leads.reduce((sum, lead) => sum + (lead.creditScore || 0), 0) / leads.length)}
 `
   }
 
   const handleNavigation = (section: string) => {
     setActiveTab(section)
-    console.log(`✅ Navigation: Switched to ${section} tab`)
     // Smooth scroll to top when changing tabs
     scrollToTop()
   }
 
-  const handleNotificationsClick = () => {
+  const handleNotificationsClick = (e?: React.MouseEvent) => {
+    e?.preventDefault();
     setActiveTab('overview')
-    console.log('✅ Notifications: Opening notifications panel')
     // Smooth scroll to notifications section with Lenis
     setTimeout(() => {
       scrollToElement('#notifications-section', { offset: -100 })
     }, 100)
   }
 
-  const handleImportClick = () => {
-    console.log('✅ Import: Function depends on current tab')
-    // Import functionality is now tab-specific
-  }
-
-  const handleExportClick = () => {
-    console.log('✅ Export: Function depends on current tab')
-    // Export functionality is now tab-specific
-  }
-
   const handleAddEmployeeClick = () => {
     setShowAddEmployeeModal(true)
-    console.log('✅ Add Employee: Opening add employee modal')
   }
 
   const handleNotificationClick = (notification: any) => {
-    console.log('✅ Notification clicked:', notification)
+    markNotificationAsRead(notification.id)
     toast({
       title: notification.title,
       description: notification.message,
@@ -888,12 +1498,10 @@ Average Credit Score: ${Math.round(leads.reduce((sum, lead) => sum + lead.credit
   }
 
   const handleLeadClick = (lead: any) => {
-    console.log('✅ Lead clicked:', lead)
     setActiveTab('leads')
   }
 
   const handleAttendanceClick = (attendance: any) => {
-    console.log('✅ Attendance clicked:', attendance)
     setActiveTab('attendance')
   }
 
@@ -910,97 +1518,88 @@ Average Credit Score: ${Math.round(leads.reduce((sum, lead) => sum + lead.credit
   }
 
   const handleAttendanceCheckIn = async (data: any) => {
-    console.log('✅ Geofence Check-in:', data)
-    
-    const userName = user?.name || "Admin User"
-    const timeString = new Date().toLocaleTimeString('en-US', { 
-      hour: '2-digit', 
-      minute: '2-digit',
-      hour12: true 
-    })
-    
-    // Update attendance records
-    const userRecord = attendanceRecords.find(record => record.name === userName)
-    
-    if (userRecord) {
-      const updatedRecords = attendanceRecords.map(record => 
-        record.name === userName 
-          ? { 
-              ...record, 
-              checkIn: timeString, 
-              status: "PRESENT", 
-              location: data.locationName || "Geofenced Location",
-              coordinates: { lat: data.latitude, lng: data.longitude }
-            }
-          : record
-      )
-      setAttendanceRecords(updatedRecords)
-    } else {
-      const newRecord = {
-        id: attendanceRecords.length + 1,
-        name: userName,
-        department: "Administration",
-        checkIn: timeString,
-        checkOut: "-",
-        status: "PRESENT",
-        location: data.locationName || "Geofenced Location",
-        coordinates: { lat: data.latitude, lng: data.longitude }
+    try {
+      const response = await fetch('/api/attendance/check-in', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          employeeId: user?.id || 'default-employee',
+          companyId: 'default-company',
+          latitude: data.latitude,
+          longitude: data.longitude,
+          address: data.locationName,
+          notes: 'Geofence check-in'
+        })
+      })
+
+      const result = await response.json()
+      
+      if (result.success) {
+        fetchData() // Refresh attendance data
+        toast({
+          title: "Geofence Check-in Successful",
+          description: `Checked in at ${data.locationName || 'work location'} with location verification`,
+          duration: 4000,
+        })
+      } else {
+        throw new Error(result.error || 'Check-in failed')
       }
-      setAttendanceRecords([...attendanceRecords, newRecord])
+    } catch (error) {
+      toast({
+        title: "Geofence Check-in Failed",
+        description: error instanceof Error ? error.message : "Failed to check in",
+        variant: "destructive",
+        duration: 4000,
+      })
     }
-    
-    toast({
-      title: "Geofence Check-in Successful",
-      description: `Checked in at ${data.locationName || 'work location'} with location verification`,
-      duration: 4000,
-    })
   }
 
   const handleAttendanceCheckOut = async (data: any) => {
-    console.log('✅ Geofence Check-out:', data)
-    
-    const userName = user?.name || "Admin User"
-    const timeString = new Date().toLocaleTimeString('en-US', { 
-      hour: '2-digit', 
-      minute: '2-digit',
-      hour12: true 
-    })
-    
-    // Update attendance records
-    const updatedRecords = attendanceRecords.map(record => 
-      record.name === userName 
-        ? { 
-            ...record, 
-            checkOut: timeString,
-            location: data.locationName || "Outside work area",
-            coordinates: { lat: data.latitude, lng: data.longitude }
-          }
-        : record
-    )
-    setAttendanceRecords(updatedRecords)
-    
-    toast({
-      title: "Geofence Check-out Successful",
-      description: `Checked out from ${data.locationName || 'location'} with location verification`,
-      duration: 4000,
-    })
+    try {
+      const response = await fetch('/api/attendance/check-out', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          employeeId: user?.id || 'default-employee',
+          companyId: 'default-company',
+          latitude: data.latitude,
+          longitude: data.longitude,
+          address: data.locationName,
+          notes: 'Geofence check-out'
+        })
+      })
+
+      const result = await response.json()
+      
+      if (result.success) {
+        fetchData() // Refresh attendance data
+        toast({
+          title: "Geofence Check-out Successful",
+          description: `Checked out from ${data.locationName || 'location'} with location verification`,
+          duration: 4000,
+        })
+      } else {
+        throw new Error(result.error || 'Check-out failed')
+      }
+    } catch (error) {
+      toast({
+        title: "Geofence Check-out Failed",
+        description: error instanceof Error ? error.message : "Failed to check out",
+        variant: "destructive",
+        duration: 4000,
+      })
+    }
   }
 
   const handleCheckInClick = () => {
     handleCheckIn()
   }
 
-  const handleGenerateReportClick = () => {
-    console.log('✅ Generate Report: Opening report type selection')
-    toast({
-      title: "Generate Report",
-      description: "Select report type: Sales, Employee Performance, or Lead Conversion",
-      duration: 4000,
-    })
-  }
-
-  const handleEditEmployeeClick = (employee: any) => {
-    console.log('✅ Edit Employee:', employee)
+  const handleViewEmployeeDetails = (employee: any) => {
     toast({
       title: "Edit Employee",
       description: `${employee.name} - Position: ${employee.position}, Department: ${employee.department}`,
@@ -1009,7 +1608,6 @@ Average Credit Score: ${Math.round(leads.reduce((sum, lead) => sum + lead.credit
   }
 
   const handleViewEmployeeClick = (employee: any) => {
-    console.log('✅ View Employee:', employee)
     toast({
       title: "Employee Details",
       description: `Name: ${employee.name}, Email: ${employee.email}, Position: ${employee.position}, Department: ${employee.department}, Status: ${employee.status}`,
@@ -1017,26 +1615,23 @@ Average Credit Score: ${Math.round(leads.reduce((sum, lead) => sum + lead.credit
     })
   }
 
-  const handleEditLeadClick = (lead: any) => {
-    console.log('✅ Edit Lead:', lead)
+  const handleViewLeadDetails = (lead: any) => {
     toast({
       title: "Edit Lead",
-      description: `${lead.name} - Amount: $${lead.loanAmount.toLocaleString()}, Status: ${lead.status}`,
+      description: `${lead.name} - Amount: $${lead.loanAmount?.toLocaleString() || 0}, Status: ${lead.status}`,
       duration: 4000,
     })
   }
 
   const handleViewLeadClick = (lead: any) => {
-    console.log('✅ View Lead:', lead)
     toast({
       title: "Lead Details",
-      description: `Name: ${lead.name}, Amount: $${lead.loanAmount.toLocaleString()}, Status: ${lead.status}, Priority: ${lead.priority}, Assigned to: ${lead.assignedTo}`,
+      description: `Name: ${lead.name}, Amount: $${lead.loanAmount?.toLocaleString() || 0}, Status: ${lead.status}, Priority: ${lead.priority}, Assigned to: ${lead.assignedTo}`,
       duration: 6000,
     })
   }
 
   const handleViewAttendanceClick = (attendance: any) => {
-    console.log('✅ View Attendance:', attendance)
     toast({
       title: "Attendance Record",
       description: `Name: ${attendance.name}, Check-in: ${attendance.checkIn}, Check-out: ${attendance.checkOut}, Status: ${attendance.status}, Location: ${attendance.location}`,
@@ -1044,8 +1639,7 @@ Average Credit Score: ${Math.round(leads.reduce((sum, lead) => sum + lead.credit
     })
   }
 
-  const handleEditAttendanceClick = (attendance: any) => {
-    console.log('✅ Edit Attendance:', attendance)
+  const handleViewAttendanceDetails = (attendance: any) => {
     toast({
       title: "Edit Attendance",
       description: `${attendance.name} - Check-in: ${attendance.checkIn}, Status: ${attendance.status}`,
@@ -1058,102 +1652,159 @@ Average Credit Score: ${Math.round(leads.reduce((sum, lead) => sum + lead.credit
     router.push('/login')
   }
 
+  // Loading indicators
+  if (loading.stats && activeTab === 'overview' && stats.totalLeads === 0) {
+    return (
+      <ProtectedRoute>
+        <div className="flex items-center justify-center h-screen">
+          <div className="text-center">
+            <div className="inline-block animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500 mb-4"></div>
+            <p className="text-lg text-gray-600">Loading dashboard...</p>
+          </div>
+        </div>
+      </ProtectedRoute>
+    )
+  }
+
   return (
     <ProtectedRoute>
-      <div className="flex h-screen bg-gray-50">
+      <div className="flex h-screen bg-gray-50 transition-colors duration-200">
       {/* Sidebar */}
-      <div className="w-64 bg-white border-r border-gray-200 flex flex-col">
-        <div className="p-6 border-b border-gray-200">
-          <div className="flex items-center gap-3">
-            <Building2 className="h-8 w-8 text-blue-600" />
-            <div>
-              <h1 className="text-xl font-bold text-gray-900">Baytech Mortgage ERP</h1>
-              <p className="text-sm text-gray-500">Enterprise System</p>
+      <div className={`${sidebarOpen ? 'w-64' : 'w-16'} bg-white border-r border-gray-200 flex flex-col transition-all duration-300`}>
+        <div className="p-4 border-b border-gray-200 flex items-center justify-between">
+          {sidebarOpen ? (
+            <div className="flex items-center gap-3">
+              <Building2 className="h-8 w-8 text-blue-600" />
+              <div>
+                <h1 className="text-xl font-bold text-gray-900">Baytech ERP</h1>
+                <p className="text-sm text-gray-500">Mortgage System</p>
+              </div>
             </div>
-          </div>
+          ) : (
+            <div className="flex justify-center">
+              <Building2 className="h-8 w-8 text-blue-600" />
+            </div>
+          )}
+          <Button 
+            variant="ghost" 
+            size="sm" 
+            onClick={() => setSidebarOpen(!sidebarOpen)}
+            className="ml-auto"
+          >
+            {sidebarOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+          </Button>
         </div>
         
         <nav className="flex-1 p-4">
-          <div className="space-y-2">
+          <div className="space-y-1">
             <Button 
-              variant="ghost" 
-              className="w-full justify-start gap-2"
+              variant={activeTab === 'overview' ? 'secondary' : 'ghost'} 
+              className={`w-full justify-start gap-2 ${!sidebarOpen ? 'justify-center' : ''} transition-colors`}
               onClick={() => handleNavigation('overview')}
             >
               <BarChart3 className="h-4 w-4" />
-              Dashboard
+              {sidebarOpen && <span>Dashboard</span>}
             </Button>
+            
+            {canViewEmployees && (
+              <Button 
+                variant={activeTab === 'employees' ? 'secondary' : 'ghost'} 
+                className={`w-full justify-start gap-2 ${!sidebarOpen ? 'justify-center' : ''} transition-colors`}
+                onClick={() => handleNavigation('employees')}
+              >
+                <Users className="h-4 w-4" />
+                {sidebarOpen && <span>Employees</span>}
+              </Button>
+            )}
+            
+            {canViewLeads && (
+              <Button 
+                variant={activeTab === 'leads' ? 'secondary' : 'ghost'} 
+                className={`w-full justify-start gap-2 ${!sidebarOpen ? 'justify-center' : ''} transition-colors`}
+                onClick={() => handleNavigation('leads')}
+              >
+                <Phone className="h-4 w-4" />
+                {sidebarOpen && <span>Leads</span>}
+              </Button>
+            )}
+            
+            {canViewAttendance && (
+              <Button 
+                variant={activeTab === 'attendance' ? 'secondary' : 'ghost'} 
+                className={`w-full justify-start gap-2 ${!sidebarOpen ? 'justify-center' : ''} transition-colors`}
+                onClick={() => handleNavigation('attendance')}
+              >
+                <Calendar className="h-4 w-4" />
+                {sidebarOpen && <span>Attendance</span>}
+              </Button>
+            )}
+            
             <Button 
-              variant="ghost" 
-              className="w-full justify-start gap-2"
-              onClick={() => handleNavigation('employees')}
-            >
-              <Users className="h-4 w-4" />
-              Employees
-            </Button>
-            <Button 
-              variant="ghost" 
-              className="w-full justify-start gap-2"
-              onClick={() => handleNavigation('leads')}
-            >
-              <Phone className="h-4 w-4" />
-              Leads
-            </Button>
-            <Button 
-              variant="ghost" 
-              className="w-full justify-start gap-2"
-              onClick={() => handleNavigation('attendance')}
-            >
-              <Calendar className="h-4 w-4" />
-              Attendance
-            </Button>
-            <Button 
-              variant="ghost" 
-              className="w-full justify-start gap-2"
+              variant={activeTab === 'tasks' ? 'secondary' : 'ghost'} 
+              className={`w-full justify-start gap-2 ${!sidebarOpen ? 'justify-center' : ''} transition-colors`}
               onClick={() => handleNavigation('tasks')}
             >
               <CheckSquare className="h-4 w-4" />
-              Tasks
+              {sidebarOpen && <span>Tasks</span>}
             </Button>
+            
             <Button 
-              variant="ghost" 
-              className="w-full justify-start gap-2"
+              variant={activeTab === 'documents' ? 'secondary' : 'ghost'} 
+              className={`w-full justify-start gap-2 ${!sidebarOpen ? 'justify-center' : ''} transition-colors`}
               onClick={() => handleNavigation('documents')}
             >
               <FolderOpen className="h-4 w-4" />
-              Documents
+              {sidebarOpen && <span>Documents</span>}
             </Button>
-            <Button 
-              variant="ghost" 
-              className="w-full justify-start gap-2"
-              onClick={() => handleNavigation('analytics')}
-            >
-              <BarChart3 className="h-4 w-4" />
-              Analytics
-            </Button>
+            
+            {canViewReports && (
+              <Button 
+                variant={activeTab === 'analytics' ? 'secondary' : 'ghost'} 
+                className={`w-full justify-start gap-2 ${!sidebarOpen ? 'justify-center' : ''} transition-colors`}
+                onClick={() => handleNavigation('analytics')}
+              >
+                <BarChart3 className="h-4 w-4" />
+                {sidebarOpen && <span>Analytics</span>}
+              </Button>
+            )}
           </div>
         </nav>
         
         <div className="p-4 border-t border-gray-200">
-          <div className="flex items-center gap-3 mb-3">
-            <Avatar>
-              <AvatarImage src="/placeholder-avatar.jpg" />
-              <AvatarFallback>AD</AvatarFallback>
-            </Avatar>
-            <div className="flex-1">
-              <p className="text-sm font-medium text-gray-900">{user?.name || 'Administrator'}</p>
-              <p className="text-xs text-gray-500">{user?.role || 'Admin'}</p>
+          {sidebarOpen ? (
+            <>
+              <div className="flex items-center gap-3 mb-3">
+                <Avatar>
+                  <AvatarImage src="/placeholder-avatar.jpg" />
+                  <AvatarFallback>{user?.name?.charAt(0) || 'A'}</AvatarFallback>
+                </Avatar>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-gray-900 truncate">{user?.name || 'Administrator'}</p>
+                  <p className="text-xs text-gray-500 truncate">{user?.role || 'Admin'}</p>
+                </div>
+              </div>
+              <Button 
+                variant="outline" 
+                size="sm" 
+                className="w-full justify-start gap-2"
+                onClick={handleLogout}
+              >
+                <LogOut className="h-4 w-4" />
+                Logout
+              </Button>
+            </>
+          ) : (
+            <div className="flex flex-col items-center">
+              <Button 
+                variant="outline" 
+                size="sm" 
+                className="w-10 h-10 p-0 rounded-full mb-2"
+                onClick={handleLogout}
+              >
+                <LogOut className="h-4 w-4" />
+              </Button>
             </div>
-          </div>
-          <Button 
-            variant="outline" 
-            size="sm" 
-            className="w-full justify-start gap-2"
-            onClick={handleLogout}
-          >
-            <LogOut className="h-4 w-4" />
-            Logout
-          </Button>
+          )}
         </div>
       </div>
 
@@ -1163,22 +1814,64 @@ Average Credit Score: ${Math.round(leads.reduce((sum, lead) => sum + lead.credit
         <header className="bg-white border-b border-gray-200 px-6 py-4">
           <div className="flex items-center justify-between">
             <div>
-              <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
-              <p className="text-sm text-gray-500">Welcome back, John</p>
+              <h1 className="text-2xl font-bold text-gray-900">
+                {activeTab === 'overview' && 'Dashboard'}
+                {activeTab === 'employees' && 'Employee Management'}
+                {activeTab === 'leads' && 'Lead Management'}
+                {activeTab === 'attendance' && 'Attendance Tracking'}
+                {activeTab === 'tasks' && 'Task Management'}
+                {activeTab === 'documents' && 'Document Management'}
+                {activeTab === 'analytics' && 'Analytics & Reports'}
+              </h1>
+              <p className="text-sm text-gray-500">Welcome back, {user?.name || 'Admin'}</p>
             </div>
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-3">
               <Button 
                 variant="outline" 
                 size="sm"
-                onClick={handleNotificationsClick}
+                onClick={refreshData}
+                disabled={isRefreshing}
               >
-                <Bell className="h-4 w-4 mr-2" />
-                Notifications
+                {isRefreshing ? (
+                  <Clock className="h-4 w-4 mr-2 animate-spin" />
+                ) : (
+                  <Clock className="h-4 w-4 mr-2" />
+                )}
+                {isRefreshing ? 'Refreshing...' : 'Refresh'}
               </Button>
-              <Avatar>
-                <AvatarImage src="/placeholder-avatar.jpg" />
-                <AvatarFallback>JD</AvatarFallback>
-              </Avatar>
+              
+              {/* Notifications dropdown */}
+              <div className="relative">
+                <Button 
+                  variant="outline" 
+                  size="sm"
+                  onClick={() => {
+                    // Toggle notifications dropdown by navigating to notifications tab
+                    handleNotificationsClick();
+                  }}
+                  className="relative"
+                >
+                  <Bell className="h-4 w-4 mr-2" />
+                  {unreadNotifications > 0 && (
+                    <span className="absolute -top-1 -right-1 h-4 w-4 bg-red-500 text-white text-xs rounded-full flex items-center justify-center">
+                      {unreadNotifications}
+                    </span>
+                  )}
+                  <span className="hidden sm:inline">Notifications</span>
+                  <ChevronDown className="h-4 w-4 ml-1" />
+                </Button>
+              </div>
+              
+              <div className="flex items-center gap-2">
+                <Avatar>
+                  <AvatarImage src="/placeholder-avatar.jpg" />
+                  <AvatarFallback>{user?.name?.charAt(0) || 'A'}</AvatarFallback>
+                </Avatar>
+                <div className="hidden md:block">
+                  <p className="text-sm font-medium text-gray-900">{user?.name || 'Admin'}</p>
+                  <p className="text-xs text-gray-500">{user?.role || 'System Admin'}</p>
+                </div>
+              </div>
             </div>
           </div>
         </header>
@@ -1199,54 +1892,54 @@ Average Credit Score: ${Math.round(leads.reduce((sum, lead) => sum + lead.credit
             <TabsContent value="overview" className="space-y-6">
               {/* KPI Cards */}
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                <Card>
+                <Card className={loading.stats ? "opacity-70 animate-pulse" : ""}>
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                     <CardTitle className="text-sm font-medium">Total Leads</CardTitle>
                     <Phone className="h-4 w-4 text-muted-foreground" />
                   </CardHeader>
                   <CardContent>
-                    <div className="text-2xl font-bold">{mockStats.totalLeads.toLocaleString()}</div>
+                    <div className="text-2xl font-bold">{stats.totalLeads}</div>
                     <p className="text-xs text-muted-foreground">
                       +12% from last month
                     </p>
                   </CardContent>
                 </Card>
 
-                <Card>
+                <Card className={loading.stats ? "opacity-70 animate-pulse" : ""}>
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                     <CardTitle className="text-sm font-medium">Active Leads</CardTitle>
                     <TrendingUp className="h-4 w-4 text-muted-foreground" />
                   </CardHeader>
                   <CardContent>
-                    <div className="text-2xl font-bold">{mockStats.activeLeads}</div>
+                    <div className="text-2xl font-bold">{stats.activeLeads}</div>
                     <p className="text-xs text-muted-foreground">
                       +8% from last week
                     </p>
                   </CardContent>
                 </Card>
 
-                <Card>
+                <Card className={loading.stats ? "opacity-70 animate-pulse" : ""}>
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                     <CardTitle className="text-sm font-medium">Conversion Rate</CardTitle>
                     <DollarSign className="h-4 w-4 text-muted-foreground" />
                   </CardHeader>
                   <CardContent>
-                    <div className="text-2xl font-bold">{mockStats.conversionRate}%</div>
+                    <div className="text-2xl font-bold">{stats.conversionRate}%</div>
                     <p className="text-xs text-muted-foreground">
                       +2.1% from last month
                     </p>
                   </CardContent>
                 </Card>
 
-                <Card>
+                <Card className={loading.stats ? "opacity-70 animate-pulse" : ""}>
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                     <CardTitle className="text-sm font-medium">Employees Present</CardTitle>
                     <Users className="h-4 w-4 text-muted-foreground" />
                   </CardHeader>
                   <CardContent>
-                    <div className="text-2xl font-bold">{mockStats.presentToday}/{mockStats.totalEmployees}</div>
+                    <div className="text-2xl font-bold">{stats.presentToday}/{stats.totalEmployees}</div>
                     <p className="text-xs text-muted-foreground">
-                      84% attendance rate
+                      {stats.totalEmployees ? Math.round((stats.presentToday / stats.totalEmployees) * 100) : 0}% attendance rate
                     </p>
                   </CardContent>
                 </Card>
@@ -1254,7 +1947,7 @@ Average Credit Score: ${Math.round(leads.reduce((sum, lead) => sum + lead.credit
 
               {/* Recent Activity */}
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <Card>
+                <Card className={loading.leads ? "opacity-70 animate-pulse" : ""}>
                   <CardHeader>
                     <CardTitle>Recent Leads</CardTitle>
                     <CardDescription>Latest lead assignments and updates</CardDescription>
@@ -1262,37 +1955,61 @@ Average Credit Score: ${Math.round(leads.reduce((sum, lead) => sum + lead.credit
                   <CardContent>
                     <ScrollArea className="h-64">
                       <div className="space-y-4">
-                        {recentLeads.map((lead) => (
-                          <div 
-                            key={lead.id} 
-                            className="flex items-center justify-between p-3 border rounded-lg cursor-pointer hover:bg-gray-50 transition-colors"
-                            onClick={() => handleLeadClick(lead)}
-                          >
-                            <div className="flex items-center gap-3">
-                              <Avatar>
-                                <AvatarFallback>{lead.name.split(' ').map(n => n[0]).join('')}</AvatarFallback>
-                              </Avatar>
-                              <div>
-                                <p className="font-medium">{lead.name}</p>
-                                <p className="text-sm text-gray-500">${lead.amount.toLocaleString()}</p>
+                        {loading.leads ? (
+                          <div className="space-y-3">
+                            {[...Array(4)].map((_, i) => (
+                              <div key={`loading-lead-${i}`} className="flex items-center justify-between p-3 border rounded-lg animate-pulse">
+                                <div className="flex items-center gap-3">
+                                  <div className="bg-gray-200 rounded-full h-10 w-10" />
+                                  <div className="space-y-2">
+                                    <div className="h-4 bg-gray-200 rounded w-24" />
+                                    <div className="h-3 bg-gray-200 rounded w-16" />
+                                  </div>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <div className="h-6 bg-gray-200 rounded w-16" />
+                                  <div className="h-6 bg-gray-200 rounded w-12" />
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        ) : recentLeads.length === 0 ? (
+                          <div className="text-center py-8 text-gray-500">
+                            No recent leads
+                          </div>
+                        ) : (
+                          recentLeads.map((lead) => (
+                            <div 
+                              key={lead.id} 
+                              className="flex items-center justify-between p-3 border rounded-lg cursor-pointer hover:bg-gray-50 transition-colors"
+                              onClick={() => handleLeadClick(lead)}
+                            >
+                              <div className="flex items-center gap-3">
+                                <Avatar>
+                                  <AvatarFallback>{lead.name.split(' ').map(n => n[0]).join('')}</AvatarFallback>
+                                </Avatar>
+                                <div>
+                                  <p className="font-medium">{lead.name}</p>
+                                  <p className="text-sm text-gray-500">${lead.amount?.toLocaleString() || 0}</p>
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <Badge className={getStatusColor(lead.status)}>
+                                  {lead.status}
+                                </Badge>
+                                <Badge className={getPriorityColor(lead.priority)}>
+                                  {lead.priority}
+                                </Badge>
                               </div>
                             </div>
-                            <div className="flex items-center gap-2">
-                              <Badge className={getStatusColor(lead.status)}>
-                                {lead.status}
-                              </Badge>
-                              <Badge className={getPriorityColor(lead.priority)}>
-                                {lead.priority}
-                              </Badge>
-                            </div>
-                          </div>
-                        ))}
+                          ))
+                        )}
                       </div>
                     </ScrollArea>
                   </CardContent>
                 </Card>
 
-                <Card>
+                <Card className={loading.attendance ? "opacity-70 animate-pulse" : ""}>
                   <CardHeader>
                     <CardTitle>Today's Attendance</CardTitle>
                     <CardDescription>Employee check-in status</CardDescription>
@@ -1300,32 +2017,56 @@ Average Credit Score: ${Math.round(leads.reduce((sum, lead) => sum + lead.credit
                   <CardContent>
                     <ScrollArea className="h-64">
                       <div className="space-y-4">
-                        {recentAttendance.map((employee) => (
-                          <div 
-                            key={employee.id} 
-                            className="flex items-center justify-between p-3 border rounded-lg cursor-pointer hover:bg-gray-50 transition-colors"
-                            onClick={() => handleAttendanceClick(employee)}
-                          >
-                            <div className="flex items-center gap-3">
-                              <Avatar>
-                                <AvatarFallback>{employee.name.split(' ').map(n => n[0]).join('')}</AvatarFallback>
-                              </Avatar>
-                              <div>
-                                <p className="font-medium">{employee.name}</p>
-                                <p className="text-sm text-gray-500">{employee.checkIn}</p>
+                        {loading.attendance ? (
+                          <div className="space-y-3">
+                            {[...Array(4)].map((_, i) => (
+                              <div key={`loading-attendance-${i}`} className="flex items-center justify-between p-3 border rounded-lg animate-pulse">
+                                <div className="flex items-center gap-3">
+                                  <div className="bg-gray-200 rounded-full h-10 w-10" />
+                                  <div className="space-y-2">
+                                    <div className="h-4 bg-gray-200 rounded w-24" />
+                                    <div className="h-3 bg-gray-200 rounded w-16" />
+                                  </div>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <div className="h-6 bg-gray-200 rounded w-16" />
+                                  <div className="h-6 bg-gray-200 rounded w-20" />
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        ) : recentAttendance.length === 0 ? (
+                          <div className="text-center py-8 text-gray-500">
+                            No attendance records for today
+                          </div>
+                        ) : (
+                          recentAttendance.map((employee) => (
+                            <div 
+                              key={employee.id} 
+                              className="flex items-center justify-between p-3 border rounded-lg cursor-pointer hover:bg-gray-50 transition-colors"
+                              onClick={() => handleAttendanceClick(employee)}
+                            >
+                              <div className="flex items-center gap-3">
+                                <Avatar>
+                                  <AvatarFallback>{employee.name.split(' ').map(n => n[0]).join('')}</AvatarFallback>
+                                </Avatar>
+                                <div>
+                                  <p className="font-medium">{employee.name}</p>
+                                  <p className="text-sm text-gray-500">{employee.checkIn}</p>
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <Badge className={getStatusColor(employee.status)}>
+                                  {employee.status}
+                                </Badge>
+                                <Badge variant="outline">
+                                  <MapPin className="h-3 w-3 mr-1" />
+                                  {employee.location}
+                                </Badge>
                               </div>
                             </div>
-                            <div className="flex items-center gap-2">
-                              <Badge className={getStatusColor(employee.status)}>
-                                {employee.status}
-                              </Badge>
-                              <Badge variant="outline">
-                                <MapPin className="h-3 w-3 mr-1" />
-                                {employee.location}
-                              </Badge>
-                            </div>
-                          </div>
-                        ))}
+                          ))
+                        )}
                       </div>
                     </ScrollArea>
                   </CardContent>
@@ -1333,7 +2074,7 @@ Average Credit Score: ${Math.round(leads.reduce((sum, lead) => sum + lead.credit
               </div>
 
               {/* Notifications */}
-              <Card id="notifications-section">
+              <Card id="notifications-section" className={loading.notifications ? "opacity-70 animate-pulse" : ""}>
                 <CardHeader>
                   <CardTitle>Recent Notifications</CardTitle>
                   <CardDescription>System alerts and updates</CardDescription>
@@ -1341,24 +2082,45 @@ Average Credit Score: ${Math.round(leads.reduce((sum, lead) => sum + lead.credit
                 <CardContent>
                   <ScrollArea className="h-48">
                     <div className="space-y-3">
-                      {notifications.map((notification) => (
-                        <div 
-                          key={notification.id} 
-                          className="flex items-start gap-3 p-3 border rounded-lg cursor-pointer hover:bg-gray-50 transition-colors"
-                          onClick={() => handleNotificationClick(notification)}
-                        >
-                          <div className="flex-shrink-0 mt-1">
-                            {notification.type === 'info' && <Info className="h-4 w-4 text-blue-500" />}
-                            {notification.type === 'warning' && <AlertCircle className="h-4 w-4 text-yellow-500" />}
-                            {notification.type === 'success' && <CheckCircle className="h-4 w-4 text-green-500" />}
-                          </div>
-                          <div className="flex-1">
-                            <p className="font-medium">{notification.title}</p>
-                            <p className="text-sm text-gray-500">{notification.message}</p>
-                            <p className="text-xs text-gray-400 mt-1">{notification.time}</p>
-                          </div>
+                      {loading.notifications ? (
+                        <div className="space-y-3">
+                          {[...Array(3)].map((_, i) => (
+                            <div key={`loading-notification-${i}`} className="flex items-start gap-3 p-3 border rounded-lg animate-pulse">
+                              <div className="flex-shrink-0 mt-1">
+                                <div className="h-4 w-4 bg-gray-200 rounded" />
+                              </div>
+                              <div className="flex-1 space-y-2">
+                                <div className="h-4 bg-gray-200 rounded w-3/4" />
+                                <div className="h-3 bg-gray-200 rounded w-full" />
+                                <div className="h-3 bg-gray-200 rounded w-1/2" />
+                              </div>
+                            </div>
+                          ))}
                         </div>
-                      ))}
+                      ) : notifications.length === 0 ? (
+                        <div className="text-center py-4 text-gray-500">
+                          No notifications
+                        </div>
+                      ) : (
+                        notifications.map((notification) => (
+                          <div 
+                            key={notification.id} 
+                            className="flex items-start gap-3 p-3 border rounded-lg cursor-pointer hover:bg-gray-50 transition-colors"
+                            onClick={() => handleNotificationClick(notification)}
+                          >
+                            <div className="flex-shrink-0 mt-1">
+                              {notification.type === 'info' && <Info className="h-4 w-4 text-blue-500" />}
+                              {notification.type === 'warning' && <AlertCircle className="h-4 w-4 text-yellow-500" />}
+                              {notification.type === 'success' && <CheckCircle className="h-4 w-4 text-green-500" />}
+                            </div>
+                            <div className="flex-1">
+                              <p className="font-medium">{notification.title}</p>
+                              <p className="text-sm text-gray-500">{notification.message}</p>
+                              <p className="text-xs text-gray-400 mt-1">{notification.time}</p>
+                            </div>
+                          </div>
+                        ))
+                      )}
                     </div>
                   </ScrollArea>
                 </CardContent>
@@ -1374,20 +2136,6 @@ Average Credit Score: ${Math.round(leads.reduce((sum, lead) => sum + lead.credit
                     <p className="text-sm text-gray-500">Manage your workforce and organizational structure</p>
                   </div>
                   <div className="flex gap-2">
-                    <input
-                      type="file"
-                      accept=".csv"
-                      onChange={handleImportEmployees}
-                      style={{ display: 'none' }}
-                      id="employee-import"
-                    />
-                    <Button 
-                      variant="outline"
-                      onClick={() => document.getElementById('employee-import')?.click()}
-                    >
-                      <Upload className="h-4 w-4 mr-2" />
-                      Import
-                    </Button>
                     <Button 
                       variant="outline"
                       onClick={handleExportEmployees}
@@ -1397,6 +2145,7 @@ Average Credit Score: ${Math.round(leads.reduce((sum, lead) => sum + lead.credit
                     </Button>
                     <Button 
                       onClick={handleAddEmployeeClick}
+                      className="bg-blue-600 hover:bg-blue-700 text-white"
                     >
                       <UserPlus className="h-4 w-4 mr-2" />
                       Add Employee
@@ -1411,8 +2160,8 @@ Average Credit Score: ${Math.round(leads.reduce((sum, lead) => sum + lead.credit
                       <CardTitle className="text-sm font-medium">Total Employees</CardTitle>
                     </CardHeader>
                     <CardContent>
-                      <div className="text-2xl font-bold">45</div>
-                      <p className="text-xs text-muted-foreground">+3 this month</p>
+                      <div className="text-2xl font-bold">{employees.length}</div>
+                      <p className="text-xs text-muted-foreground">+{employees.filter(e => e.hireDate && new Date(e.hireDate) >= new Date(new Date().setDate(new Date().getDate() - 30))).length} this month</p>
                     </CardContent>
                   </Card>
                   
@@ -1421,8 +2170,8 @@ Average Credit Score: ${Math.round(leads.reduce((sum, lead) => sum + lead.credit
                       <CardTitle className="text-sm font-medium">Active Employees</CardTitle>
                     </CardHeader>
                     <CardContent>
-                      <div className="text-2xl font-bold">42</div>
-                      <p className="text-xs text-muted-foreground">93.3% active rate</p>
+                      <div className="text-2xl font-bold">{employees.filter(e => e.status === 'ACTIVE').length}</div>
+                      <p className="text-xs text-muted-foreground">{employees.length ? Math.round((employees.filter(e => e.status === 'ACTIVE').length / employees.length) * 100) : 0}% active rate</p>
                     </CardContent>
                   </Card>
                   
@@ -1431,7 +2180,7 @@ Average Credit Score: ${Math.round(leads.reduce((sum, lead) => sum + lead.credit
                       <CardTitle className="text-sm font-medium">Departments</CardTitle>
                     </CardHeader>
                     <CardContent>
-                      <div className="text-2xl font-bold">6</div>
+                      <div className="text-2xl font-bold">{departments.length}</div>
                       <p className="text-xs text-muted-foreground">Sales, Support, IT, etc.</p>
                     </CardContent>
                   </Card>
@@ -1472,10 +2221,11 @@ Average Credit Score: ${Math.round(leads.reduce((sum, lead) => sum + lead.credit
                           </SelectTrigger>
                           <SelectContent>
                             <SelectItem value="ALL">All Departments</SelectItem>
-                            <SelectItem value="Sales">Sales</SelectItem>
-                            <SelectItem value="IT">IT</SelectItem>
-                            <SelectItem value="HR">HR</SelectItem>
-                            <SelectItem value="Support">Support</SelectItem>
+                            {departments.map((dept) => (
+                              <SelectItem key={dept.id} value={dept.id}>
+                                {dept.name}
+                              </SelectItem>
+                            ))}
                           </SelectContent>
                         </Select>
                         <Select value={employeeFilter.status} onValueChange={(value) => setEmployeeFilter({...employeeFilter, status: value})}>
@@ -1502,63 +2252,97 @@ Average Credit Score: ${Math.round(leads.reduce((sum, lead) => sum + lead.credit
                     </div>
                   </CardHeader>
                   <CardContent>
-                    <div className="overflow-x-auto">
-                      <table className="w-full">
-                        <thead>
-                          <tr className="border-b">
-                            <th className="text-left p-3">Employee</th>
-                            <th className="text-left p-3">Position</th>
-                            <th className="text-left p-3">Department</th>
-                            <th className="text-left p-3">Status</th>
-                            <th className="text-left p-3">Hire Date</th>
-                            <th className="text-left p-3">Actions</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {filteredEmployees.map((employee) => (
-                            <tr key={employee.id} className="border-b hover:bg-gray-50">
-                              <td className="p-3">
-                                <div className="flex items-center gap-3">
-                                  <Avatar>
-                                    <AvatarFallback>{employee.name.split(' ').map(n => n[0]).join('')}</AvatarFallback>
-                                  </Avatar>
-                                  <div>
-                                    <p className="font-medium">{employee.name}</p>
-                                    <p className="text-sm text-gray-500">{employee.email}</p>
-                                  </div>
-                                </div>
-                              </td>
-                              <td className="p-3">{employee.position}</td>
-                              <td className="p-3">{employee.department}</td>
-                              <td className="p-3">
-                                <Badge className={getStatusColor(employee.status)}>
-                                  {employee.status}
-                                </Badge>
-                              </td>
-                              <td className="p-3">{employee.hireDate}</td>
-                              <td className="p-3">
-                                <div className="flex gap-2">
-                                  <Button 
-                                    variant="ghost" 
-                                    size="sm"
-                                    onClick={() => handleEditEmployeeClick(employee)}
-                                  >
-                                    Edit
-                                  </Button>
-                                  <Button 
-                                    variant="ghost" 
-                                    size="sm"
-                                    onClick={() => handleViewEmployeeClick(employee)}
-                                  >
-                                    View
-                                  </Button>
-                                </div>
-                              </td>
+                    {loading.employees ? (
+                      <div className="space-y-4">
+                        {[...Array(5)].map((_, index) => (
+                          <div key={index} className="flex items-center p-3 border-b animate-pulse">
+                            <div className="flex items-center gap-3 flex-1">
+                              <div className="bg-gray-200 rounded-full h-10 w-10" />
+                              <div className="space-y-2">
+                                <div className="h-4 bg-gray-200 rounded w-32" />
+                                <div className="h-3 bg-gray-200 rounded w-24" />
+                              </div>
+                            </div>
+                            <div className="h-6 bg-gray-200 rounded w-16" />
+                            <div className="h-6 bg-gray-200 rounded w-16 ml-2" />
+                            <div className="h-6 bg-gray-200 rounded w-20 ml-2" />
+                            <div className="h-8 bg-gray-200 rounded w-32 ml-2 flex gap-2" />
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="overflow-x-auto">
+                        <table className="w-full">
+                          <thead>
+                            <tr className="border-b">
+                              <th className="text-left p-3">Employee</th>
+                              <th className="text-left p-3">Position</th>
+                              <th className="text-left p-3">Department</th>
+                              <th className="text-left p-3">Status</th>
+                              <th className="text-left p-3">Hire Date</th>
+                              <th className="text-left p-3">Actions</th>
                             </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
+                          </thead>
+                          <tbody>
+                            {filteredEmployees.map((employee) => (
+                              <tr key={employee.id} className="border-b hover:bg-gray-50 transition-colors">
+                                <td className="p-3">
+                                  <div className="flex items-center gap-3">
+                                    <Avatar>
+                                      <AvatarFallback>{employee.name.split(' ').map(n => n[0]).join('')}</AvatarFallback>
+                                    </Avatar>
+                                    <div>
+                                      <p className="font-medium">{employee.name}</p>
+                                      <p className="text-sm text-gray-500">{employee.email}</p>
+                                    </div>
+                                  </div>
+                                </td>
+                                <td className="p-3">{employee.position}</td>
+                                <td className="p-3">{employee.department}</td>
+                                <td className="p-3">
+                                  <Badge className={getStatusColor(employee.status)}>
+                                    {employee.status}
+                                  </Badge>
+                                </td>
+                                <td className="p-3">{employee.hireDate ? new Date(employee.hireDate).toLocaleDateString() : 'N/A'}</td>
+                                <td className="p-3">
+                                  <div className="flex gap-2">
+                                    <Button 
+                                      variant="outline" 
+                                      size="sm"
+                                      onClick={() => toggleEmployeeStatus(employee.id, employee.status)}
+                                    >
+                                      {employee.status === 'ACTIVE' ? 'Deactivate' : 'Activate'}
+                                    </Button>
+                                    <Button 
+                                      variant="ghost" 
+                                      size="sm"
+                                      onClick={() => handleEditEmployeeClick(employee)}
+                                    >
+                                      Edit
+                                    </Button>
+                                    <Button 
+                                      variant="ghost" 
+                                      size="sm"
+                                      onClick={() => handleViewEmployeeClick(employee)}
+                                    >
+                                      View
+                                    </Button>
+                                  </div>
+                                </td>
+                              </tr>
+                            ))}
+                            {filteredEmployees.length === 0 && (
+                              <tr>
+                                <td colSpan={6} className="p-3 text-center text-gray-500">
+                                  No employees found
+                                </td>
+                              </tr>
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
                   </CardContent>
                 </Card>
               </div>
@@ -1573,34 +2357,6 @@ Average Credit Score: ${Math.round(leads.reduce((sum, lead) => sum + lead.credit
                     <p className="text-sm text-gray-500">Track and manage mortgage leads</p>
                   </div>
                   <div className="flex gap-2">
-                    <input
-                      type="file"
-                      accept=".csv"
-                      onChange={handleImportLeads}
-                      style={{ display: 'none' }}
-                      id="leads-import"
-                    />
-                    <Button 
-                      variant="outline"
-                      onClick={handleBulkImportClick}
-                    >
-                      <Upload className="h-4 w-4 mr-2" />
-                      Smart Import
-                    </Button>
-                    <input
-                      type="file"
-                      accept=".csv"
-                      onChange={handleImportLeads}
-                      style={{ display: 'none' }}
-                      id="leads-import"
-                    />
-                    <Button 
-                      variant="outline"
-                      onClick={() => document.getElementById('leads-import')?.click()}
-                    >
-                      <Upload className="h-4 w-4 mr-2" />
-                      Simple Import
-                    </Button>
                     <Button 
                       variant="outline"
                       onClick={handleExportLeads}
@@ -1610,7 +2366,7 @@ Average Credit Score: ${Math.round(leads.reduce((sum, lead) => sum + lead.credit
                     </Button>
                     <Button 
                       onClick={handleAddLeadClick}
-                      className="bg-blue-600 hover:bg-blue-700"
+                      className="bg-blue-600 hover:bg-blue-700 text-white"
                     >
                       <UserPlus className="h-4 w-4 mr-2" />
                       Add Lead
@@ -1625,8 +2381,8 @@ Average Credit Score: ${Math.round(leads.reduce((sum, lead) => sum + lead.credit
                       <CardTitle className="text-sm font-medium text-gray-600">Total Leads</CardTitle>
                     </CardHeader>
                     <CardContent>
-                      <div className="text-2xl font-bold text-gray-900">1,247</div>
-                      <p className="text-xs text-green-600">+12% this month</p>
+                      <div className="text-2xl font-bold text-gray-900">{leads.length}</div>
+                      <p className="text-xs text-green-600">+{leads.filter(l => l.createdAt && new Date(l.createdAt) >= new Date(new Date().setDate(new Date().getDate() - 30))).length} this month</p>
                     </CardContent>
                   </Card>
                   
@@ -1635,7 +2391,7 @@ Average Credit Score: ${Math.round(leads.reduce((sum, lead) => sum + lead.credit
                       <CardTitle className="text-sm font-medium text-gray-600">Active Leads</CardTitle>
                     </CardHeader>
                     <CardContent>
-                      <div className="text-2xl font-bold text-gray-900">342</div>
+                      <div className="text-2xl font-bold text-gray-900">{leads.filter(l => !['APPLICATION', 'REJECTED', 'CLOSED'].includes(l.status)).length}</div>
                       <p className="text-xs text-gray-500">In pipeline</p>
                     </CardContent>
                   </Card>
@@ -1645,8 +2401,8 @@ Average Credit Score: ${Math.round(leads.reduce((sum, lead) => sum + lead.credit
                       <CardTitle className="text-sm font-medium text-gray-600">Converted</CardTitle>
                     </CardHeader>
                     <CardContent>
-                      <div className="text-2xl font-bold text-gray-900">89</div>
-                      <p className="text-xs text-green-600">7.1% conversion</p>
+                      <div className="text-2xl font-bold text-gray-900">{leads.filter(l => l.status === 'APPLICATION' || l.status === 'APPROVED').length}</div>
+                      <p className="text-xs text-green-600">{leads.length ? Math.round((leads.filter(l => l.status === 'APPLICATION' || l.status === 'APPROVED').length / leads.length) * 100) : 0}% conversion</p>
                     </CardContent>
                   </Card>
                   
@@ -1655,7 +2411,7 @@ Average Credit Score: ${Math.round(leads.reduce((sum, lead) => sum + lead.credit
                       <CardTitle className="text-sm font-medium text-gray-600">High Priority</CardTitle>
                     </CardHeader>
                     <CardContent>
-                      <div className="text-2xl font-bold text-gray-900">45</div>
+                      <div className="text-2xl font-bold text-gray-900">{leads.filter(l => l.priority === 'HIGH' || l.priority === 'URGENT').length}</div>
                       <p className="text-xs text-red-600">Need attention</p>
                     </CardContent>
                   </Card>
@@ -1717,69 +2473,104 @@ Average Credit Score: ${Math.round(leads.reduce((sum, lead) => sum + lead.credit
                     </div>
                   </CardHeader>
                   <CardContent>
-                    <div className="overflow-x-auto">
-                      <table className="w-full">
-                        <thead>
-                          <tr className="border-b">
-                            <th className="text-left p-3">Lead</th>
-                            <th className="text-left p-3">Contact</th>
-                            <th className="text-left p-3">Loan Amount</th>
-                            <th className="text-left p-3">Status</th>
-                            <th className="text-left p-3">Priority</th>
-                            <th className="text-left p-3">Assigned To</th>
-                            <th className="text-left p-3">Actions</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {filteredLeads.map((lead) => (
-                            <tr key={lead.id} className="border-b hover:bg-gray-50">
-                              <td className="p-3">
-                                <div className="flex items-center gap-3">
-                                  <Avatar>
-                                    <AvatarFallback>{lead.name.split(' ').map(n => n[0]).join('')}</AvatarFallback>
-                                  </Avatar>
-                                  <div>
-                                    <p className="font-medium">{lead.name}</p>
-                                    <p className="text-sm text-gray-500">{lead.phone}</p>
-                                  </div>
-                                </div>
-                              </td>
-                              <td className="p-3">{lead.email}</td>
-                              <td className="p-3">${lead.loanAmount.toLocaleString()}</td>
-                              <td className="p-3">
-                                <Badge className={getStatusColor(lead.status)}>
-                                  {lead.status}
-                                </Badge>
-                              </td>
-                              <td className="p-3">
-                                <Badge className={getPriorityColor(lead.priority)}>
-                                  {lead.priority}
-                                </Badge>
-                              </td>
-                              <td className="p-3">{lead.assignedTo}</td>
-                              <td className="p-3">
-                                <div className="flex gap-2">
-                                  <Button 
-                                    variant="ghost" 
-                                    size="sm"
-                                    onClick={() => handleEditLeadClick(lead)}
-                                  >
-                                    Edit
-                                  </Button>
-                                  <Button 
-                                    variant="ghost" 
-                                    size="sm"
-                                    onClick={() => handleViewLeadClick(lead)}
-                                  >
-                                    View
-                                  </Button>
-                                </div>
-                              </td>
+                    {loading.leads ? (
+                      <div className="space-y-4">
+                        {[...Array(5)].map((_, index) => (
+                          <div key={index} className="flex items-center p-3 border-b animate-pulse">
+                            <div className="flex items-center gap-3 flex-1">
+                              <div className="bg-gray-200 rounded-full h-10 w-10" />
+                              <div className="space-y-2">
+                                <div className="h-4 bg-gray-200 rounded w-32" />
+                                <div className="h-3 bg-gray-200 rounded w-24" />
+                              </div>
+                            </div>
+                            <div className="h-4 bg-gray-200 rounded w-24" />
+                            <div className="h-6 bg-gray-200 rounded w-16" />
+                            <div className="h-6 bg-gray-200 rounded w-16 ml-2" />
+                            <div className="h-6 bg-gray-200 rounded w-24 ml-2" />
+                            <div className="h-8 bg-gray-200 rounded w-32 ml-2 flex gap-2" />
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="overflow-x-auto">
+                        <table className="w-full">
+                          <thead>
+                            <tr className="border-b">
+                              <th className="text-left p-3">Lead</th>
+                              <th className="text-left p-3">Contact</th>
+                              <th className="text-left p-3">Loan Amount</th>
+                              <th className="text-left p-3">Status</th>
+                              <th className="text-left p-3">Priority</th>
+                              <th className="text-left p-3">Assigned To</th>
+                              <th className="text-left p-3">Actions</th>
                             </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
+                          </thead>
+                          <tbody>
+                            {filteredLeads.map((lead) => (
+                              <tr key={lead.id} className="border-b hover:bg-gray-50 transition-colors">
+                                <td className="p-3">
+                                  <div className="flex items-center gap-3">
+                                    <Avatar>
+                                      <AvatarFallback>{lead.name.split(' ').map(n => n[0]).join('')}</AvatarFallback>
+                                    </Avatar>
+                                    <div>
+                                      <p className="font-medium">{lead.name}</p>
+                                      <p className="text-sm text-gray-500">{lead.phone}</p>
+                                    </div>
+                                  </div>
+                                </td>
+                                <td className="p-3">{lead.email}</td>
+                                <td className="p-3">${lead.loanAmount?.toLocaleString() || 0}</td>
+                                <td className="p-3">
+                                  <Badge className={getStatusColor(lead.status)}>
+                                    {lead.status}
+                                  </Badge>
+                                </td>
+                                <td className="p-3">
+                                  <Badge className={getPriorityColor(lead.priority)}>
+                                    {lead.priority}
+                                  </Badge>
+                                </td>
+                                <td className="p-3">{lead.assignedTo || 'Unassigned'}</td>
+                                <td className="p-3">
+                                  <div className="flex gap-2">
+                                    <Button 
+                                      variant="outline" 
+                                      size="sm"
+                                      onClick={() => toggleLeadStatus(lead.id, lead.status)}
+                                    >
+                                      Next Status
+                                    </Button>
+                                    <Button 
+                                      variant="ghost" 
+                                      size="sm"
+                                      onClick={() => handleEditLeadClick(lead)}
+                                    >
+                                      Edit
+                                    </Button>
+                                    <Button 
+                                      variant="ghost" 
+                                      size="sm"
+                                      onClick={() => handleViewLeadClick(lead)}
+                                    >
+                                      View
+                                    </Button>
+                                  </div>
+                                </td>
+                              </tr>
+                            ))}
+                            {filteredLeads.length === 0 && (
+                              <tr>
+                                <td colSpan={7} className="p-3 text-center text-gray-500">
+                                  No leads found
+                                </td>
+                              </tr>
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
                   </CardContent>
                 </Card>
               </div>
@@ -1814,30 +2605,6 @@ Average Credit Score: ${Math.round(leads.reduce((sum, lead) => sum + lead.credit
                     <p className="text-sm text-gray-500">Employee attendance and time tracking</p>
                   </div>
                   <div className="flex gap-2">
-                    <input
-                      type="file"
-                      accept=".csv"
-                      onChange={(e) => {
-                        const file = e.target.files?.[0]
-                        if (file) {
-                          console.log('Attendance import would process:', file.name)
-                          toast({
-                            title: "Import Attendance",
-                            description: `Attendance import functionality would process the CSV file: ${file.name}`,
-                            duration: 4000,
-                          })
-                        }
-                      }}
-                      style={{ display: 'none' }}
-                      id="attendance-import"
-                    />
-                    <Button 
-                      variant="outline"
-                      onClick={() => document.getElementById('attendance-import')?.click()}
-                    >
-                      <Upload className="h-4 w-4 mr-2" />
-                      Import
-                    </Button>
                     <Button 
                       variant="outline"
                       onClick={handleExportAttendance}
@@ -1847,7 +2614,7 @@ Average Credit Score: ${Math.round(leads.reduce((sum, lead) => sum + lead.credit
                     </Button>
                     <Button 
                       onClick={handleGeofenceAttendanceClick}
-                      className="bg-blue-600 hover:bg-blue-700"
+                      className={`${showGeofenceAttendance ? 'bg-gray-600 hover:bg-gray-700' : 'bg-blue-600 hover:bg-blue-700'}`}
                     >
                       <Map className="h-4 w-4 mr-2" />
                       {showGeofenceAttendance ? 'Hide' : 'Show'} Geofence
@@ -1868,7 +2635,7 @@ Average Credit Score: ${Math.round(leads.reduce((sum, lead) => sum + lead.credit
                       variant="outline"
                       onClick={handleCheckOut}
                       disabled={checkInStatus === 'checking'}
-                      className="border-red-200 text-red-700 hover:bg-red-50"
+                      className="border-red-500 text-red-600 hover:bg-red-50"
                     >
                       {checkInStatus === 'checking' ? (
                         <Clock className="h-4 w-4 mr-2 animate-spin" />
@@ -1887,8 +2654,8 @@ Average Credit Score: ${Math.round(leads.reduce((sum, lead) => sum + lead.credit
                       <CardTitle className="text-sm font-medium text-gray-600">Present Today</CardTitle>
                     </CardHeader>
                     <CardContent>
-                      <div className="text-2xl font-bold text-gray-900">38</div>
-                      <p className="text-xs text-green-600">84.4% attendance</p>
+                      <div className="text-2xl font-bold text-gray-900">{attendanceRecords.filter(a => a.status === 'PRESENT').length}</div>
+                      <p className="text-xs text-green-600">{attendanceRecords.length ? Math.round((attendanceRecords.filter(a => a.status === 'PRESENT').length / attendanceRecords.length) * 100) : 0}% attendance</p>
                     </CardContent>
                   </Card>
                   
@@ -1897,8 +2664,8 @@ Average Credit Score: ${Math.round(leads.reduce((sum, lead) => sum + lead.credit
                       <CardTitle className="text-sm font-medium text-gray-600">Late Arrivals</CardTitle>
                     </CardHeader>
                     <CardContent>
-                      <div className="text-2xl font-bold text-gray-900">3</div>
-                      <p className="text-xs text-yellow-600">7.9% late rate</p>
+                      <div className="text-2xl font-bold text-gray-900">{attendanceRecords.filter(a => a.status === 'LATE').length}</div>
+                      <p className="text-xs text-yellow-600">{attendanceRecords.length ? Math.round((attendanceRecords.filter(a => a.status === 'LATE').length / attendanceRecords.length) * 100) : 0}% late rate</p>
                     </CardContent>
                   </Card>
                   
@@ -1907,7 +2674,7 @@ Average Credit Score: ${Math.round(leads.reduce((sum, lead) => sum + lead.credit
                       <CardTitle className="text-sm font-medium text-gray-600">On Leave</CardTitle>
                     </CardHeader>
                     <CardContent>
-                      <div className="text-2xl font-bold text-gray-900">2</div>
+                      <div className="text-2xl font-bold text-gray-900">{attendanceRecords.filter(a => a.status === 'ON_LEAVE').length}</div>
                       <p className="text-xs text-blue-600">Approved leave</p>
                     </CardContent>
                   </Card>
@@ -1917,7 +2684,7 @@ Average Credit Score: ${Math.round(leads.reduce((sum, lead) => sum + lead.credit
                       <CardTitle className="text-sm font-medium text-gray-600">Absent</CardTitle>
                     </CardHeader>
                     <CardContent>
-                      <div className="text-2xl font-bold text-gray-900">2</div>
+                      <div className="text-2xl font-bold text-gray-900">{attendanceRecords.filter(a => a.status === 'ABSENT').length}</div>
                       <p className="text-xs text-red-600">Unexcused</p>
                     </CardContent>
                   </Card>
@@ -1971,69 +2738,104 @@ Average Credit Score: ${Math.round(leads.reduce((sum, lead) => sum + lead.credit
                     </div>
                   </CardHeader>
                   <CardContent>
-                    <div className="overflow-x-auto">
-                      <table className="w-full">
-                        <thead>
-                          <tr className="border-b">
-                            <th className="text-left p-3">Employee</th>
-                            <th className="text-left p-3">Department</th>
-                            <th className="text-left p-3">Check In</th>
-                            <th className="text-left p-3">Check Out</th>
-                            <th className="text-left p-3">Status</th>
-                            <th className="text-left p-3">Location</th>
-                            <th className="text-left p-3">Actions</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {filteredAttendance.map((record) => (
-                            <tr key={record.id} className="border-b hover:bg-gray-50">
-                              <td className="p-3">
-                                <div className="flex items-center gap-3">
-                                  <Avatar>
-                                    <AvatarFallback>{record.name.split(' ').map(n => n[0]).join('')}</AvatarFallback>
-                                  </Avatar>
-                                  <div>
-                                    <p className="font-medium">{record.name}</p>
-                                  </div>
-                                </div>
-                              </td>
-                              <td className="p-3">{record.department}</td>
-                              <td className="p-3">{record.checkIn}</td>
-                              <td className="p-3">{record.checkOut}</td>
-                              <td className="p-3">
-                                <Badge className={getStatusColor(record.status)}>
-                                  {record.status}
-                                </Badge>
-                              </td>
-                              <td className="p-3">
-                                <Badge variant="outline">
-                                  <MapPin className="h-3 w-3 mr-1" />
-                                  {record.location}
-                                </Badge>
-                              </td>
-                              <td className="p-3">
-                                <div className="flex gap-2">
-                                  <Button 
-                                    variant="ghost" 
-                                    size="sm"
-                                    onClick={() => handleViewAttendanceClick(record)}
-                                  >
-                                    View
-                                  </Button>
-                                  <Button 
-                                    variant="ghost" 
-                                    size="sm"
-                                    onClick={() => handleEditAttendanceClick(record)}
-                                  >
-                                    Edit
-                                  </Button>
-                                </div>
-                              </td>
+                    {loading.attendance ? (
+                      <div className="space-y-4">
+                        {[...Array(5)].map((_, index) => (
+                          <div key={index} className="flex items-center p-3 border-b animate-pulse">
+                            <div className="flex items-center gap-3 flex-1">
+                              <div className="bg-gray-200 rounded-full h-10 w-10" />
+                              <div className="space-y-2">
+                                <div className="h-4 bg-gray-200 rounded w-32" />
+                              </div>
+                            </div>
+                            <div className="h-4 bg-gray-200 rounded w-20" />
+                            <div className="h-4 bg-gray-200 rounded w-16" />
+                            <div className="h-4 bg-gray-200 rounded w-16" />
+                            <div className="h-6 bg-gray-200 rounded w-16" />
+                            <div className="h-6 bg-gray-200 rounded w-24" />
+                            <div className="h-8 bg-gray-200 rounded w-32 ml-2 flex gap-2" />
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="overflow-x-auto">
+                        <table className="w-full">
+                          <thead>
+                            <tr className="border-b">
+                              <th className="text-left p-3">Employee</th>
+                              <th className="text-left p-3">Department</th>
+                              <th className="text-left p-3">Check In</th>
+                              <th className="text-left p-3">Check Out</th>
+                              <th className="text-left p-3">Status</th>
+                              <th className="text-left p-3">Location</th>
+                              <th className="text-left p-3">Actions</th>
                             </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
+                          </thead>
+                          <tbody>
+                            {filteredAttendance.map((record) => (
+                              <tr key={record.id} className="border-b hover:bg-gray-50 transition-colors">
+                                <td className="p-3">
+                                  <div className="flex items-center gap-3">
+                                    <Avatar>
+                                      <AvatarFallback>{record.name.split(' ').map(n => n[0]).join('')}</AvatarFallback>
+                                    </Avatar>
+                                    <div>
+                                      <p className="font-medium">{record.name}</p>
+                                    </div>
+                                  </div>
+                                </td>
+                                <td className="p-3">{record.department}</td>
+                                <td className="p-3">{record.checkIn}</td>
+                                <td className="p-3">{record.checkOut}</td>
+                                <td className="p-3">
+                                  <Badge className={getStatusColor(record.status)}>
+                                    {record.status}
+                                  </Badge>
+                                </td>
+                                <td className="p-3">
+                                  <Badge variant="outline">
+                                    <MapPin className="h-3 w-3 mr-1" />
+                                    {record.location}
+                                  </Badge>
+                                </td>
+                                <td className="p-3">
+                                  <div className="flex gap-2">
+                                    <Button 
+                                      variant="outline" 
+                                      size="sm"
+                                      onClick={() => handleViewAttendanceClick(record)}
+                                    >
+                                      View
+                                    </Button>
+                                    <Button 
+                                      variant="ghost" 
+                                      size="sm"
+                                      onClick={() => handleEditAttendanceClick(record)}
+                                    >
+                                      Edit
+                                    </Button>
+                                    <Button 
+                                      variant="destructive" 
+                                      size="sm"
+                                      onClick={() => handleDeleteAttendance(record.id)}
+                                    >
+                                      Delete
+                                    </Button>
+                                  </div>
+                                </td>
+                              </tr>
+                            ))}
+                            {filteredAttendance.length === 0 && (
+                              <tr>
+                                <td colSpan={7} className="p-3 text-center text-gray-500">
+                                  No attendance records found
+                                </td>
+                              </tr>
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
                   </CardContent>
                 </Card>
               </div>
@@ -2098,7 +2900,6 @@ Average Credit Score: ${Math.round(leads.reduce((sum, lead) => sum + lead.credit
                         a.download = `reports_${new Date().toISOString().split('T')[0]}.csv`
                         a.click()
                         window.URL.revokeObjectURL(url)
-                        console.log('✅ Reports exported')
                       }}
                     >
                       <Download className="h-4 w-4 mr-2" />
@@ -2109,18 +2910,18 @@ Average Credit Score: ${Math.round(leads.reduce((sum, lead) => sum + lead.credit
 
                 {/* Analytics Overview */}
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                  <Card>
+                  <Card className={loading.stats ? "opacity-70 animate-pulse" : ""}>
                     <CardHeader>
                       <CardTitle>Lead Conversion Rate</CardTitle>
                       <CardDescription>Monthly conversion trends</CardDescription>
                     </CardHeader>
                     <CardContent>
-                      <div className="text-3xl font-bold text-green-600">7.1%</div>
+                      <div className="text-3xl font-bold text-green-600">{stats.conversionRate}%</div>
                       <p className="text-sm text-gray-500">+2.1% from last month</p>
                     </CardContent>
                   </Card>
                   
-                  <Card>
+                  <Card className={loading.stats ? "opacity-70 animate-pulse" : ""}>
                     <CardHeader>
                       <CardTitle>Average Response Time</CardTitle>
                       <CardDescription>Time to first contact</CardDescription>
@@ -2131,13 +2932,13 @@ Average Credit Score: ${Math.round(leads.reduce((sum, lead) => sum + lead.credit
                     </CardContent>
                   </Card>
                   
-                  <Card>
+                  <Card className={loading.stats ? "opacity-70 animate-pulse" : ""}>
                     <CardHeader>
                       <CardTitle>Employee Productivity</CardTitle>
                       <CardDescription>Leads per employee</CardDescription>
                     </CardHeader>
                     <CardContent>
-                      <div className="text-3xl font-bold text-purple-600">24.2</div>
+                      <div className="text-3xl font-bold text-purple-600">{stats.totalLeads && stats.totalEmployees ? Math.round(stats.totalLeads / stats.totalEmployees * 100) / 100 : 0}</div>
                       <p className="text-sm text-gray-500">+3.2 from average</p>
                     </CardContent>
                   </Card>
@@ -2153,11 +2954,11 @@ Average Credit Score: ${Math.round(leads.reduce((sum, lead) => sum + lead.credit
                     <CardContent>
                       <div className="space-y-4">
                         {[
-                          { source: "Website", count: 456, percentage: 37 },
-                          { source: "Referral", count: 298, percentage: 24 },
-                          { source: "Social Media", count: 189, percentage: 15 },
-                          { source: "Email Campaign", count: 156, percentage: 13 },
-                          { source: "Other", count: 148, percentage: 11 }
+                          { source: "Website", count: Math.round(leads.length * 0.37), percentage: 37 },
+                          { source: "Referral", count: Math.round(leads.length * 0.24), percentage: 24 },
+                          { source: "Social Media", count: Math.round(leads.length * 0.15), percentage: 15 },
+                          { source: "Email Campaign", count: Math.round(leads.length * 0.13), percentage: 13 },
+                          { source: "Other", count: Math.round(leads.length * 0.11), percentage: 11 }
                         ].map((item) => (
                           <div key={item.source} className="space-y-2">
                             <div className="flex justify-between">
@@ -2181,10 +2982,10 @@ Average Credit Score: ${Math.round(leads.reduce((sum, lead) => sum + lead.credit
                     <CardContent>
                       <div className="space-y-4">
                         {[
-                          { department: "Sales", leads: 489, converted: 45, rate: 9.2 },
-                          { department: "Support", leads: 312, converted: 22, rate: 7.1 },
-                          { department: "Marketing", leads: 245, converted: 15, rate: 6.1 },
-                          { department: "IT", leads: 201, converted: 7, rate: 3.5 }
+                          { department: "Sales", leads: Math.round(leads.length * 0.5), converted: Math.round(leads.length * 0.5 * 0.09), rate: 9.2 },
+                          { department: "Support", leads: Math.round(leads.length * 0.3), converted: Math.round(leads.length * 0.3 * 0.07), rate: 7.1 },
+                          { department: "Marketing", leads: Math.round(leads.length * 0.15), converted: Math.round(leads.length * 0.15 * 0.06), rate: 6.1 },
+                          { department: "IT", leads: Math.round(leads.length * 0.05), converted: Math.round(leads.length * 0.05 * 0.04), rate: 3.5 }
                         ].map((dept) => (
                           <div key={dept.department} className="flex items-center justify-between p-3 border rounded-lg">
                             <div>
@@ -2209,93 +3010,206 @@ Average Credit Score: ${Math.round(leads.reduce((sum, lead) => sum + lead.credit
 
       {/* Add Employee Modal */}
       <Dialog open={showAddEmployeeModal} onOpenChange={setShowAddEmployeeModal}>
-        <DialogContent className="sm:max-w-[425px]">
+        <DialogContent className="sm:max-w-[600px] max-w-2xl">
           <DialogHeader>
-            <DialogTitle>Add New Employee</DialogTitle>
+            <DialogTitle className="text-xl font-semibold">
+              {editingEmployee ? 'Edit Employee' : 'Add New Employee'}
+            </DialogTitle>
             <DialogDescription>
-              Create a new employee record in the system.
+              {editingEmployee 
+                ? 'Update employee details below.' 
+                : 'Fill in the employee information to create a new record.'}
             </DialogDescription>
           </DialogHeader>
-          <div className="grid gap-4 py-4">
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="name" className="text-right">
-                Name
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 py-4 max-h-[70vh] overflow-y-auto">
+            <div className="space-y-2">
+              <Label htmlFor="firstName" className="text-sm font-medium">
+                First Name *
               </Label>
               <Input
-                id="name"
-                value={newEmployee.name}
-                onChange={(e) => setNewEmployee({...newEmployee, name: e.target.value})}
-                className="col-span-3"
+                id="firstName"
+                value={newEmployee.firstName}
+                onChange={(e) => setNewEmployee({...newEmployee, firstName: e.target.value})}
+                placeholder="Enter first name"
+                className="h-10"
               />
             </div>
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="email" className="text-right">
-                Email
+            <div className="space-y-2">
+              <Label htmlFor="lastName" className="text-sm font-medium">
+                Last Name
+              </Label>
+              <Input
+                id="lastName"
+                value={newEmployee.lastName}
+                onChange={(e) => setNewEmployee({...newEmployee, lastName: e.target.value})}
+                placeholder="Enter last name"
+                className="h-10"
+              />
+            </div>
+            <div className="space-y-2 md:col-span-2">
+              <Label htmlFor="email" className="text-sm font-medium">
+                Email *
               </Label>
               <Input
                 id="email"
                 type="email"
                 value={newEmployee.email}
                 onChange={(e) => setNewEmployee({...newEmployee, email: e.target.value})}
-                className="col-span-3"
+                placeholder="Enter email address"
+                className="h-10"
               />
             </div>
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="phone" className="text-right">
-                Phone
+            <div className="space-y-2 md:col-span-2">
+              <Label htmlFor="phone" className="text-sm font-medium">
+                Phone Number
               </Label>
-              <Input
-                id="phone"
-                value={newEmployee.phone}
-                onChange={(e) => setNewEmployee({...newEmployee, phone: e.target.value})}
-                className="col-span-3"
-              />
+              <div className="flex gap-2">
+                <Select value={newEmployee.countryCode} onValueChange={(value) => setNewEmployee({...newEmployee, countryCode: value})}>
+                  <SelectTrigger className="w-[100px] h-10">
+                    <SelectValue placeholder="Code" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="+1">🇺🇸 +1</SelectItem>
+                    <SelectItem value="+44">🇬🇧 +44</SelectItem>
+                    <SelectItem value="+91">🇮🇳 +91</SelectItem>
+                    <SelectItem value="+86">🇨🇳 +86</SelectItem>
+                    <SelectItem value="+49">🇩🇪 +49</SelectItem>
+                    <SelectItem value="+33">🇫🇷 +33</SelectItem>
+                    <SelectItem value="+81">🇯🇵 +81</SelectItem>
+                    <SelectItem value="+55">🇧🇷 +55</SelectItem>
+                    <SelectItem value="+7">🇷🇺 +7</SelectItem>
+                    <SelectItem value="+234">🇳🇬 +234</SelectItem>
+                    <SelectItem value="+971">🇦🇪 +971</SelectItem>
+                    <SelectItem value="+966">🇸🇦 +966</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Input
+                  id="phone"
+                  value={newEmployee.phone}
+                  onChange={(e) => setNewEmployee({...newEmployee, phone: e.target.value})}
+                  placeholder="Enter phone number"
+                  className="flex-1 h-10"
+                />
+              </div>
             </div>
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="position" className="text-right">
-                Position
+            <div className="space-y-2">
+              <Label htmlFor="position" className="text-sm font-medium">
+                Position *
               </Label>
               <Input
                 id="position"
                 value={newEmployee.position}
                 onChange={(e) => setNewEmployee({...newEmployee, position: e.target.value})}
-                className="col-span-3"
+                placeholder="Enter position"
+                className="h-10"
               />
             </div>
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="department" className="text-right">
-                Department
+            <div className="space-y-2">
+              <Label htmlFor="departmentId" className="text-sm font-medium">
+                Department *
               </Label>
-              <Select value={newEmployee.department} onValueChange={(value) => setNewEmployee({...newEmployee, department: value})}>
-                <SelectTrigger className="col-span-3">
+              <Select value={newEmployee.departmentId} onValueChange={(value) => setNewEmployee({...newEmployee, departmentId: value})}>
+                <SelectTrigger className="h-10">
                   <SelectValue placeholder="Select department" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="Sales">Sales</SelectItem>
-                  <SelectItem value="IT">IT</SelectItem>
-                  <SelectItem value="HR">HR</SelectItem>
-                  <SelectItem value="Support">Support</SelectItem>
+                  {departments.map((dept) => (
+                    <SelectItem key={dept.id} value={dept.id}>
+                      {dept.name}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="address" className="text-right">
+            <div className="space-y-2">
+              <Label htmlFor="roleId" className="text-sm font-medium">
+                Role
+              </Label>
+              <Select value={newEmployee.roleId} onValueChange={(value) => setNewEmployee({...newEmployee, roleId: value})}>
+                <SelectTrigger className="h-10">
+                  <SelectValue placeholder="Select role" />
+                </SelectTrigger>
+                <SelectContent>
+                  {roles.map((role) => (
+                    <SelectItem key={role.id} value={role.id}>
+                      {role.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="status" className="text-sm font-medium">
+                Status
+              </Label>
+              <Select value={newEmployee.status} onValueChange={(value) => setNewEmployee({...newEmployee, status: value})}>
+                <SelectTrigger className="h-10">
+                  <SelectValue placeholder="Select status" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ACTIVE">Active</SelectItem>
+                  <SelectItem value="INACTIVE">Inactive</SelectItem>
+                  <SelectItem value="ON_LEAVE">On Leave</SelectItem>
+                  <SelectItem value="TERMINATED">Terminated</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2 md:col-span-2">
+              <Label htmlFor="address" className="text-sm font-medium">
                 Address
               </Label>
               <Input
                 id="address"
                 value={newEmployee.address}
                 onChange={(e) => setNewEmployee({...newEmployee, address: e.target.value})}
-                className="col-span-3"
+                placeholder="Enter address"
+                className="h-10"
+              />
+            </div>
+            <div className="space-y-2 md:col-span-2">
+              <Label htmlFor="hireDate" className="text-sm font-medium">
+                Hire Date *
+              </Label>
+              <Input
+                id="hireDate"
+                type="date"
+                value={newEmployee.hireDate}
+                onChange={(e) => setNewEmployee({...newEmployee, hireDate: e.target.value})}
+                className="h-10"
               />
             </div>
           </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowAddEmployeeModal(false)}>
+          <DialogFooter className="flex sm:justify-between">
+            <Button 
+              type="button"
+              variant="outline"
+              onClick={() => {
+                setShowAddEmployeeModal(false);
+                setEditingEmployee(null);
+                setNewEmployee({
+                  firstName: '',
+                  lastName: '',
+                  email: '',
+                  phone: '',
+                  countryCode: '+1',
+                  position: '',
+                  departmentId: '',
+                  roleId: 'default-role',
+                  address: '',
+                  status: 'ACTIVE',
+                  hireDate: new Date().toISOString().split('T')[0]
+                });
+              }}
+              className="w-full sm:w-auto"
+            >
               Cancel
             </Button>
-            <Button onClick={handleAddEmployee}>
-              Add Employee
+            <Button 
+              type="button"
+              onClick={editingEmployee ? handleUpdateEmployee : handleAddEmployee}
+              className="w-full sm:w-auto bg-blue-600 hover:bg-blue-700 text-white"
+            >
+              {editingEmployee ? 'Update Employee' : 'Create Employee'}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -2305,86 +3219,84 @@ Average Credit Score: ${Math.round(leads.reduce((sum, lead) => sum + lead.credit
       <Dialog open={showAddLeadModal} onOpenChange={setShowAddLeadModal}>
         <DialogContent className="sm:max-w-[600px] max-h-[80vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Add New Lead</DialogTitle>
+            <DialogTitle>{editingLead ? 'Edit Lead' : 'Add New Lead'}</DialogTitle>
             <DialogDescription>
-              Enter the lead information below. All fields marked with * are required.
+              {editingLead ? 'Update the lead information below.' : 'Enter the lead information below. All fields marked with * are required.'}
             </DialogDescription>
           </DialogHeader>
-          <div className="grid gap-4 py-4">
-            <div className="grid grid-cols-2 items-center gap-4">
-              <Label htmlFor="firstName" className="text-right">
-                First Name *
-              </Label>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="firstName">First Name *</Label>
               <Input
                 id="firstName"
                 value={newLead.firstName}
                 onChange={(e) => handleLeadInputChange('firstName', e.target.value)}
-                className="col-span-1"
+                placeholder="Enter first name"
               />
             </div>
-            <div className="grid grid-cols-2 items-center gap-4">
-              <Label htmlFor="lastName" className="text-right">
-                Last Name *
-              </Label>
+            <div className="space-y-2">
+              <Label htmlFor="lastName">Last Name *</Label>
               <Input
                 id="lastName"
                 value={newLead.lastName}
                 onChange={(e) => handleLeadInputChange('lastName', e.target.value)}
-                className="col-span-1"
+                placeholder="Enter last name"
               />
             </div>
-            <div className="grid grid-cols-2 items-center gap-4">
-              <Label htmlFor="email" className="text-right">
-                Email *
-              </Label>
+            <div className="space-y-2">
+              <Label htmlFor="email">Email *</Label>
               <Input
                 id="email"
                 type="email"
                 value={newLead.email}
                 onChange={(e) => handleLeadInputChange('email', e.target.value)}
-                className="col-span-1"
+                placeholder="Enter email address"
               />
             </div>
-            <div className="grid grid-cols-2 items-center gap-4">
-              <Label htmlFor="phone" className="text-right">
-                Phone *
-              </Label>
+            <div className="space-y-2">
+              <Label htmlFor="phone">Phone *</Label>
               <Input
                 id="phone"
                 value={newLead.phone}
                 onChange={(e) => handleLeadInputChange('phone', e.target.value)}
-                className="col-span-1"
+                placeholder="Enter phone number"
               />
             </div>
-            <div className="grid grid-cols-2 items-center gap-4">
-              <Label htmlFor="loanAmount" className="text-right">
-                Loan Amount ($)
-              </Label>
+            <div className="space-y-2">
+              <Label htmlFor="loanAmount">Loan Amount ($)</Label>
               <Input
                 id="loanAmount"
                 type="number"
                 value={newLead.loanAmount}
                 onChange={(e) => handleLeadInputChange('loanAmount', e.target.value)}
-                className="col-span-1"
+                placeholder="Enter loan amount"
               />
             </div>
-            <div className="grid grid-cols-2 items-center gap-4">
-              <Label htmlFor="propertyAddress" className="text-right">
-                Property Address
-              </Label>
+            <div className="space-y-2">
+              <Label htmlFor="creditScore">Credit Score</Label>
+              <Input
+                id="creditScore"
+                type="number"
+                value={newLead.creditScore}
+                onChange={(e) => handleLeadInputChange('creditScore', e.target.value)}
+                min="300"
+                max="850"
+                placeholder="Enter credit score"
+              />
+            </div>
+            <div className="space-y-2 md:col-span-2">
+              <Label htmlFor="propertyAddress">Property Address</Label>
               <Input
                 id="propertyAddress"
                 value={newLead.propertyAddress}
                 onChange={(e) => handleLeadInputChange('propertyAddress', e.target.value)}
-                className="col-span-1"
+                placeholder="Enter property address"
               />
             </div>
-            <div className="grid grid-cols-2 items-center gap-4">
-              <Label htmlFor="propertyType" className="text-right">
-                Property Type
-              </Label>
+            <div className="space-y-2">
+              <Label htmlFor="propertyType">Property Type</Label>
               <Select value={newLead.propertyType} onValueChange={(value) => handleLeadInputChange('propertyType', value)}>
-                <SelectTrigger className="col-span-1">
+                <SelectTrigger>
                   <SelectValue placeholder="Select property type" />
                 </SelectTrigger>
                 <SelectContent>
@@ -2396,26 +3308,10 @@ Average Credit Score: ${Math.round(leads.reduce((sum, lead) => sum + lead.credit
                 </SelectContent>
               </Select>
             </div>
-            <div className="grid grid-cols-2 items-center gap-4">
-              <Label htmlFor="creditScore" className="text-right">
-                Credit Score
-              </Label>
-              <Input
-                id="creditScore"
-                type="number"
-                value={newLead.creditScore}
-                onChange={(e) => handleLeadInputChange('creditScore', e.target.value)}
-                className="col-span-1"
-                min="300"
-                max="850"
-              />
-            </div>
-            <div className="grid grid-cols-2 items-center gap-4">
-              <Label htmlFor="source" className="text-right">
-                Lead Source
-              </Label>
+            <div className="space-y-2">
+              <Label htmlFor="source">Lead Source</Label>
               <Select value={newLead.source} onValueChange={(value) => handleLeadInputChange('source', value)}>
-                <SelectTrigger className="col-span-1">
+                <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -2429,12 +3325,10 @@ Average Credit Score: ${Math.round(leads.reduce((sum, lead) => sum + lead.credit
                 </SelectContent>
               </Select>
             </div>
-            <div className="grid grid-cols-2 items-center gap-4">
-              <Label htmlFor="priority" className="text-right">
-                Priority
-              </Label>
+            <div className="space-y-2">
+              <Label htmlFor="priority">Priority</Label>
               <Select value={newLead.priority} onValueChange={(value) => handleLeadInputChange('priority', value)}>
-                <SelectTrigger className="col-span-1">
+                <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -2445,27 +3339,49 @@ Average Credit Score: ${Math.round(leads.reduce((sum, lead) => sum + lead.credit
                 </SelectContent>
               </Select>
             </div>
-            <div className="grid grid-cols-1 items-center gap-4">
-              <Label htmlFor="notes" className="text-right">
-                Notes
-              </Label>
+            <div className="space-y-2 md:col-span-2">
+              <Label htmlFor="notes">Notes</Label>
               <textarea
                 id="notes"
                 value={newLead.notes}
                 onChange={(e) => handleLeadInputChange('notes', e.target.value)}
-                className="col-span-3 w-full p-2 border border-gray-300 rounded-md resize-none"
+                className="w-full p-2 border border-gray-300 rounded-md resize-none"
                 rows={3}
                 placeholder="Additional notes about this lead..."
               />
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowAddLeadModal(false)}>
+            <Button variant="outline" onClick={() => {
+              setShowAddLeadModal(false)
+              setEditingLead(null)
+              setNewLead({
+                firstName: '',
+                lastName: '',
+                email: '',
+                phone: '',
+                loanAmount: '',
+                propertyAddress: '',
+                propertyType: '',
+                creditScore: '',
+                source: 'Website',
+                priority: 'MEDIUM',
+                notes: ''
+              })
+            }}>
               Cancel
             </Button>
-            <Button onClick={handleAddLead} className="bg-blue-600 hover:bg-blue-700">
-              <UserPlus className="h-4 w-4 mr-2" />
-              Add Lead
+            <Button onClick={editingLead ? handleUpdateLead : handleAddLead} className={editingLead ? "" : "bg-blue-600 hover:bg-blue-700"}>
+              {editingLead ? (
+                <>
+                  Update Lead
+                </>
+              ) : (
+                <>
+                  <UserPlus className="h-4 w-4 mr-2" />
+                  Add Lead
+                </>
+              )}
             </Button>
           </DialogFooter>
         </DialogContent>

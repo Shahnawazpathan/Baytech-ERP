@@ -4,15 +4,22 @@ import { createContext, useContext, useEffect, useState, ReactNode } from 'react
 
 interface User {
   id: string
-  username: string
+  employeeId: string
+  firstName: string
+  lastName: string
+  email: string
+  position: string
+  department: string
   role: string
+  roleId: string
   name: string
+  companyId: string
 }
 
 interface AuthContextType {
   user: User | null
   isAuthenticated: boolean
-  login: (username: string, password: string) => Promise<boolean>
+  login: (email: string, password: string) => Promise<boolean>
   logout: () => void
   isLoading: boolean
 }
@@ -46,18 +53,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     checkAuth()
   }, [])
 
-  const login = async (username: string, password: string): Promise<boolean> => {
+  const login = async (email: string, password: string): Promise<boolean> => {
     try {
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 500))
-      
-      if (username === 'admin' && password === 'baytech2024') {
-        const userData: User = {
-          id: 'default-employee',
-          username: 'admin',
-          role: 'administrator',
-          name: 'System Administrator'
-        }
+      // Call the login API
+      const response = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ email, password }),
+      })
+
+      const data = await response.json()
+
+      if (response.ok && data.success) {
+        const userData = data.user
         
         localStorage.setItem('isAuthenticated', 'true')
         localStorage.setItem('user', JSON.stringify(userData))
@@ -66,9 +76,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setIsAuthenticated(true)
         
         return true
+      } else {
+        return false
       }
-      
-      return false
     } catch (error) {
       console.error('Login error:', error)
       return false

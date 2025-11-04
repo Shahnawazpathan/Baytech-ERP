@@ -131,6 +131,7 @@ model Employee {
   salary        Float?
   status        String   @default("ACTIVE") // ACTIVE, INACTIVE, TERMINATED, ON_LEAVE
   profileImage  String?
+  password      String?  // Hashed password for authentication
   companyId     String
   isActive      Boolean  @default(true)
   createdAt     DateTime @default(now())

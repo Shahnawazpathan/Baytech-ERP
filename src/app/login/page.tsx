@@ -10,7 +10,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Building2, Eye, EyeOff } from 'lucide-react'
 
 export default function LoginPage() {
-  const [username, setUsername] = useState('')
+  const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
@@ -23,23 +23,26 @@ export default function LoginPage() {
     setError('')
 
     try {
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 1000))
-      
-      // Admin credentials
-      if (username === 'admin' && password === 'baytech2024') {
+      // Call the login API
+      const response = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ email, password }),
+      })
+
+      const data = await response.json()
+
+      if (response.ok && data.success) {
         // Store authentication state
         localStorage.setItem('isAuthenticated', 'true')
-        localStorage.setItem('user', JSON.stringify({
-          username: 'admin',
-          role: 'administrator',
-          name: 'System Administrator'
-        }))
+        localStorage.setItem('user', JSON.stringify(data.user))
         
         // Redirect to dashboard
         router.push('/')
       } else {
-        setError('Invalid username or password')
+        setError(data.error || 'Invalid email or password')
       }
     } catch (err) {
       setError('Login failed. Please try again.')
@@ -75,13 +78,13 @@ export default function LoginPage() {
               )}
               
               <div className="space-y-2">
-                <Label htmlFor="username">Username</Label>
+                <Label htmlFor="email">Email</Label>
                 <Input
-                  id="username"
-                  type="text"
-                  value={username}
-                  onChange={(e) => setUsername(e.target.value)}
-                  placeholder="Enter your username"
+                  id="email"
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="Enter your email address"
                   required
                   disabled={isLoading}
                 />
@@ -130,8 +133,8 @@ export default function LoginPage() {
               <p className="mb-2">
                 <strong>Demo Credentials:</strong>
               </p>
-              <p>Username: admin</p>
-              <p>Password: baytech2024</p>
+              <p>Email: admin@baytech.com</p>
+              <p>Password: Admin@123</p>
             </div>
           </CardContent>
         </Card>
