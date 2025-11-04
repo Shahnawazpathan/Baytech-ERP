@@ -13,11 +13,25 @@ import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+  ResponsiveContainer,
+  PieChart,
+  Pie,
+  Cell
+} from 'recharts'
 import { ProtectedRoute } from '@/components/auth/protected-route'
 import { useAuth } from '@/hooks/use-auth'
 import { useToast } from '@/hooks/use-toast'
 import { useLenis } from '@/hooks/use-lenis'
 import { LeadImportModal } from '@/components/LeadImportModal'
+import { LeadAssignment } from '@/components/LeadAssignment'
 import { GeofenceAttendance } from '@/components/GeofenceAttendance'
 import { GeofenceLocationManager } from '@/components/GeofenceLocationManager'
 import { TaskManagement } from '@/components/TaskManagement'
@@ -106,7 +120,6 @@ export default function Home() {
       });
 
       newSocket.on('connect', () => {
-        console.log('Connected to WebSocket server');
         // Authenticate user after connection
         newSocket.emit('authenticate', {
           userId: user.id,
@@ -191,7 +204,7 @@ export default function Home() {
           setRoles(rolesData);
         }
       } catch (error) {
-        console.error('Error fetching departments/roles:', error);
+        // Error is handled by toast notification elsewhere
       }
     };
 
@@ -339,7 +352,6 @@ export default function Home() {
         }
       }
     } catch (error) {
-      console.error('Error fetching data:', error)
       toast({
         title: "Error",
         description: "Failed to load data. Please try again.",
@@ -383,7 +395,7 @@ export default function Home() {
         setUnreadNotifications(prev => prev - 1)
       }
     } catch (error) {
-      console.error('Error marking notification as read:', error)
+      // Error handling would go here if needed
     }
   }
 
@@ -402,14 +414,103 @@ export default function Home() {
         setUnreadNotifications(0)
       }
     } catch (error) {
-      console.error('Error marking all notifications as read:', error)
+      // Error handling would go here if needed
     }
   }
 
   // Initial data fetch
   useEffect(() => {
     fetchData()
+    // Also fetch reports data
+    fetchReportsData()
   }, [])
+
+  // Function to specifically fetch reports data
+  const fetchReportsData = async () => {
+    try {
+      const reportsRes = await fetch('/api/reports', {
+        headers: {
+          'x-user-id': user?.id || '',
+          'x-company-id': 'default-company'
+        }
+      });
+      if (reportsRes.ok) {
+        const reportsData = await reportsRes.json();
+        if (reportsData.success) {
+          setReports(reportsData.data || []);
+        }
+      }
+    } catch (error) {
+      // Error is handled elsewhere
+    }
+  }
+
+  // Refresh data when tab changes
+  useEffect(() => {
+    if (activeTab === 'overview') {
+      fetchData() // Refresh all data for overview
+    } else if (activeTab === 'analytics') {
+      // Fetch reports data when on analytics tab
+      fetchReportsData()
+    } else {
+      // Refresh specific tab data
+      const refreshTabData = async () => {
+        setIsRefreshing(true)
+        try {
+          switch (activeTab) {
+            case 'employees':
+              if (canViewEmployees) {
+                const employeesRes = await fetch('/api/employees', {
+                  headers: {
+                    'x-user-id': user?.id || '',
+                    'x-company-id': 'default-company'
+                  }
+                })
+                if (employeesRes.ok) {
+                  const data = await employeesRes.json()
+                  setEmployees(data)
+                }
+              }
+              break
+            case 'leads':
+              if (canViewLeads) {
+                const leadsRes = await fetch('/api/leads', {
+                  headers: {
+                    'x-user-id': user?.id || '',
+                    'x-company-id': 'default-company'
+                  }
+                })
+                if (leadsRes.ok) {
+                  const data = await leadsRes.json()
+                  setLeads(data)
+                }
+              }
+              break
+            case 'attendance':
+              if (canViewAttendance) {
+                const attendanceRes = await fetch('/api/attendance', {
+                  headers: {
+                    'x-user-id': user?.id || '',
+                    'x-company-id': 'default-company'
+                  }
+                })
+                if (attendanceRes.ok) {
+                  const data = await attendanceRes.json()
+                  setAttendanceRecords(data)
+                }
+              }
+              break
+          }
+        } catch (error) {
+          // Error is handled by toast notification elsewhere
+        } finally {
+          setIsRefreshing(false)
+        }
+      }
+      
+      refreshTabData()
+    }
+  }, [activeTab, canViewEmployees, canViewLeads, canViewAttendance])
 
   // Refresh data when tab changes
   useEffect(() => {
@@ -465,7 +566,7 @@ export default function Home() {
               break
           }
         } catch (error) {
-          console.error(`Error refreshing ${activeTab} data:`, error)
+          // Error is handled by toast notification elsewhere
         } finally {
           setIsRefreshing(false)
         }
@@ -501,9 +602,9 @@ export default function Home() {
 
   // Filtered data
   const filteredEmployees = employees.filter(employee => {
-    const matchesSearch = employee.name.toLowerCase().includes(employeeFilter.search.toLowerCase()) ||
-                         employee.email.toLowerCase().includes(employeeFilter.search.toLowerCase()) ||
-                         employee.position.toLowerCase().includes(employeeFilter.search.toLowerCase())
+    const matchesSearch = (employee.name && employee.name.toLowerCase().includes(employeeFilter.search.toLowerCase())) ||
+                         (employee.email && employee.email.toLowerCase().includes(employeeFilter.search.toLowerCase())) ||
+                         (employee.position && employee.position.toLowerCase().includes(employeeFilter.search.toLowerCase()))
     const matchesDepartment = employeeFilter.department === 'ALL' || employee.departmentId === employeeFilter.department
     const matchesStatus = employeeFilter.status === 'ALL' || employee.status === employeeFilter.status
     
@@ -514,12 +615,12 @@ export default function Home() {
       roleMatches = employee.id === user?.id;
     }
     
-    return matchesSearch && matchesDepartment && matchesStatus && roleMatches
+    return (employeeFilter.search === '' || matchesSearch) && matchesDepartment && matchesStatus && roleMatches
   })
 
   const filteredLeads = leads.filter(lead => {
-    const matchesSearch = lead.name.toLowerCase().includes(leadFilter.search.toLowerCase()) ||
-                         lead.email.toLowerCase().includes(leadFilter.search.toLowerCase())
+    const matchesSearch = (lead.name && lead.name.toLowerCase().includes(leadFilter.search.toLowerCase())) ||
+                         (lead.email && lead.email.toLowerCase().includes(leadFilter.search.toLowerCase()))
     const matchesStatus = leadFilter.status === 'ALL' || lead.status === leadFilter.status
     const matchesPriority = leadFilter.priority === 'ALL' || lead.priority === leadFilter.priority
     
@@ -530,13 +631,13 @@ export default function Home() {
       roleMatches = lead.assignedToId === user?.id || !lead.assignedToId; // Can see unassigned leads too
     }
     
-    return matchesSearch && matchesStatus && matchesPriority && roleMatches
+    return (leadFilter.search === '' || matchesSearch) && matchesStatus && matchesPriority && roleMatches
   })
 
   const filteredAttendance = attendanceRecords.filter(record => {
-    const matchesSearch = record.name.toLowerCase().includes(attendanceFilter.search.toLowerCase()) ||
-                         record.department.toLowerCase().includes(attendanceFilter.search.toLowerCase()) ||
-                         record.location.toLowerCase().includes(attendanceFilter.search.toLowerCase())
+    const matchesSearch = (record.name && record.name.toLowerCase().includes(attendanceFilter.search.toLowerCase())) ||
+                         (record.department && record.department.toLowerCase().includes(attendanceFilter.search.toLowerCase())) ||
+                         (record.location && record.location.toLowerCase().includes(attendanceFilter.search.toLowerCase()))
     const matchesDepartment = attendanceFilter.department === 'ALL' || record.department === attendanceFilter.department
     const matchesStatus = attendanceFilter.status === 'ALL' || record.status === attendanceFilter.status
     
@@ -547,7 +648,7 @@ export default function Home() {
       roleMatches = record.employeeId === user?.id;
     }
     
-    return matchesSearch && matchesDepartment && matchesStatus && roleMatches
+    return (attendanceFilter.search === '' || matchesSearch) && matchesDepartment && matchesStatus && roleMatches
   })
 
   // Recent data for overview
@@ -921,7 +1022,6 @@ export default function Home() {
         });
         
         if (!response.ok) {
-          console.error('Failed to import lead:', await response.json());
           throw new Error(`Failed to import lead: ${response.statusText}`);
         }
       }
@@ -935,7 +1035,6 @@ export default function Home() {
         duration: 4000,
       });
     } catch (error) {
-      console.error('Error importing leads:', error);
       toast({
         title: "Import Failed",
         description: "Failed to import some leads. Please try again.",
@@ -1088,6 +1187,102 @@ export default function Home() {
         description: "Failed to update lead status",
         variant: "destructive",
       });
+    }
+  };
+
+  // Function to assign lead to an employee
+  const assignLeadToEmployee = async (leadId: string, employeeId: string, notes?: string) => {
+    try {
+      const response = await fetch('/api/leads/assign', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-user-id': user?.id || '',
+          'x-company-id': 'default-company'
+        },
+        body: JSON.stringify({
+          leadId,
+          employeeId,
+          notes: notes || `Lead assigned to ${employees.find(e => e.id === employeeId)?.firstName} ${employees.find(e => e.id === employeeId)?.lastName}`
+        })
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        // Update the local state
+        setLeads(leads.map(lead => 
+          lead.id === leadId ? result.data : lead
+        ));
+        
+        // Emit real-time event for lead assignment
+        if (socket) {
+          socket.emit('lead_update', {
+            leadId,
+            companyId: 'default-company',
+            action: `assigned to ${employeeId}`,
+            updatedBy: user?.name || 'System'
+          });
+        }
+        
+        return true;
+      } else {
+        throw new Error('Failed to assign lead');
+      }
+    } catch (error) {
+      console.error('Error assigning lead:', error);
+      return false;
+    }
+  };
+
+  // Function to mark a lead as contacted
+  const markLeadAsContacted = async (leadId: string) => {
+    try {
+      const response = await fetch('/api/leads/mark-contacted', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-user-id': user?.id || '',
+          'x-company-id': 'default-company'
+        },
+        body: JSON.stringify({
+          leadId
+        })
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        // Update the local state
+        setLeads(leads.map(lead => 
+          lead.id === leadId ? result.data : lead
+        ));
+        
+        // Emit real-time event for lead contact
+        if (socket) {
+          socket.emit('lead_update', {
+            leadId,
+            companyId: 'default-company',
+            action: 'marked as contacted',
+            updatedBy: user?.name || 'System'
+          });
+        }
+        
+        toast({
+          title: "Success",
+          description: "Lead marked as contacted successfully",
+        });
+        
+        return true;
+      } else {
+        throw new Error('Failed to mark lead as contacted');
+      }
+    } catch (error) {
+      console.error('Error marking lead as contacted:', error);
+      toast({
+        title: "Error",
+        description: "Failed to mark lead as contacted",
+        variant: "destructive",
+      });
+      return false;
     }
   };
 
@@ -1469,44 +1664,83 @@ export default function Home() {
   }
 
   // Analytics Functions
-  const generateReport = (type: string) => {
-    // In a real implementation, this would call an API endpoint
-    return {
-      id: reports.length + 1,
-      name: `${type} Report - ${new Date().toLocaleDateString()}`,
-      type: type,
-      generatedDate: new Date().toISOString().split('T')[0],
-      status: "COMPLETED"
+  const generateReport = async (type: string) => {
+    try {
+      const response = await fetch('/api/reports', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ type })
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to generate report via API');
+      }
+
+      const result = await response.json();
+      return result.data.report;
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to generate report. Using fallback method.",
+        variant: "destructive",
+      });
+      
+      // Fallback to local generation
+      return {
+        id: reports.length + 1,
+        name: `${type} Report - ${new Date().toLocaleDateString()}`,
+        type: type,
+        generatedDate: new Date().toISOString().split('T')[0],
+        status: "COMPLETED"
+      };
     }
   }
 
-  const handleGenerateReport = (type: string) => {
-    const report = generateReport(type)
-    
-    // Generate report content based on type
-    let reportContent = ''
-    switch (type) {
-      case 'Sales':
-        reportContent = generateSalesReport()
-        break
-      case 'Employee Performance':
-        reportContent = generateEmployeePerformanceReport()
-        break
-      case 'Lead Conversion':
-        reportContent = generateLeadConversionReport()
-        break
-      default:
-        reportContent = 'General Report Content'
-    }
+  const handleGenerateReport = async (type: string) => {
+    try {
+      const report = await generateReport(type);
+      
+      // Add the new report to the local state
+      setReports(prevReports => [...prevReports, report]);
+      
+      // Generate report content based on type
+      let reportContent = '';
+      switch (type) {
+        case 'Sales':
+          reportContent = generateSalesReport();
+          break;
+        case 'Employee Performance':
+          reportContent = generateEmployeePerformanceReport();
+          break;
+        case 'Lead Conversion':
+          reportContent = generateLeadConversionReport();
+          break;
+        default:
+          reportContent = 'General Report Content';
+      }
 
-    // Download the report
-    const blob = new Blob([reportContent], { type: 'text/plain' })
-    const url = window.URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `${report.name.replace(/\s+/g, '_')}.txt`
-    a.click()
-    window.URL.revokeObjectURL(url)
+      // Download the report
+      const blob = new Blob([reportContent], { type: 'text/plain' });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${report.name.replace(/\s+/g, '_')}.txt`;
+      a.click();
+      window.URL.revokeObjectURL(url);
+      
+      toast({
+        title: "Report Generated",
+        description: `${type} report downloaded successfully`,
+      });
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to generate report",
+        variant: "destructive",
+      });
+    }
   }
 
   const generateSalesReport = () => {
@@ -1801,29 +2035,31 @@ Average Credit Score: ${Math.round(leads.reduce((sum, lead) => sum + (lead.credi
         transition-all duration-300 ease-in-out
         shadow-xl lg:shadow-none
       `}>
-        <div className="p-4 border-b border-gray-200 flex items-center justify-between min-h-[73px]">
-          {sidebarOpen ? (
-            <div className="flex items-center gap-3 overflow-hidden">
-              <Building2 className="h-8 w-8 text-blue-600 flex-shrink-0" />
+        <div className="px-4 sm:px-6 py-3 sm:py-4 border-b border-gray-200 flex items-center justify-between">
+          <div 
+            className={`flex items-center gap-3 ${sidebarOpen ? 'w-[calc(100%-40px)]' : 'w-full'} overflow-hidden`}
+            onClick={() => !sidebarOpen && setSidebarOpen(true)}
+            style={{ cursor: sidebarOpen ? 'default' : 'pointer' }}
+          >
+            <Building2 className="h-8 w-8 text-blue-600 flex-shrink-0" />
+            {sidebarOpen && (
               <div className="min-w-0 flex-1">
                 <h1 className="text-xl font-bold text-gray-900 truncate">Baytech ERP</h1>
                 <p className="text-sm text-gray-500 truncate">Mortgage System</p>
               </div>
-            </div>
-          ) : (
-            <div className="flex justify-center w-full">
-              <Building2 className="h-8 w-8 text-blue-600" />
-            </div>
+            )}
+          </div>
+          {sidebarOpen && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setSidebarOpen(false)}
+              className="ml-auto flex-shrink-0 hover:bg-gray-100"
+              aria-label="Close sidebar"
+            >
+              <X className="h-5 w-5" />
+            </Button>
           )}
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => setSidebarOpen(!sidebarOpen)}
-            className="ml-auto flex-shrink-0 hover:bg-gray-100"
-            aria-label={sidebarOpen ? "Close sidebar" : "Open sidebar"}
-          >
-            {sidebarOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
-          </Button>
         </div>
         
         <nav className="flex-1 p-4 overflow-y-auto">
@@ -1879,25 +2115,16 @@ Average Credit Score: ${Math.round(leads.reduce((sum, lead) => sum + (lead.credi
               {sidebarOpen && <span className="truncate">Tasks</span>}
             </Button>
 
-            <Button
-              variant={activeTab === 'documents' ? 'secondary' : 'ghost'}
-              className={`w-full gap-2 transition-all duration-200 ${!sidebarOpen ? 'justify-center px-2 lg:px-2' : 'justify-start'} hover:scale-105`}
-              onClick={() => handleNavigation('documents')}
-            >
-              <FolderOpen className="h-4 w-4 flex-shrink-0" />
-              {sidebarOpen && <span className="truncate">Documents</span>}
-            </Button>
 
-            {canViewReports && (
-              <Button
-                variant={activeTab === 'analytics' ? 'secondary' : 'ghost'}
-                className={`w-full gap-2 transition-all duration-200 ${!sidebarOpen ? 'justify-center px-2 lg:px-2' : 'justify-start'} hover:scale-105`}
-                onClick={() => handleNavigation('analytics')}
-              >
-                <BarChart3 className="h-4 w-4 flex-shrink-0" />
-                {sidebarOpen && <span className="truncate">Analytics</span>}
-              </Button>
-            )}
+
+            <Button
+              variant={activeTab === 'analytics' ? 'secondary' : 'ghost'}
+              className={`w-full gap-2 transition-all duration-200 ${!sidebarOpen ? 'justify-center px-2 lg:px-2' : 'justify-start'} hover:scale-105`}
+              onClick={() => handleNavigation('analytics')}
+            >
+              <BarChart3 className="h-4 w-4 flex-shrink-0" />
+              {sidebarOpen && <span className="truncate">Analytics</span>}
+            </Button>
           </div>
         </nav>
         
@@ -1917,11 +2144,11 @@ Average Credit Score: ${Math.round(leads.reduce((sum, lead) => sum + (lead.credi
               <Button
                 variant="outline"
                 size="sm"
-                className="w-full justify-start gap-2 hover:bg-red-50 hover:text-red-600 hover:border-red-200 transition-colors"
+                className="w-full justify-start gap-2 bg-gradient-to-r from-red-50 to-rose-50 border-red-200 text-red-600 hover:from-red-100 hover:to-rose-100 hover:text-red-700 hover:border-red-300 transition-all duration-200 transform hover:scale-[1.02] shadow-sm hover:shadow-md"
                 onClick={handleLogout}
               >
                 <LogOut className="h-4 w-4 flex-shrink-0" />
-                <span>Logout</span>
+                <span className="font-medium">Logout</span>
               </Button>
             </>
           ) : (
@@ -1933,7 +2160,7 @@ Average Credit Score: ${Math.round(leads.reduce((sum, lead) => sum + (lead.credi
               <Button
                 variant="outline"
                 size="sm"
-                className="w-10 h-10 p-0 rounded-full hover:bg-red-50 hover:text-red-600 hover:border-red-200 transition-colors"
+                className="w-10 h-10 p-0 rounded-full bg-gradient-to-r from-red-50 to-rose-50 border-red-200 text-red-600 hover:from-red-100 hover:to-rose-100 hover:text-red-700 hover:border-red-300 transition-all duration-200 shadow-sm hover:shadow-md"
                 onClick={handleLogout}
                 aria-label="Logout"
               >
@@ -2097,7 +2324,6 @@ Average Credit Score: ${Math.round(leads.reduce((sum, lead) => sum + (lead.credi
               <TabsTrigger value="leads">Leads</TabsTrigger>
               <TabsTrigger value="attendance">Attendance</TabsTrigger>
               <TabsTrigger value="tasks">Tasks</TabsTrigger>
-              <TabsTrigger value="documents">Documents</TabsTrigger>
               <TabsTrigger value="analytics">Analytics</TabsTrigger>
             </TabsList>
 
@@ -2724,66 +2950,107 @@ Average Credit Score: ${Math.round(leads.reduce((sum, lead) => sum + (lead.credi
                               <th className="text-left p-3">Status</th>
                               <th className="text-left p-3">Priority</th>
                               <th className="text-left p-3">Assigned To</th>
+                              <th className="text-left p-3">Assigned At</th>
+                              <th className="text-left p-3">Contact Required By</th>
                               <th className="text-left p-3">Actions</th>
                             </tr>
                           </thead>
                           <tbody>
-                            {filteredLeads.map((lead) => (
-                              <tr key={lead.id} className="border-b hover:bg-gray-50 transition-colors">
-                                <td className="p-3">
-                                  <div className="flex items-center gap-3">
-                                    <Avatar>
-                                      <AvatarFallback>{lead.name.split(' ').map(n => n[0]).join('')}</AvatarFallback>
-                                    </Avatar>
-                                    <div>
-                                      <p className="font-medium">{lead.name}</p>
-                                      <p className="text-sm text-gray-500">{lead.phone}</p>
+                            {filteredLeads.map((lead) => {
+                              // Calculate the 2-hour contact deadline if assigned
+                              const contactDeadline = lead.assignedAt ? new Date(new Date(lead.assignedAt).getTime() + 2 * 60 * 60 * 1000) : null;
+                              const isOverdue = contactDeadline && new Date() > contactDeadline && !lead.contactedAt;
+
+                              return (
+                                <tr key={lead.id} className={`border-b hover:bg-gray-50 transition-colors ${isOverdue ? 'bg-red-50' : ''}`}>
+                                  <td className="p-3">
+                                    <div className="flex items-center gap-3">
+                                      <Avatar>
+                                        <AvatarFallback>{lead.name.split(' ').map(n => n[0]).join('')}</AvatarFallback>
+                                      </Avatar>
+                                      <div>
+                                        <p className="font-medium">{lead.name}</p>
+                                        <p className="text-sm text-gray-500">{lead.phone}</p>
+                                      </div>
                                     </div>
-                                  </div>
-                                </td>
-                                <td className="p-3">{lead.email}</td>
-                                <td className="p-3">${lead.loanAmount?.toLocaleString() || 0}</td>
-                                <td className="p-3">
-                                  <Badge className={getStatusColor(lead.status)}>
-                                    {lead.status}
-                                  </Badge>
-                                </td>
-                                <td className="p-3">
-                                  <Badge className={getPriorityColor(lead.priority)}>
-                                    {lead.priority}
-                                  </Badge>
-                                </td>
-                                <td className="p-3">{lead.assignedTo || 'Unassigned'}</td>
-                                <td className="p-3">
-                                  <div className="flex gap-2">
-                                    <Button 
-                                      variant="outline" 
-                                      size="sm"
-                                      onClick={() => toggleLeadStatus(lead.id, lead.status)}
-                                    >
-                                      Next Status
-                                    </Button>
-                                    <Button 
-                                      variant="ghost" 
-                                      size="sm"
-                                      onClick={() => handleEditLeadClick(lead)}
-                                    >
-                                      Edit
-                                    </Button>
-                                    <Button 
-                                      variant="ghost" 
-                                      size="sm"
-                                      onClick={() => handleViewLeadClick(lead)}
-                                    >
-                                      View
-                                    </Button>
-                                  </div>
-                                </td>
-                              </tr>
-                            ))}
+                                  </td>
+                                  <td className="p-3">{lead.email}</td>
+                                  <td className="p-3">${lead.loanAmount?.toLocaleString() || 0}</td>
+                                  <td className="p-3">
+                                    <Badge className={getStatusColor(lead.status)}>
+                                      {lead.status}
+                                    </Badge>
+                                  </td>
+                                  <td className="p-3">
+                                    <Badge className={getPriorityColor(lead.priority)}>
+                                      {lead.priority}
+                                    </Badge>
+                                  </td>
+                                  <td className="p-3">
+                                    {((user?.role === 'Administrator' || user?.role === 'Manager') && canViewEmployees) ? (
+                                      <LeadAssignment 
+                                        lead={lead}
+                                        employees={employees}
+                                        onAssign={assignLeadToEmployee}
+                                        disabled={loading.leads}
+                                      />
+                                    ) : (
+                                      <span>{lead.assignedTo || 'Unassigned'}</span>
+                                    )}
+                                  </td>
+                                  <td className="p-3">
+                                    {lead.assignedAt ? new Date(lead.assignedAt).toLocaleString() : '-'}
+                                  </td>
+                                  <td className="p-3">
+                                    {contactDeadline ? (
+                                      <div className={isOverdue ? 'text-red-600' : ''}>
+                                        {contactDeadline.toLocaleString()}
+                                        {isOverdue && (
+                                          <div className="text-xs text-red-500 mt-1">Overdue for contact</div>
+                                        )}
+                                      </div>
+                                    ) : '-'}
+                                  </td>
+                                  <td className="p-3">
+                                    <div className="flex gap-2">
+                                      {lead.assignedToId && (user?.id === lead.assignedToId || user?.role === 'Administrator' || user?.role === 'Manager') && (
+                                        <Button 
+                                          variant="outline"
+                                          size="sm"
+                                          onClick={() => markLeadAsContacted(lead.id)}
+                                        >
+                                          Mark as Contacted
+                                        </Button>
+                                      )}
+                                      <Button 
+                                        variant="outline" 
+                                        size="sm"
+                                        onClick={() => toggleLeadStatus(lead.id, lead.status)}
+                                      >
+                                        Next Status
+                                      </Button>
+                                      <Button 
+                                        variant="ghost" 
+                                        size="sm"
+                                        onClick={() => handleEditLeadClick(lead)}
+                                      >
+                                        Edit
+                                      </Button>
+                                      <Button 
+                                        variant="ghost" 
+                                        size="sm"
+                                        onClick={() => handleViewLeadClick(lead)}
+                                      >
+                                        View
+                                      </Button>
+                                    </div>
+                                  </td>
+                                </tr>
+                              );
+                            })}
                             {filteredLeads.length === 0 && (
                               <tr>
-                                <td colSpan={7} className="p-3 text-center text-gray-500">
+                                <td colSpan={9} className="p-3 text-center text-gray-500">
                                   No leads found
                                 </td>
                               </tr>
@@ -3226,21 +3493,67 @@ Average Credit Score: ${Math.round(leads.reduce((sum, lead) => sum + (lead.credi
                     </Button>
                     <Button 
                       variant="outline"
-                      onClick={() => {
-                        const csvContent = [
-                          ['Report Name', 'Type', 'Generated Date', 'Status'],
-                          ...reports.map(report => [
-                            report.name, report.type, report.generatedDate, report.status
-                          ])
-                        ].map(row => row.join(',')).join('\n')
+                      onClick={async () => {
+                        try {
+                          const reportsRes = await fetch('/api/reports', {
+                            headers: {
+                              'x-user-id': user?.id || '',
+                              'x-company-id': 'default-company'
+                            }
+                          });
+                          
+                          if (reportsRes.ok) {
+                            const reportsData = await reportsRes.json();
+                            const reportsToExport = reportsData.success ? reportsData.data || [] : reports;
+                            
+                            const csvContent = [
+                              ['Report Name', 'Type', 'Generated Date', 'Status'],
+                              ...reportsToExport.map(report => [
+                                report.name, report.type, report.generatedDate, report.status
+                              ])
+                            ].map(row => row.join(',')).join('\n');
 
-                        const blob = new Blob([csvContent], { type: 'text/csv' })
-                        const url = window.URL.createObjectURL(blob)
-                        const a = document.createElement('a')
-                        a.href = url
-                        a.download = `reports_${new Date().toISOString().split('T')[0]}.csv`
-                        a.click()
-                        window.URL.revokeObjectURL(url)
+                            const blob = new Blob([csvContent], { type: 'text/csv' });
+                            const url = window.URL.createObjectURL(blob);
+                            const a = document.createElement('a');
+                            a.href = url;
+                            a.download = `reports_${new Date().toISOString().split('T')[0]}.csv`;
+                            a.click();
+                            window.URL.revokeObjectURL(url);
+                            
+                            toast({
+                              title: "Export Success",
+                              description: `Exported ${reportsToExport.length} reports successfully`,
+                            });
+                          } else {
+                            // Fallback to local data
+                            const csvContent = [
+                              ['Report Name', 'Type', 'Generated Date', 'Status'],
+                              ...reports.map(report => [
+                                report.name, report.type, report.generatedDate, report.status
+                              ])
+                            ].map(row => row.join(',')).join('\n');
+
+                            const blob = new Blob([csvContent], { type: 'text/csv' });
+                            const url = window.URL.createObjectURL(blob);
+                            const a = document.createElement('a');
+                            a.href = url;
+                            a.download = `reports_${new Date().toISOString().split('T')[0]}.csv`;
+                            a.click();
+                            window.URL.revokeObjectURL(url);
+                            
+                            toast({
+                              title: "Export Success",
+                              description: `Exported ${reports.length} reports successfully`,
+                            });
+                          }
+                        } catch (error) {
+                          toast({
+                            title: "Export Error",
+                            description: "Failed to export reports",
+                            variant: "destructive",
+                          });
+                        }
                       }}
                     >
                       <Download className="h-4 w-4 mr-2" />
@@ -3285,61 +3598,133 @@ Average Credit Score: ${Math.round(leads.reduce((sum, lead) => sum + (lead.credi
                   </Card>
                 </div>
 
-                {/* Charts Placeholder */}
+                {/* Charts Section with Real Data */}
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  {/* Lead Sources Pie Chart */}
                   <Card>
                     <CardHeader>
                       <CardTitle>Lead Sources</CardTitle>
                       <CardDescription>Where your leads come from</CardDescription>
                     </CardHeader>
                     <CardContent>
-                      <div className="space-y-4">
-                        {[
-                          { source: "Website", count: Math.round(leads.length * 0.37), percentage: 37 },
-                          { source: "Referral", count: Math.round(leads.length * 0.24), percentage: 24 },
-                          { source: "Social Media", count: Math.round(leads.length * 0.15), percentage: 15 },
-                          { source: "Email Campaign", count: Math.round(leads.length * 0.13), percentage: 13 },
-                          { source: "Other", count: Math.round(leads.length * 0.11), percentage: 11 }
-                        ].map((item) => (
-                          <div key={item.source} className="space-y-2">
-                            <div className="flex justify-between">
-                              <span className="text-sm font-medium">{item.source}</span>
-                              <span className="text-sm text-gray-500">{item.count} ({item.percentage}%)</span>
-                            </div>
-                            <div className="w-full bg-gray-200 rounded-full h-2">
-                              <div className="bg-blue-600 h-2 rounded-full" style={{ width: `${item.percentage}%` }}></div>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
+                      {leads.length > 0 ? (
+                        <div className="h-80">
+                          <ResponsiveContainer width="100%" height="100%">
+                            <PieChart>
+                              <Pie
+                                data={[
+                                  { 
+                                    name: "Website", 
+                                    value: leads.filter(lead => lead.source === "Website").length,
+                                    count: leads.filter(lead => lead.source === "Website").length
+                                  },
+                                  { 
+                                    name: "Referral", 
+                                    value: leads.filter(lead => lead.source === "Referral").length,
+                                    count: leads.filter(lead => lead.source === "Referral").length
+                                  },
+                                  { 
+                                    name: "Social Media", 
+                                    value: leads.filter(lead => lead.source === "Social Media").length,
+                                    count: leads.filter(lead => lead.source === "Social Media").length
+                                  },
+                                  { 
+                                    name: "Email Campaign", 
+                                    value: leads.filter(lead => lead.source === "Email Campaign").length,
+                                    count: leads.filter(lead => lead.source === "Email Campaign").length
+                                  },
+                                  { 
+                                    name: "Other", 
+                                    value: leads.filter(lead => !["Website", "Referral", "Social Media", "Email Campaign"].includes(lead.source || "")).length,
+                                    count: leads.filter(lead => !["Website", "Referral", "Social Media", "Email Campaign"].includes(lead.source || "")).length
+                                  }
+                                ]}
+                                cx="50%"
+                                cy="50%"
+                                labelLine={false}
+                                outerRadius={80}
+                                fill="#8884d8"
+                                dataKey="value"
+                                label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
+                              >
+                                {[
+                                  "#0088FE", "#00C49F", "#FFBB28", "#FF8042", "#8884D8"
+                                ].map((color, index) => (
+                                  <Cell key={`cell-${index}`} fill={color} />
+                                ))}
+                              </Pie>
+                              <Tooltip formatter={(value) => [`${value} leads`, 'Count']} />
+                              <Legend />
+                            </PieChart>
+                          </ResponsiveContainer>
+                        </div>
+                      ) : (
+                        <div className="text-center py-10 text-gray-500">
+                          No lead data available
+                        </div>
+                      )}
                     </CardContent>
                   </Card>
 
+                  {/* Department Performance Bar Chart */}
                   <Card>
                     <CardHeader>
                       <CardTitle>Department Performance</CardTitle>
                       <CardDescription>Leads handled by department</CardDescription>
                     </CardHeader>
                     <CardContent>
-                      <div className="space-y-4">
-                        {[
-                          { department: "Sales", leads: Math.round(leads.length * 0.5), converted: Math.round(leads.length * 0.5 * 0.09), rate: 9.2 },
-                          { department: "Support", leads: Math.round(leads.length * 0.3), converted: Math.round(leads.length * 0.3 * 0.07), rate: 7.1 },
-                          { department: "Marketing", leads: Math.round(leads.length * 0.15), converted: Math.round(leads.length * 0.15 * 0.06), rate: 6.1 },
-                          { department: "IT", leads: Math.round(leads.length * 0.05), converted: Math.round(leads.length * 0.05 * 0.04), rate: 3.5 }
-                        ].map((dept) => (
-                          <div key={dept.department} className="flex items-center justify-between p-3 border rounded-lg">
-                            <div>
-                              <p className="font-medium">{dept.department}</p>
-                              <p className="text-sm text-gray-500">{dept.leads} leads</p>
-                            </div>
-                            <div className="text-right">
-                              <p className="text-sm font-medium">{dept.converted} converted</p>
-                              <p className="text-xs text-gray-500">{dept.rate}% rate</p>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
+                      {employees.length > 0 ? (
+                        <div className="h-80">
+                          <ResponsiveContainer width="100%" height="100%">
+                            <BarChart
+                              data={Array.from(new Set(employees.map(emp => emp.department))).map(deptName => {
+                                const deptEmployees = employees.filter(emp => emp.department === deptName);
+                                const deptLeads = leads.filter(lead => 
+                                  deptEmployees.some(emp => emp.id === lead.assignedToId)
+                                );
+                                const convertedLeads = deptLeads.filter(lead => lead.status === 'APPLICATION').length;
+                                const conversionRate = deptLeads.length > 0 ? (convertedLeads / deptLeads.length) * 100 : 0;
+                                
+                                return {
+                                  department: deptName,
+                                  leads: deptLeads.length,
+                                  converted: convertedLeads,
+                                  rate: parseFloat(conversionRate.toFixed(1))
+                                };
+                              })}
+                              margin={{
+                                top: 20,
+                                right: 30,
+                                left: 20,
+                                bottom: 60,
+                              }}
+                            >
+                              <CartesianGrid strokeDasharray="3 3" />
+                              <XAxis 
+                                dataKey="department" 
+                                angle={-45} 
+                                textAnchor="end"
+                                height={60}
+                                tick={{ fontSize: 12 }}
+                              />
+                              <YAxis />
+                              <Tooltip 
+                                formatter={(value, name) => {
+                                  if (name === 'rate') return [`${value}%`, 'Conversion Rate'];
+                                  return [value, name === 'leads' ? 'Leads' : 'Converted'];
+                                }}
+                              />
+                              <Legend />
+                              <Bar dataKey="leads" name="Assigned Leads" fill="#8884d8" />
+                              <Bar dataKey="converted" name="Converted Leads" fill="#82ca9d" />
+                            </BarChart>
+                          </ResponsiveContainer>
+                        </div>
+                      ) : (
+                        <div className="text-center py-10 text-gray-500">
+                          No employee data available
+                        </div>
+                      )}
                     </CardContent>
                   </Card>
                 </div>

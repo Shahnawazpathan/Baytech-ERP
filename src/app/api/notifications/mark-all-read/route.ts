@@ -10,8 +10,7 @@ export async function PATCH(request: NextRequest) {
     // Update all unread notifications for the user/company
     const whereClause: any = { 
       companyId, 
-      isRead: false,
-      isActive: true
+      isRead: false
     }
     
     if (userId) {

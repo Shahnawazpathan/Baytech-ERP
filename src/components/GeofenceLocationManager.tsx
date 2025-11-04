@@ -332,6 +332,25 @@ export function GeofenceLocationManager({ companyId = 'default-company' }: Geofe
         </Card>
       )}
 
+      {/* Empty state - show when no locations are configured */}
+      {!isLoading && locations.length === 0 && (
+        <Card className="mb-6">
+          <CardContent className="py-8 text-center">
+            <MapPin className="h-12 w-12 mx-auto text-gray-400 mb-4" />
+            <h3 className="text-lg font-medium text-gray-900 mb-2">No geofence locations configured</h3>
+            <p className="text-sm text-gray-500 mb-4">Add your first location to start tracking attendance</p>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setIsDialogOpen(true)}
+            >
+              <Plus className="h-4 w-4 mr-2" />
+              Add Location
+            </Button>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Add/Edit Location Dialog */}
       <Dialog open={isDialogOpen} onOpenChange={(open) => {
         setIsDialogOpen(open)
@@ -433,6 +452,6 @@ export function GeofenceLocationManager({ companyId = 'default-company' }: Geofe
           </form>
         </DialogContent>
       </Dialog>
-    </Card>
+    </>
   )
 }

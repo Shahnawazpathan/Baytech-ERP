@@ -179,6 +179,8 @@ model Lead {
   notes           String?
   tags            String?  // JSON array of tags
   metadata        String?  // JSON for additional fields
+  assignedAt      DateTime?
+  contactedAt     DateTime?
   isActive        Boolean  @default(true)
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt

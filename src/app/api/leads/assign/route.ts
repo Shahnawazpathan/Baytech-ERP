@@ -74,7 +74,10 @@ export async function POST(request: NextRequest) {
     // Update lead assignment
     const updatedLead = await db.lead.update({
       where: { id: leadId },
-      data: { assignedToId: employeeId },
+      data: { 
+        assignedToId: employeeId,
+        assignedAt: new Date() // Set the assignment timestamp
+      },
       include: {
         company: true,
         assignedTo: {
@@ -214,7 +217,10 @@ export async function PUT(request: NextRequest) {
     const updatePromises = leads.map(async (lead) => {
       const updatedLead = await db.lead.update({
         where: { id: lead.id },
-        data: { assignedToId: employeeId }
+        data: { 
+          assignedToId: employeeId,
+          assignedAt: new Date() // Set the assignment timestamp
+        }
       })
 
       // Create lead history

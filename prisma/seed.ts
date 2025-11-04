@@ -20,13 +20,33 @@ async function main() {
     },
   })
 
-  // Create default department
-  const department = await prisma.department.upsert({
-    where: { id: 'default-dept' },
+  // Create new departments
+  const adminDepartment = await prisma.department.upsert({
+    where: { id: 'admin-dept' },
     update: {},
     create: {
-      id: 'default-dept',
-      name: 'Administration',
+      id: 'admin-dept',
+      name: 'Admin',
+      companyId: company.id,
+    },
+  })
+
+  const managerDepartment = await prisma.department.upsert({
+    where: { id: 'manager-dept' },
+    update: {},
+    create: {
+      id: 'manager-dept',
+      name: 'Manager',
+      companyId: company.id,
+    },
+  })
+
+  const employeeDepartment = await prisma.department.upsert({
+    where: { id: 'employee-dept' },
+    update: {},
+    create: {
+      id: 'employee-dept',
+      name: 'Employee',
       companyId: company.id,
     },
   })
@@ -231,7 +251,7 @@ async function main() {
       email: 'admin@baytech.com',
       password: hashedPassword,
       position: 'System Administrator',
-      departmentId: department.id,
+      departmentId: adminDepartment.id,
       roleId: adminRole.id,
       hireDate: new Date(),
       status: 'ACTIVE',
@@ -239,20 +259,20 @@ async function main() {
     },
   })
 
-  // Create a manager user
+  // Create a manager user with Zohed Siddique's name
   const managerPassword = await bcrypt.hash('Manager@123', 10)
   const managerUser = await prisma.employee.upsert({
-    where: { email: 'manager@baytech.com' },
+    where: { email: 'zohed.siddique@baytech.com' },
     update: {},
     create: {
       id: 'manager-user',
       employeeId: 'MGR001',
-      firstName: 'Manager',
-      lastName: 'User',
-      email: 'manager@baytech.com',
+      firstName: 'Zohed',
+      lastName: 'Siddique',
+      email: 'zohed.siddique@baytech.com',
       password: managerPassword,
-      position: 'Department Manager',
-      departmentId: department.id,
+      position: 'Manager',
+      departmentId: managerDepartment.id,
       roleId: managerRole.id,
       hireDate: new Date(),
       status: 'ACTIVE',
@@ -273,7 +293,7 @@ async function main() {
       email: 'employee@baytech.com',
       password: employeePassword,
       position: 'Staff Member',
-      departmentId: department.id,
+      departmentId: employeeDepartment.id,
       roleId: employeeRole.id,
       hireDate: new Date(),
       status: 'ACTIVE',
@@ -286,7 +306,7 @@ async function main() {
   console.log('Admin User:', `${adminUser.firstName} ${adminUser.lastName}`)
   console.log('Manager User:', `${managerUser.firstName} ${managerUser.lastName}`)
   console.log('Employee User:', `${employeeUser.firstName} ${employeeUser.lastName}`)
-  console.log('Emails: admin@baytech.com, manager@baytech.com, employee@baytech.com')
+  console.log('Emails: admin@baytech.com, zohed.siddique@baytech.com, employee@baytech.com')
   console.log('Passwords: Admin@123, Manager@123, Employee@123')
 }
 

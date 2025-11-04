@@ -131,7 +131,6 @@ async function sendUserNotifications(io: Server, userId: string, companyId: stri
     // Get recent notifications for the user
     const whereClause: any = { 
       companyId, 
-      isActive: true,
       isRead: false
     };
     

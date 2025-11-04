@@ -7,7 +7,7 @@ export async function GET(request: NextRequest) {
     const companyId = request.headers.get('x-company-id') || 'default-company'
     
     // If we have a specific user ID, get their notifications; otherwise get all company notifications
-    const whereClause: any = { companyId, isActive: true }
+    const whereClause: any = { companyId }
     if (userId) {
       whereClause.OR = [
         { employeeId: userId },

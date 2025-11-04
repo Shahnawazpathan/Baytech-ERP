@@ -41,6 +41,8 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
       status: updatedLead.status,
       priority: updatedLead.priority,
       assignedTo: updatedLead.assignedTo ? `${updatedLead.assignedTo.firstName} ${updatedLead.assignedTo.lastName}` : 'Unassigned',
+      assignedToId: updatedLead.assignedToId,
+      assignedAt: updatedLead.assignedAt,
       propertyAddress: updatedLead.address,
       creditScore: updatedLead.creditScore,
       source: updatedLead.source,

@@ -18,7 +18,7 @@ export async function GET(request: NextRequest) {
     // Transform the data to match the expected format
     const transformedLeads = leads.map(lead => ({
       id: lead.id,
-      name: `${lead.firstName} ${lead.lastName}`,
+      name: `${lead.firstName || ''} ${lead.lastName || ''}`.trim(),
       email: lead.email,
       phone: lead.phone,
       loanAmount: lead.loanAmount,
@@ -26,6 +26,7 @@ export async function GET(request: NextRequest) {
       priority: lead.priority,
       assignedTo: lead.assignedTo ? `${lead.assignedTo.firstName} ${lead.assignedTo.lastName}` : 'Unassigned',
       assignedToId: lead.assignedToId,
+      assignedAt: lead.assignedAt,
       propertyAddress: lead.address,
       creditScore: lead.creditScore,
       source: lead.source,
@@ -76,7 +77,7 @@ export async function POST(request: NextRequest) {
     // Transform the created lead to match expected format
     const transformedLead = {
       id: lead.id,
-      name: `${lead.firstName} ${lead.lastName}`,
+      name: `${lead.firstName || ''} ${lead.lastName || ''}`.trim(),
       email: lead.email,
       phone: lead.phone,
       loanAmount: lead.loanAmount,
@@ -84,6 +85,7 @@ export async function POST(request: NextRequest) {
       priority: lead.priority,
       assignedTo: lead.assignedTo ? `${lead.assignedTo.firstName} ${lead.assignedTo.lastName}` : 'Unassigned',
       assignedToId: lead.assignedToId,
+      assignedAt: lead.assignedAt,
       propertyAddress: lead.address,
       creditScore: lead.creditScore,
       source: lead.source,
