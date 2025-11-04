@@ -4,6 +4,12 @@ import { createServer } from 'http';
 import { Server } from 'socket.io';
 import next from 'next';
 import { initializeSystem } from '@/lib/init';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+// Set DATABASE_URL to point to the database file in the current directory
+// This ensures it works both in development and in production deployments
+process.env.DATABASE_URL = `file:${path.join(process.cwd(), 'dev.db')}`;
 
 const dev = process.env.NODE_ENV !== 'production';
 const currentPort = process.env.PORT ? parseInt(process.env.PORT) : 3000;
