@@ -38,9 +38,9 @@ export default function LoginPage() {
         // Store authentication state
         localStorage.setItem('isAuthenticated', 'true')
         localStorage.setItem('user', JSON.stringify(data.user))
-        
-        // Redirect to dashboard
-        router.push('/')
+
+        // Use window.location for full page reload to reinitialize auth context
+        window.location.href = '/'
       } else {
         setError(data.error || 'Invalid email or password')
       }

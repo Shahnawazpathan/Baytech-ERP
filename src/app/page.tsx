@@ -21,7 +21,6 @@ import { LeadImportModal } from '@/components/LeadImportModal'
 import { GeofenceAttendance } from '@/components/GeofenceAttendance'
 import { GeofenceLocationManager } from '@/components/GeofenceLocationManager'
 import { TaskManagement } from '@/components/TaskManagement'
-import { DocumentManager } from '@/components/DocumentManager'
 import { 
   Users, 
   Building2, 
@@ -86,6 +85,16 @@ export default function Home() {
     stats: false
   })
   const [isRefreshing, setIsRefreshing] = useState(false)
+
+  // Helper function to check if user is admin
+  const isAdmin = () => {
+    if (!user) return false
+    // Check by email
+    if (user.email === 'admin@baytech.com') return true
+    // Check by role (case-insensitive)
+    if (user.role && user.role.toLowerCase().includes('admin')) return true
+    return false
+  }
 
   // Initialize socket connection
   useEffect(() => {
@@ -1750,7 +1759,7 @@ Average Credit Score: ${Math.round(leads.reduce((sum, lead) => sum + (lead.credi
 
   const handleLogout = () => {
     logout()
-    router.push('/login')
+    window.location.href = '/login'
   }
 
   // Loading indicators
@@ -2791,7 +2800,7 @@ Average Credit Score: ${Math.round(leads.reduce((sum, lead) => sum + (lead.credi
             <TabsContent value="attendance">
               <div className="space-y-6">
                 {/* Admin: Geofence Location Management */}
-                {user?.role === 'Admin' && (
+                {isAdmin() && (
                   <GeofenceLocationManager companyId="default-company" />
                 )}
 
@@ -3014,7 +3023,7 @@ Average Credit Score: ${Math.round(leads.reduce((sum, lead) => sum + (lead.credi
                                       View
                                     </Button>
                                     {/* Admin only buttons */}
-                                    {user?.role === 'Admin' && (
+                                    {isAdmin() && (
                                       <>
                                         <Button
                                           variant="ghost"
@@ -3175,15 +3184,15 @@ Average Credit Score: ${Math.round(leads.reduce((sum, lead) => sum + (lead.credi
 
             <TabsContent value="tasks">
               <div className="space-y-6">
-                <TaskManagement companyId="default-company" />
+                <TaskManagement
+                  companyId="default-company"
+                  userId={user?.id}
+                  userRole={user?.role}
+                />
               </div>
             </TabsContent>
 
-            <TabsContent value="documents">
-              <div className="space-y-6">
-                <DocumentManager companyId="default-company" />
-              </div>
-            </TabsContent>
+
 
             <TabsContent value="analytics">
               <div className="space-y-6">

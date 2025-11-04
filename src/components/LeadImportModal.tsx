@@ -390,7 +390,7 @@ export function LeadImportModal({ open, onOpenChange, onImportComplete }: LeadIm
           </DialogDescription>
         </DialogHeader>
 
-        <div className="flex-1 overflow-y-auto max-h-[60vh] px-1">
+        <div className="flex-1 overflow-y-auto max-h-[calc(90vh-200px)] px-1">
           {step === 'upload' && (
             <div className="space-y-6">
               <Card>
@@ -454,49 +454,51 @@ export function LeadImportModal({ open, onOpenChange, onImportComplete }: LeadIm
                     Map your CSV columns to our system fields. Auto-mapping has been applied based on column names.
                   </CardDescription>
                 </CardHeader>
-                <CardContent>
-                  <div className="space-y-4">
-                    {detectedFields.map((field, index) => (
-                      <div key={index} className="flex items-center gap-4 p-3 border rounded-lg">
-                        <div className="flex-1">
-                          <p className="font-medium">{field.originalName}</p>
-                          <p className="text-sm text-gray-500">
-                            Type: {field.type} | Sample: "{field.sampleValue}"
-                          </p>
+                <CardContent className="space-y-4 flex flex-col">
+                  <div className="flex-1 overflow-y-auto max-h-[30vh] pr-2 -mr-2 -ml-2">
+                    <div className="space-y-4 pb-2">
+                      {detectedFields.map((field, index) => (
+                        <div key={`field-${index}`} className="flex items-center gap-4 p-3 border rounded-lg">
+                          <div className="flex-1 min-w-0">
+                            <p className="font-medium truncate">{field.originalName}</p>
+                            <p className="text-sm text-gray-500 truncate">
+                              Type: {field.type} | Sample: "{field.sampleValue}"
+                            </p>
+                          </div>
+                          <div className="w-64">
+                            <Select value={field.mappedName} onValueChange={(value) => updateFieldMapping(index, value)}>
+                              <SelectTrigger>
+                                <SelectValue placeholder="Select field to map to" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="unmapped">Don't map</SelectItem>
+                                {standardFields.map(stdField => (
+                                  <SelectItem key={stdField.key} value={stdField.key}>
+                                    {stdField.label} {stdField.required && "*"}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          {field.required && (
+                            <Badge variant="destructive" className="text-xs flex-shrink-0">
+                              Required
+                            </Badge>
+                          )}
                         </div>
-                        <div className="flex-1">
-                          <Select value={field.mappedName} onValueChange={(value) => updateFieldMapping(index, value)}>
-                            <SelectTrigger>
-                              <SelectValue placeholder="Select field to map to" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="unmapped">Don't map</SelectItem>
-                              {standardFields.map(stdField => (
-                                <SelectItem key={stdField.key} value={stdField.key}>
-                                  {stdField.label} {stdField.required && "*"}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </div>
-                        {field.required && (
-                          <Badge variant="destructive" className="text-xs">
-                            Required
-                          </Badge>
-                        )}
-                      </div>
-                    ))}
+                      ))}
+                    </div>
                   </div>
 
                   {errors.length > 0 && (
-                    <div className="mt-4 p-4 bg-red-50 border border-red-200 rounded-lg">
+                    <div className="p-4 bg-red-50 border border-red-200 rounded-lg flex-shrink-0">
                       <h4 className="font-medium text-red-800 flex items-center gap-2">
                         <AlertCircle className="h-4 w-4" />
                         Validation Errors
                       </h4>
                       <ul className="mt-2 text-sm text-red-700 list-disc list-inside">
                         {errors.map((error, index) => (
-                          <li key={index}>{error}</li>
+                          <li key={`error-${index}`}>{error}</li>
                         ))}
                       </ul>
                     </div>

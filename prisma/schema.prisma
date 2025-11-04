@@ -34,6 +34,7 @@ model Company {
   auditLogs    AuditLog[]
   notifications Notification[]
   geofenceLocations GeofenceLocation[]
+  tasks        Task[]
 
   @@map("companies")
 }
@@ -150,7 +151,9 @@ model Employee {
   auditLogs   AuditLog[]
   notifications Notification[]
   leadHistory LeadHistory[]
-  
+  tasksAssigned Task[]     @relation("TaskAssignee")
+  tasksCreated  Task[]     @relation("TaskCreator")
+
   @@map("employees")
 }
 
@@ -254,6 +257,32 @@ model Attendance {
   employee Employee @relation(fields: [employeeId], references: [id])
 
   @@map("attendance")
+}
+
+// Task Model
+model Task {
+  id            String   @id @default(cuid())
+  title         String
+  description   String?
+  status        String   @default("TODO") // TODO, IN_PROGRESS, DONE, CANCELLED
+  priority      String   @default("MEDIUM") // LOW, MEDIUM, HIGH, URGENT
+  category      String?
+  tags          String?  // JSON array of tags
+  dueDate       DateTime?
+  completedAt   DateTime?
+  assignedToId  String
+  assignedById  String
+  companyId     String
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  // Relations
+  company    Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  assignedTo Employee @relation("TaskAssignee", fields: [assignedToId], references: [id])
+  assignedBy Employee @relation("TaskCreator", fields: [assignedById], references: [id])
+
+  @@map("tasks")
 }
 
 // Notification Model

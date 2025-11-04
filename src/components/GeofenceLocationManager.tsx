@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { useToast } from '@/hooks/use-toast'
 import {
   MapPin,
@@ -253,186 +253,186 @@ export function GeofenceLocationManager({ companyId = 'default-company' }: Geofe
   }
 
   return (
-    <Card>
-      <CardHeader>
-        <div className="flex items-center justify-between">
-          <div>
-            <CardTitle className="flex items-center gap-2">
-              <MapPin className="h-5 w-5" />
-              Geofence Location Management
-            </CardTitle>
-            <CardDescription>
-              Configure work locations for attendance tracking (Admin Only)
-            </CardDescription>
-          </div>
-          <Dialog open={isDialogOpen} onOpenChange={(open) => {
-            setIsDialogOpen(open)
-            if (!open) resetForm()
-          }}>
-            <DialogTrigger asChild>
-              <Button>
-                <Plus className="h-4 w-4 mr-2" />
-                Add Location
-              </Button>
-            </DialogTrigger>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>
-                  {editingLocation ? 'Edit Location' : 'Add New Location'}
-                </DialogTitle>
-                <DialogDescription>
-                  Configure a geofence location for attendance tracking
-                </DialogDescription>
-              </DialogHeader>
-              <form onSubmit={handleSubmit} className="space-y-4">
-                <div>
-                  <Label htmlFor="name">Location Name *</Label>
-                  <Input
-                    id="name"
-                    value={formData.name}
-                    onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
-                    placeholder="Main Office"
-                    required
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="address">Address *</Label>
-                  <Input
-                    id="address"
-                    value={formData.address}
-                    onChange={(e) => setFormData(prev => ({ ...prev, address: e.target.value }))}
-                    placeholder="123 Business St, City, State"
-                    required
-                  />
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <Label htmlFor="latitude">Latitude *</Label>
-                    <Input
-                      id="latitude"
-                      type="number"
-                      step="any"
-                      value={formData.latitude}
-                      onChange={(e) => setFormData(prev => ({ ...prev, latitude: e.target.value }))}
-                      placeholder="40.7128"
-                      required
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor="longitude">Longitude *</Label>
-                    <Input
-                      id="longitude"
-                      type="number"
-                      step="any"
-                      value={formData.longitude}
-                      onChange={(e) => setFormData(prev => ({ ...prev, longitude: e.target.value }))}
-                      placeholder="-74.0060"
-                      required
-                    />
-                  </div>
-                </div>
-                <div>
-                  <Label htmlFor="radius">Radius (meters) *</Label>
-                  <Input
-                    id="radius"
-                    type="number"
-                    value={formData.radius}
-                    onChange={(e) => setFormData(prev => ({ ...prev, radius: e.target.value }))}
-                    placeholder="100"
-                    required
-                  />
-                </div>
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={handleGetCurrentLocation}
-                  className="w-full"
-                >
-                  <MapPin className="h-4 w-4 mr-2" />
-                  Use Current Location
-                </Button>
-                <DialogFooter>
-                  <Button type="button" variant="outline" onClick={() => {
-                    setIsDialogOpen(false)
-                    resetForm()
-                  }}>
-                    <X className="h-4 w-4 mr-2" />
-                    Cancel
-                  </Button>
-                  <Button type="submit" disabled={isSaving}>
-                    {isSaving ? (
-                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                    ) : (
-                      <Save className="h-4 w-4 mr-2" />
-                    )}
-                    {editingLocation ? 'Update' : 'Create'}
-                  </Button>
-                </DialogFooter>
-              </form>
-            </DialogContent>
-          </Dialog>
+    <>
+      {/* Add Location Button */}
+      <div className="flex items-center justify-between mb-4">
+        <div>
+          <h3 className="text-lg font-semibold flex items-center gap-2">
+            <MapPin className="h-5 w-5" />
+            Geofence Location Management
+          </h3>
+          <p className="text-sm text-gray-500">Configure work locations for attendance tracking (Admin Only)</p>
         </div>
-      </CardHeader>
-      <CardContent>
-        {isLoading ? (
-          <div className="flex items-center justify-center py-8">
-            <Loader2 className="h-8 w-8 animate-spin text-gray-400" />
-          </div>
-        ) : locations.length === 0 ? (
-          <div className="text-center py-8">
-            <MapPin className="h-12 w-12 mx-auto text-gray-400 mb-4" />
-            <p className="text-gray-600 mb-2">No geofence locations configured</p>
-            <p className="text-sm text-gray-500">Add your first location to start tracking attendance</p>
-          </div>
-        ) : (
-          <div className="space-y-3">
-            {locations.map((location) => (
-              <div key={location.id} className="p-4 border rounded-lg">
-                <div className="flex items-center justify-between">
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2 mb-1">
-                      <h4 className="font-medium">{location.name}</h4>
-                      <Badge variant={location.isActive ? "default" : "secondary"}>
-                        {location.isActive ? 'Active' : 'Inactive'}
-                      </Badge>
-                    </div>
-                    <p className="text-sm text-gray-600 mb-1">{location.address}</p>
-                    <div className="flex items-center gap-4 text-xs text-gray-500">
-                      <span>Lat: {location.latitude.toFixed(6)}</span>
-                      <span>Lng: {location.longitude.toFixed(6)}</span>
-                      <span>Radius: {location.radius}m</span>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => handleToggleActive(location)}
-                    >
-                      {location.isActive ? 'Deactivate' : 'Activate'}
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => handleEdit(location)}
-                    >
-                      <Edit className="h-4 w-4" />
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => handleDelete(location.id)}
-                      className="text-red-600 hover:text-red-700"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </div>
-                </div>
+        <Button
+          size="sm"
+          onClick={() => setIsDialogOpen(true)}
+        >
+          <Plus className="h-4 w-4 mr-2" />
+          Add Location
+        </Button>
+      </div>
+
+      {/* Locations List - Only show if there are locations or loading */}
+      {(isLoading || locations.length > 0) && (
+        <Card className="mb-6">
+          <CardContent className="pt-6">
+            {isLoading ? (
+              <div className="flex items-center justify-center py-8">
+                <Loader2 className="h-8 w-8 animate-spin text-gray-400" />
               </div>
-            ))}
-          </div>
-        )}
-      </CardContent>
+            ) : (
+              <div className="space-y-3">
+                {locations.map((location) => (
+                  <div key={location.id} className="p-4 border rounded-lg">
+                    <div className="flex items-center justify-between">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2 mb-1">
+                          <h4 className="font-medium">{location.name}</h4>
+                          <Badge variant={location.isActive ? "default" : "secondary"}>
+                            {location.isActive ? 'Active' : 'Inactive'}
+                          </Badge>
+                        </div>
+                        <p className="text-sm text-gray-600 mb-1">{location.address}</p>
+                        <div className="flex items-center gap-4 text-xs text-gray-500">
+                          <span>Lat: {location.latitude.toFixed(6)}</span>
+                          <span>Lng: {location.longitude.toFixed(6)}</span>
+                          <span>Radius: {location.radius}m</span>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleToggleActive(location)}
+                        >
+                          {location.isActive ? 'Deactivate' : 'Activate'}
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleEdit(location)}
+                        >
+                          <Edit className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleDelete(location.id)}
+                          className="text-red-600 hover:text-red-700"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Add/Edit Location Dialog */}
+      <Dialog open={isDialogOpen} onOpenChange={(open) => {
+        setIsDialogOpen(open)
+        if (!open) resetForm()
+      }}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>
+              {editingLocation ? 'Edit Location' : 'Add New Location'}
+            </DialogTitle>
+            <DialogDescription>
+              Configure a geofence location for attendance tracking
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div>
+              <Label htmlFor="name">Location Name *</Label>
+              <Input
+                id="name"
+                value={formData.name}
+                onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
+                placeholder="Main Office"
+                required
+              />
+            </div>
+            <div>
+              <Label htmlFor="address">Address *</Label>
+              <Input
+                id="address"
+                value={formData.address}
+                onChange={(e) => setFormData(prev => ({ ...prev, address: e.target.value }))}
+                placeholder="123 Business St, City, State"
+                required
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label htmlFor="latitude">Latitude *</Label>
+                <Input
+                  id="latitude"
+                  type="number"
+                  step="any"
+                  value={formData.latitude}
+                  onChange={(e) => setFormData(prev => ({ ...prev, latitude: e.target.value }))}
+                  placeholder="40.7128"
+                  required
+                />
+              </div>
+              <div>
+                <Label htmlFor="longitude">Longitude *</Label>
+                <Input
+                  id="longitude"
+                  type="number"
+                  step="any"
+                  value={formData.longitude}
+                  onChange={(e) => setFormData(prev => ({ ...prev, longitude: e.target.value }))}
+                  placeholder="-74.0060"
+                  required
+                />
+              </div>
+            </div>
+            <div>
+              <Label htmlFor="radius">Radius (meters) *</Label>
+              <Input
+                id="radius"
+                type="number"
+                value={formData.radius}
+                onChange={(e) => setFormData(prev => ({ ...prev, radius: e.target.value }))}
+                placeholder="100"
+                required
+              />
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={handleGetCurrentLocation}
+              className="w-full"
+            >
+              <MapPin className="h-4 w-4 mr-2" />
+              Use Current Location
+            </Button>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => {
+                setIsDialogOpen(false)
+                resetForm()
+              }}>
+                <X className="h-4 w-4 mr-2" />
+                Cancel
+              </Button>
+              <Button type="submit" disabled={isSaving}>
+                {isSaving ? (
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                ) : (
+                  <Save className="h-4 w-4 mr-2" />
+                )}
+                {editingLocation ? 'Update' : 'Create'}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </Card>
   )
 }
