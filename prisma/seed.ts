@@ -20,32 +20,44 @@ async function main() {
     },
   })
 
-  // Create new departments
+  // Create departments
   const adminDepartment = await prisma.department.upsert({
-    where: { id: 'admin-dept' },
+    where: { 
+      companyId_name: {
+        companyId: company.id,
+        name: 'Admin',
+      }
+    },
     update: {},
     create: {
-      id: 'admin-dept',
       name: 'Admin',
       companyId: company.id,
     },
   })
 
   const managerDepartment = await prisma.department.upsert({
-    where: { id: 'manager-dept' },
+    where: { 
+      companyId_name: {
+        companyId: company.id,
+        name: 'Manager',
+      }
+    },
     update: {},
     create: {
-      id: 'manager-dept',
       name: 'Manager',
       companyId: company.id,
     },
   })
 
   const employeeDepartment = await prisma.department.upsert({
-    where: { id: 'employee-dept' },
+    where: { 
+      companyId_name: {
+        companyId: company.id,
+        name: 'Employee',
+      }
+    },
     update: {},
     create: {
-      id: 'employee-dept',
       name: 'Employee',
       companyId: company.id,
     },
@@ -53,10 +65,14 @@ async function main() {
 
   // Create roles
   const adminRole = await prisma.role.upsert({
-    where: { id: 'admin-role' },
+    where: { 
+      companyId_name: {
+        companyId: company.id,
+        name: 'Administrator',
+      }
+    },
     update: {},
     create: {
-      id: 'admin-role',
       name: 'Administrator',
       description: 'Full system access with all permissions',
       companyId: company.id,
@@ -64,10 +80,14 @@ async function main() {
   })
 
   const managerRole = await prisma.role.upsert({
-    where: { id: 'manager-role' },
+    where: { 
+      companyId_name: {
+        companyId: company.id,
+        name: 'Manager',
+      }
+    },
     update: {},
     create: {
-      id: 'manager-role',
       name: 'Manager',
       description: 'Manager with access to employees, leads, and reports',
       companyId: company.id,
@@ -75,10 +95,14 @@ async function main() {
   })
 
   const employeeRole = await prisma.role.upsert({
-    where: { id: 'employee-role' },
+    where: { 
+      companyId_name: {
+        companyId: company.id,
+        name: 'Employee',
+      }
+    },
     update: {},
     create: {
-      id: 'employee-role',
       name: 'Employee',
       description: 'Basic employee with access to assigned leads and attendance',
       companyId: company.id,
@@ -132,7 +156,7 @@ async function main() {
     { resource: 'notification', action: 'UPDATE' },
   ]
 
-  // Create permissions in the database
+  // Create permissions in the database using unique constraints
   for (const perm of permissionsData) {
     await prisma.permission.upsert({
       where: { 
@@ -198,14 +222,6 @@ async function main() {
   }
 
   // Assign permissions to Employee role (very limited access)
-  const employeePermissions = allPermissions.filter(perm => 
-    (perm.resource === 'employee' && perm.action === 'READ' && perm.action === 'UPDATE') ||
-    (perm.resource === 'attendance' && perm.action === 'CREATE') ||  // Can clock in/out
-    (perm.resource === 'lead' && perm.action === 'READ') ||  // Can view leads assigned to them
-    (perm.resource === 'report' && perm.action === 'READ')    // Can view personal reports
-  )
-  
-  // Actually, let's be more specific with employee permissions
   const specificEmployeePermissions = allPermissions.filter(perm => {
     // Employees can read own employee record and update it
     if (perm.resource === 'employee' && (perm.action === 'READ' || perm.action === 'UPDATE')) return true
@@ -244,7 +260,6 @@ async function main() {
     where: { email: 'admin@baytech.com' },
     update: {},
     create: {
-      id: 'admin-user',
       employeeId: 'ADMIN001',
       firstName: 'Admin',
       lastName: 'User',
@@ -265,7 +280,6 @@ async function main() {
     where: { email: 'zohed.siddique@baytech.com' },
     update: {},
     create: {
-      id: 'manager-user',
       employeeId: 'MGR001',
       firstName: 'Zohed',
       lastName: 'Siddique',
@@ -286,7 +300,6 @@ async function main() {
     where: { email: 'employee@baytech.com' },
     update: {},
     create: {
-      id: 'employee-user',
       employeeId: 'EMP001',
       firstName: 'Regular',
       lastName: 'Employee',

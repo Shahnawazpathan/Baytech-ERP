@@ -4,8 +4,6 @@ import { db } from '@/lib/db';
 // Background job to reassign leads not contacted within 2 hours
 export async function POST(request: NextRequest) {
   try {
-    console.log('Starting automatic lead reassignment job...');
-
     // Find leads that were assigned more than 2 hours ago but not contacted
     const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000); // 2 hours ago
 
@@ -25,8 +23,6 @@ export async function POST(request: NextRequest) {
         }
       }
     });
-
-    console.log(`Found ${uncontactedLeads.length} leads to reassign`);
 
     if (uncontactedLeads.length === 0) {
       return NextResponse.json({ 
@@ -171,15 +167,10 @@ export async function POST(request: NextRequest) {
           newAssigneeId: leastLoadedEmployee.id
         });
 
-        console.log(`Lead ${lead.id} reassigned from ${previousAssigneeId} to ${leastLoadedEmployee.id}`);
-
       } catch (error) {
-        console.error(`Error reassigning lead ${lead.id}:`, error);
         results.push({ leadId: lead.id, status: 'error', error: (error as Error).message });
       }
     }
-
-    console.log(`Completed automatic reassignment job. Reassigned ${results.filter(r => r.status === 'reassigned').length} leads.`);
 
     return NextResponse.json({ 
       success: true, 
@@ -189,7 +180,6 @@ export async function POST(request: NextRequest) {
     });
 
   } catch (error) {
-    console.error('Error in automatic lead reassignment:', error);
     return NextResponse.json(
       { success: false, error: 'Failed to run automatic reassignment job' },
       { status: 500 }
