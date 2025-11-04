@@ -1,16 +1,34 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { hasPermission } from '@/lib/rbac'
 
 export async function POST(request: NextRequest) {
   try {
+    const userId = request.headers.get('x-user-id');
     const body = await request.json()
     const { leadId, employeeId, notes } = body
+
+    if (!userId) {
+      return NextResponse.json(
+        { success: false, error: 'User authentication required' },
+        { status: 401 }
+      )
+    }
 
     if (!leadId || !employeeId) {
       return NextResponse.json(
         { success: false, error: 'Missing required fields' },
         { status: 400 }
       )
+    }
+
+    // Check permission to assign leads
+    const hasPermissionResult = await hasPermission(userId, 'lead', 'UPDATE');
+    if (!hasPermissionResult) {
+      return NextResponse.json(
+        { success: false, error: 'Insufficient permissions to assign leads' },
+        { status: 403 }
+      );
     }
 
     // Get lead and employee
@@ -132,14 +150,31 @@ export async function POST(request: NextRequest) {
 // Bulk assignment endpoint
 export async function PUT(request: NextRequest) {
   try {
+    const userId = request.headers.get('x-user-id');
     const body = await request.json()
     const { leadIds, employeeId, strategy = 'round_robin' } = body
+
+    if (!userId) {
+      return NextResponse.json(
+        { success: false, error: 'User authentication required' },
+        { status: 401 }
+      )
+    }
 
     if (!leadIds || !Array.isArray(leadIds) || leadIds.length === 0 || !employeeId) {
       return NextResponse.json(
         { success: false, error: 'Invalid request parameters' },
         { status: 400 }
       )
+    }
+
+    // Check permission to assign leads
+    const hasPermissionResult = await hasPermission(userId, 'lead', 'UPDATE');
+    if (!hasPermissionResult) {
+      return NextResponse.json(
+        { success: false, error: 'Insufficient permissions to assign leads' },
+        { status: 403 }
+      );
     }
 
     const employee = await db.employee.findUnique({

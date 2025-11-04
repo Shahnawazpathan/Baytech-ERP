@@ -33,7 +33,8 @@ model Company {
   attendance   Attendance[]
   auditLogs    AuditLog[]
   notifications Notification[]
-  
+  geofenceLocations GeofenceLocation[]
+
   @@map("companies")
 }
 
@@ -205,6 +206,25 @@ model LeadHistory {
   @@map("lead_history")
 }
 
+// Geofence Location Model
+model GeofenceLocation {
+  id          String   @id @default(cuid())
+  name        String
+  address     String
+  latitude    Float
+  longitude   Float
+  radius      Int      @default(100) // in meters
+  companyId   String
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  company  Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@map("geofence_locations")
+}
+
 // Attendance Model
 model Attendance {
   id            String   @id @default(cuid())
@@ -224,13 +244,15 @@ model Attendance {
   status        String   @default("PRESENT") // PRESENT, ABSENT, LATE, HALF_DAY
   notes         String?
   isVerified    Boolean  @default(false)
+  locationId    String?  // Reference to geofence location
+  locationName  String?  // Name of the location for reference
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
   // Relations
   company  Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
   employee Employee @relation(fields: [employeeId], references: [id])
-  
+
   @@map("attendance")
 }
 

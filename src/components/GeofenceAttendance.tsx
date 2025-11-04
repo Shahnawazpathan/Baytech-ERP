@@ -34,13 +34,15 @@ interface GeofenceLocation {
 interface GeofenceAttendanceProps {
   onCheckIn?: (data: any) => void
   onCheckOut?: (data: any) => void
-  companyLocations?: GeofenceLocation[]
+  companyId?: string
+  employeeId?: string
 }
 
-export function GeofenceAttendance({ 
-  onCheckIn, 
-  onCheckOut, 
-  companyLocations = []
+export function GeofenceAttendance({
+  onCheckIn,
+  onCheckOut,
+  companyId = 'default-company',
+  employeeId = 'current-user'
 }: GeofenceAttendanceProps) {
   const { toast } = useToast()
   const [currentLocation, setCurrentLocation] = useState<{ lat: number; lng: number } | null>(null)
@@ -51,39 +53,38 @@ export function GeofenceAttendance({
   const [attendanceStatus, setAttendanceStatus] = useState<'idle' | 'checking-in' | 'checking-out' | 'success'>('idle')
   const [isOnline, setIsOnline] = useState(navigator.onLine)
   const [lastKnownLocation, setLastKnownLocation] = useState<{ lat: number; lng: number } | null>(null)
+  const [workingLocations, setWorkingLocations] = useState<GeofenceLocation[]>([])
+  const [isLoadingLocations, setIsLoadingLocations] = useState(false)
+  const [hasCheckedIn, setHasCheckedIn] = useState(false)
 
-  // Default company locations if none provided
-  const defaultLocations: GeofenceLocation[] = [
-    {
-      id: '1',
-      name: 'Main Office',
-      address: '123 Business District, City, State',
-      latitude: 40.7128,
-      longitude: -74.0060,
-      radius: 100,
-      isActive: true
-    },
-    {
-      id: '2',
-      name: 'Branch Office',
-      address: '456 Corporate Plaza, City, State',
-      latitude: 40.7589,
-      longitude: -73.9851,
-      radius: 150,
-      isActive: true
-    },
-    {
-      id: '3',
-      name: 'Remote Work Zone',
-      address: 'Co-working Space, Downtown',
-      latitude: 40.7505,
-      longitude: -73.9934,
-      radius: 50,
-      isActive: true
+  // Fetch geofence locations from API
+  useEffect(() => {
+    const fetchLocations = async () => {
+      setIsLoadingLocations(true)
+      try {
+        const response = await fetch('/api/geofence-locations', {
+          headers: {
+            'x-company-id': companyId
+          }
+        })
+        const data = await response.json()
+        if (data.success && data.data) {
+          setWorkingLocations(data.data)
+        }
+      } catch (error) {
+        console.error('Error fetching geofence locations:', error)
+        toast({
+          title: "Error",
+          description: "Failed to load work locations",
+          variant: "destructive",
+        })
+      } finally {
+        setIsLoadingLocations(false)
+      }
     }
-  ]
 
-  const workingLocations = companyLocations.length > 0 ? companyLocations : defaultLocations
+    fetchLocations()
+  }, [companyId, toast])
 
   // Monitor online status
   useEffect(() => {
@@ -244,33 +245,40 @@ export function GeofenceAttendance({
     }
 
     setAttendanceStatus('checking-in')
-    
+
     try {
       const attendanceData = {
-        employeeId: 'current-user',
-        companyId: 'default-company',
+        employeeId,
+        companyId,
         latitude: currentLocation.lat,
         longitude: currentLocation.lng,
         address: selectedLocation.address,
         locationId: selectedLocation.id,
         locationName: selectedLocation.name,
-        checkInTime: new Date().toISOString(),
-        isGeofenceValid: true,
-        distance: calculateDistance(
-          currentLocation.lat,
-          currentLocation.lng,
-          selectedLocation.latitude,
-          selectedLocation.longitude
-        ),
-        isOnline,
         notes: `Checked in at ${selectedLocation.name}`
       }
 
-      // Call API or parent handler
-      if (onCheckIn) {
-        await onCheckIn(attendanceData)
+      // Call check-in API
+      const response = await fetch('/api/attendance/check-in', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(attendanceData)
+      })
+
+      const result = await response.json()
+
+      if (!result.success) {
+        throw new Error(result.error || 'Failed to check in')
       }
 
+      // Call parent handler if provided
+      if (onCheckIn) {
+        await onCheckIn(result.data)
+      }
+
+      setHasCheckedIn(true)
       setAttendanceStatus('success')
       toast({
         title: "Check-in Successful",
@@ -301,33 +309,38 @@ export function GeofenceAttendance({
     }
 
     setAttendanceStatus('checking-out')
-    
+
     try {
       const attendanceData = {
-        employeeId: 'current-user',
-        companyId: 'default-company',
+        employeeId,
+        companyId,
         latitude: currentLocation.lat,
         longitude: currentLocation.lng,
         address: selectedLocation?.address || 'Unknown location',
-        locationId: selectedLocation?.id,
-        locationName: selectedLocation?.name || 'Outside work area',
-        checkOutTime: new Date().toISOString(),
-        isGeofenceValid: !!selectedLocation,
-        distance: selectedLocation ? calculateDistance(
-          currentLocation.lat,
-          currentLocation.lng,
-          selectedLocation.latitude,
-          selectedLocation.longitude
-        ) : null,
-        isOnline,
         notes: selectedLocation ? `Checked out from ${selectedLocation.name}` : 'Checked out outside work area'
       }
 
-      // Call API or parent handler
-      if (onCheckOut) {
-        await onCheckOut(attendanceData)
+      // Call check-out API
+      const response = await fetch('/api/attendance/check-out', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(attendanceData)
+      })
+
+      const result = await response.json()
+
+      if (!result.success) {
+        throw new Error(result.error || 'Failed to check out')
       }
 
+      // Call parent handler if provided
+      if (onCheckOut) {
+        await onCheckOut(result.data)
+      }
+
+      setHasCheckedIn(false)
       setAttendanceStatus('success')
       toast({
         title: "Check-out Successful",
@@ -539,7 +552,7 @@ export function GeofenceAttendance({
           <div className="flex gap-4">
             <Button
               onClick={handleCheckIn}
-              disabled={!currentLocation || attendanceStatus !== 'idle'}
+              disabled={!currentLocation || attendanceStatus !== 'idle' || hasCheckedIn}
               className="flex-1 bg-green-600 hover:bg-green-700"
             >
               {attendanceStatus === 'checking-in' ? (
@@ -547,13 +560,13 @@ export function GeofenceAttendance({
               ) : (
                 <Navigation className="h-4 w-4 mr-2" />
               )}
-              Check In
+              {hasCheckedIn ? 'Already Checked In' : 'Check In'}
             </Button>
 
             <Button
               variant="outline"
               onClick={handleCheckOut}
-              disabled={!currentLocation || attendanceStatus !== 'idle'}
+              disabled={!currentLocation || attendanceStatus !== 'idle' || !hasCheckedIn}
               className="flex-1 border-red-200 text-red-700 hover:bg-red-50"
             >
               {attendanceStatus === 'checking-out' ? (

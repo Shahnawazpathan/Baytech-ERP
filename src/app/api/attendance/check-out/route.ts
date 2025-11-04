@@ -168,23 +168,45 @@ export async function POST(request: NextRequest) {
 // Helper functions
 async function verifyLocation(lat: number, lng: number, companyId: string): Promise<boolean> {
   try {
-    const company = await db.company.findUnique({
-      where: { id: companyId },
-      select: { address: true }
+    // Get all active geofence locations for the company
+    const geofenceLocations = await db.geofenceLocation.findMany({
+      where: { companyId, isActive: true }
     })
 
-    if (!company || !company.address) {
-      return false
+    if (geofenceLocations.length === 0) {
+      // If no geofence locations configured, allow check-out
+      return true
     }
 
-    // Simulate distance calculation
-    const distance = Math.random() * 200 // Random distance in meters
-    
-    return distance <= 100 // Within 100 meters
+    // Check if the user is within any geofence
+    for (const location of geofenceLocations) {
+      const distance = calculateDistance(lat, lng, location.latitude, location.longitude)
+      if (distance <= location.radius) {
+        return true
+      }
+    }
+
+    return false
   } catch (error) {
     console.error('Error verifying location:', error)
     return false
   }
+}
+
+// Haversine formula to calculate distance between two coordinates
+function calculateDistance(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const R = 6371e3 // Earth's radius in meters
+  const φ1 = lat1 * Math.PI / 180
+  const φ2 = lat2 * Math.PI / 180
+  const Δφ = (lat2 - lat1) * Math.PI / 180
+  const Δλ = (lng2 - lng1) * Math.PI / 180
+
+  const a = Math.sin(Δφ/2) * Math.sin(Δφ/2) +
+            Math.cos(φ1) * Math.cos(φ2) *
+            Math.sin(Δλ/2) * Math.sin(Δλ/2)
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a))
+
+  return R * c
 }
 
 async function getAddressFromCoordinates(lat: number, lng: number): Promise<string> {

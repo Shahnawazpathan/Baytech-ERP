@@ -19,6 +19,7 @@ import { useToast } from '@/hooks/use-toast'
 import { useLenis } from '@/hooks/use-lenis'
 import { LeadImportModal } from '@/components/LeadImportModal'
 import { GeofenceAttendance } from '@/components/GeofenceAttendance'
+import { GeofenceLocationManager } from '@/components/GeofenceLocationManager'
 import { TaskManagement } from '@/components/TaskManagement'
 import { DocumentManager } from '@/components/DocumentManager'
 import { 
@@ -67,6 +68,7 @@ export default function Home() {
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [unreadNotifications, setUnreadNotifications] = useState(0)
   const [socket, setSocket] = useState<Socket | null>(null)
+  const [notificationPopoverOpen, setNotificationPopoverOpen] = useState(false)
   
   // Global state for all data
   const [notifications, setNotifications] = useState<any[]>([])
@@ -131,6 +133,25 @@ export default function Home() {
       };
     }
   }, [user]);
+
+  // Handle responsive sidebar state
+  useEffect(() => {
+    const handleResize = () => {
+      // Auto-open sidebar on desktop, close on mobile
+      if (window.innerWidth >= 1024) {
+        setSidebarOpen(true)
+      } else {
+        setSidebarOpen(false)
+      }
+    }
+
+    // Set initial state
+    handleResize()
+
+    // Listen for window resize
+    window.addEventListener('resize', handleResize)
+    return () => window.removeEventListener('resize', handleResize)
+  }, [])
 
   // Fetch departments and roles when component mounts
   useEffect(() => {
@@ -239,24 +260,45 @@ export default function Home() {
   const fetchData = async () => {
     try {
       setLoading(prev => ({ ...prev, employees: true }))
-      const employeesRes = await fetch('/api/employees')
-      if (employeesRes.ok) {
-        const employeesData = await employeesRes.json()
-        setEmployees(employeesData)
+      if (canViewEmployees) {
+        const employeesRes = await fetch('/api/employees', {
+          headers: {
+            'x-user-id': user?.id || '',
+            'x-company-id': 'default-company'
+          }
+        })
+        if (employeesRes.ok) {
+          const employeesData = await employeesRes.json()
+          setEmployees(employeesData)
+        }
       }
       
       setLoading(prev => ({ ...prev, leads: true }))
-      const leadsRes = await fetch('/api/leads')
-      if (leadsRes.ok) {
-        const leadsData = await leadsRes.json()
-        setLeads(leadsData)
+      if (canViewLeads) {
+        const leadsRes = await fetch('/api/leads', {
+          headers: {
+            'x-user-id': user?.id || '',
+            'x-company-id': 'default-company'
+          }
+        })
+        if (leadsRes.ok) {
+          const leadsData = await leadsRes.json()
+          setLeads(leadsData)
+        }
       }
       
       setLoading(prev => ({ ...prev, attendance: true }))
-      const attendanceRes = await fetch('/api/attendance')
-      if (attendanceRes.ok) {
-        const attendanceData = await attendanceRes.json()
-        setAttendanceRecords(attendanceData)
+      if (canViewAttendance) {
+        const attendanceRes = await fetch('/api/attendance', {
+          headers: {
+            'x-user-id': user?.id || '',
+            'x-company-id': 'default-company'
+          }
+        })
+        if (attendanceRes.ok) {
+          const attendanceData = await attendanceRes.json()
+          setAttendanceRecords(attendanceData)
+        }
       }
       
       setLoading(prev => ({ ...prev, notifications: true }))
@@ -275,15 +317,17 @@ export default function Home() {
       }
       
       setLoading(prev => ({ ...prev, stats: true }))
-      const statsRes = await fetch('/api/reports/overview-stats', {
-        headers: {
-          'x-user-id': user?.id || '',
-          'x-company-id': 'default-company'
+      if (canViewReports) {
+        const statsRes = await fetch('/api/reports/overview-stats', {
+          headers: {
+            'x-user-id': user?.id || '',
+            'x-company-id': 'default-company'
+          }
+        })
+        if (statsRes.ok) {
+          const statsData = await statsRes.json()
+          setStats(statsData)
         }
-      })
-      if (statsRes.ok) {
-        const statsData = await statsRes.json()
-        setStats(statsData)
       }
     } catch (error) {
       console.error('Error fetching data:', error)
@@ -369,39 +413,45 @@ export default function Home() {
         try {
           switch (activeTab) {
             case 'employees':
-              const employeesRes = await fetch('/api/employees', {
-                headers: {
-                  'x-user-id': user?.id || '',
-                  'x-company-id': 'default-company'
+              if (canViewEmployees) {
+                const employeesRes = await fetch('/api/employees', {
+                  headers: {
+                    'x-user-id': user?.id || '',
+                    'x-company-id': 'default-company'
+                  }
+                })
+                if (employeesRes.ok) {
+                  const data = await employeesRes.json()
+                  setEmployees(data)
                 }
-              })
-              if (employeesRes.ok) {
-                const data = await employeesRes.json()
-                setEmployees(data)
               }
               break
             case 'leads':
-              const leadsRes = await fetch('/api/leads', {
-                headers: {
-                  'x-user-id': user?.id || '',
-                  'x-company-id': 'default-company'
+              if (canViewLeads) {
+                const leadsRes = await fetch('/api/leads', {
+                  headers: {
+                    'x-user-id': user?.id || '',
+                    'x-company-id': 'default-company'
+                  }
+                })
+                if (leadsRes.ok) {
+                  const data = await leadsRes.json()
+                  setLeads(data)
                 }
-              })
-              if (leadsRes.ok) {
-                const data = await leadsRes.json()
-                setLeads(data)
               }
               break
             case 'attendance':
-              const attendanceRes = await fetch('/api/attendance', {
-                headers: {
-                  'x-user-id': user?.id || '',
-                  'x-company-id': 'default-company'
+              if (canViewAttendance) {
+                const attendanceRes = await fetch('/api/attendance', {
+                  headers: {
+                    'x-user-id': user?.id || '',
+                    'x-company-id': 'default-company'
+                  }
+                })
+                if (attendanceRes.ok) {
+                  const data = await attendanceRes.json()
+                  setAttendanceRecords(data)
                 }
-              })
-              if (attendanceRes.ok) {
-                const data = await attendanceRes.json()
-                setAttendanceRecords(data)
               }
               break
           }
@@ -414,7 +464,7 @@ export default function Home() {
       
       refreshTabData()
     }
-  }, [activeTab])
+  }, [activeTab, canViewEmployees, canViewLeads, canViewAttendance])
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -447,7 +497,15 @@ export default function Home() {
                          employee.position.toLowerCase().includes(employeeFilter.search.toLowerCase())
     const matchesDepartment = employeeFilter.department === 'ALL' || employee.departmentId === employeeFilter.department
     const matchesStatus = employeeFilter.status === 'ALL' || employee.status === employeeFilter.status
-    return matchesSearch && matchesDepartment && matchesStatus
+    
+    // Role-based filtering
+    let roleMatches = true;
+    if (user?.role !== 'Administrator' && user?.role !== 'Manager') {
+      // Employee can only see their own record
+      roleMatches = employee.id === user?.id;
+    }
+    
+    return matchesSearch && matchesDepartment && matchesStatus && roleMatches
   })
 
   const filteredLeads = leads.filter(lead => {
@@ -460,7 +518,7 @@ export default function Home() {
     let roleMatches = true;
     if (user?.role !== 'Administrator' && user?.role !== 'Manager') {
       // Employee can only see leads assigned to them
-      roleMatches = lead.assignedToId === user?.id;
+      roleMatches = lead.assignedToId === user?.id || !lead.assignedToId; // Can see unassigned leads too
     }
     
     return matchesSearch && matchesStatus && matchesPriority && roleMatches
@@ -472,7 +530,15 @@ export default function Home() {
                          record.location.toLowerCase().includes(attendanceFilter.search.toLowerCase())
     const matchesDepartment = attendanceFilter.department === 'ALL' || record.department === attendanceFilter.department
     const matchesStatus = attendanceFilter.status === 'ALL' || record.status === attendanceFilter.status
-    return matchesSearch && matchesDepartment && matchesStatus
+    
+    // Role-based filtering
+    let roleMatches = true;
+    if (user?.role !== 'Administrator' && user?.role !== 'Manager') {
+      // Employee can only see their own attendance records
+      roleMatches = record.employeeId === user?.id;
+    }
+    
+    return matchesSearch && matchesDepartment && matchesStatus && roleMatches
   })
 
   // Recent data for overview
@@ -820,14 +886,54 @@ export default function Home() {
     window.URL.revokeObjectURL(url)
   }
 
-  const handleBulkImportComplete = (importedLeads: any[]) => {
-    setLeads([...leads, ...importedLeads])
-    fetchData() // Refresh data
-    toast({
-      title: "Bulk Import Successful",
-      description: `Successfully imported ${importedLeads.length} leads`,
-      duration: 4000,
-    })
+  const handleBulkImportComplete = async (importedLeads: any[]) => {
+    try {
+      // Send all imported leads to the backend
+      for (const lead of importedLeads) {
+        const response = await fetch('/api/leads', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            ...lead,
+            firstName: lead.firstName,
+            lastName: lead.lastName,
+            email: lead.email || '',
+            phone: lead.phone,
+            loanAmount: parseFloat(lead.loanAmount) || 0,
+            status: lead.status || "NEW",
+            priority: lead.priority || "MEDIUM",
+            assignedToId: lead.assignedToId || null,
+            propertyAddress: lead.propertyAddress || '',
+            creditScore: parseInt(lead.creditScore) || 0,
+            source: lead.source || 'Import',
+            companyId: 'default-company',
+            notes: lead.notes || ''
+          })
+        });
+        
+        if (!response.ok) {
+          console.error('Failed to import lead:', await response.json());
+          throw new Error(`Failed to import lead: ${response.statusText}`);
+        }
+      }
+      
+      // Refresh data from backend to get all leads
+      await fetchData();
+      
+      toast({
+        title: "Bulk Import Successful",
+        description: `Successfully imported ${importedLeads.length} leads`,
+        duration: 4000,
+      });
+    } catch (error) {
+      console.error('Error importing leads:', error);
+      toast({
+        title: "Import Failed",
+        description: "Failed to import some leads. Please try again.",
+        variant: "destructive",
+        duration: 4000,
+      });
+    }
   }
 
   // Function to handle editing a lead
@@ -1252,11 +1358,6 @@ export default function Home() {
   // Function to handle editing an attendance record
   const handleEditAttendanceClick = async (attendance: any) => {
     setEditingAttendance(attendance);
-    toast({
-      title: "Attendance Record",
-      description: `Editing attendance for ${attendance.name} on ${attendance.checkIn || 'N/A'}`,
-      duration: 6000,
-    });
   };
 
   // Function to update an attendance record
@@ -1473,15 +1574,15 @@ Average Credit Score: ${Math.round(leads.reduce((sum, lead) => sum + (lead.credi
     setActiveTab(section)
     // Smooth scroll to top when changing tabs
     scrollToTop()
+    // Close sidebar on mobile after navigation
+    if (window.innerWidth < 1024) {
+      setSidebarOpen(false)
+    }
   }
 
   const handleNotificationsClick = (e?: React.MouseEvent) => {
     e?.preventDefault();
-    setActiveTab('overview')
-    // Smooth scroll to notifications section with Lenis
-    setTimeout(() => {
-      scrollToElement('#notifications-section', { offset: -100 })
-    }, 100)
+    // Don't navigate anymore, we'll show notifications in a popover
   }
 
   const handleAddEmployeeClick = () => {
@@ -1669,112 +1770,133 @@ Average Credit Score: ${Math.round(leads.reduce((sum, lead) => sum + (lead.credi
   return (
     <ProtectedRoute>
       <div className="flex h-screen bg-gray-50 transition-colors duration-200">
+
+      {/* Mobile Overlay */}
+      {sidebarOpen && (
+        <div
+          className="fixed inset-0 bg-black/50 z-40 lg:hidden transition-opacity duration-300"
+          onClick={() => setSidebarOpen(false)}
+        />
+      )}
+
       {/* Sidebar */}
-      <div className={`${sidebarOpen ? 'w-64' : 'w-16'} bg-white border-r border-gray-200 flex flex-col transition-all duration-300`}>
-        <div className="p-4 border-b border-gray-200 flex items-center justify-between">
+      <aside className={`
+        ${sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
+        ${sidebarOpen ? 'lg:w-64' : 'lg:w-16'}
+        fixed lg:relative
+        inset-y-0 left-0
+        z-50 lg:z-auto
+        w-64
+        bg-white border-r border-gray-200
+        flex flex-col
+        transition-all duration-300 ease-in-out
+        shadow-xl lg:shadow-none
+      `}>
+        <div className="p-4 border-b border-gray-200 flex items-center justify-between min-h-[73px]">
           {sidebarOpen ? (
-            <div className="flex items-center gap-3">
-              <Building2 className="h-8 w-8 text-blue-600" />
-              <div>
-                <h1 className="text-xl font-bold text-gray-900">Baytech ERP</h1>
-                <p className="text-sm text-gray-500">Mortgage System</p>
+            <div className="flex items-center gap-3 overflow-hidden">
+              <Building2 className="h-8 w-8 text-blue-600 flex-shrink-0" />
+              <div className="min-w-0 flex-1">
+                <h1 className="text-xl font-bold text-gray-900 truncate">Baytech ERP</h1>
+                <p className="text-sm text-gray-500 truncate">Mortgage System</p>
               </div>
             </div>
           ) : (
-            <div className="flex justify-center">
+            <div className="flex justify-center w-full">
               <Building2 className="h-8 w-8 text-blue-600" />
             </div>
           )}
-          <Button 
-            variant="ghost" 
-            size="sm" 
+          <Button
+            variant="ghost"
+            size="sm"
             onClick={() => setSidebarOpen(!sidebarOpen)}
-            className="ml-auto"
+            className="ml-auto flex-shrink-0 hover:bg-gray-100"
+            aria-label={sidebarOpen ? "Close sidebar" : "Open sidebar"}
           >
             {sidebarOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
           </Button>
         </div>
         
-        <nav className="flex-1 p-4">
+        <nav className="flex-1 p-4 overflow-y-auto">
           <div className="space-y-1">
-            <Button 
-              variant={activeTab === 'overview' ? 'secondary' : 'ghost'} 
-              className={`w-full justify-start gap-2 ${!sidebarOpen ? 'justify-center' : ''} transition-colors`}
+            <Button
+              variant={activeTab === 'overview' ? 'secondary' : 'ghost'}
+              className={`w-full gap-2 transition-all duration-200 ${!sidebarOpen ? 'justify-center px-2 lg:px-2' : 'justify-start'} hover:scale-105`}
               onClick={() => handleNavigation('overview')}
             >
-              <BarChart3 className="h-4 w-4" />
-              {sidebarOpen && <span>Dashboard</span>}
+              <BarChart3 className="h-4 w-4 flex-shrink-0" />
+              {sidebarOpen && <span className="truncate">Dashboard</span>}
             </Button>
-            
+
             {canViewEmployees && (
-              <Button 
-                variant={activeTab === 'employees' ? 'secondary' : 'ghost'} 
-                className={`w-full justify-start gap-2 ${!sidebarOpen ? 'justify-center' : ''} transition-colors`}
+              <Button
+                variant={activeTab === 'employees' ? 'secondary' : 'ghost'}
+                className={`w-full gap-2 transition-all duration-200 ${!sidebarOpen ? 'justify-center px-2 lg:px-2' : 'justify-start'} hover:scale-105`}
                 onClick={() => handleNavigation('employees')}
               >
-                <Users className="h-4 w-4" />
-                {sidebarOpen && <span>Employees</span>}
+                <Users className="h-4 w-4 flex-shrink-0" />
+                {sidebarOpen && <span className="truncate">Employees</span>}
               </Button>
             )}
-            
+
             {canViewLeads && (
-              <Button 
-                variant={activeTab === 'leads' ? 'secondary' : 'ghost'} 
-                className={`w-full justify-start gap-2 ${!sidebarOpen ? 'justify-center' : ''} transition-colors`}
+              <Button
+                variant={activeTab === 'leads' ? 'secondary' : 'ghost'}
+                className={`w-full gap-2 transition-all duration-200 ${!sidebarOpen ? 'justify-center px-2 lg:px-2' : 'justify-start'} hover:scale-105`}
                 onClick={() => handleNavigation('leads')}
               >
-                <Phone className="h-4 w-4" />
-                {sidebarOpen && <span>Leads</span>}
+                <Phone className="h-4 w-4 flex-shrink-0" />
+                {sidebarOpen && <span className="truncate">Leads</span>}
               </Button>
             )}
-            
+
             {canViewAttendance && (
-              <Button 
-                variant={activeTab === 'attendance' ? 'secondary' : 'ghost'} 
-                className={`w-full justify-start gap-2 ${!sidebarOpen ? 'justify-center' : ''} transition-colors`}
+              <Button
+                variant={activeTab === 'attendance' ? 'secondary' : 'ghost'}
+                className={`w-full gap-2 transition-all duration-200 ${!sidebarOpen ? 'justify-center px-2 lg:px-2' : 'justify-start'} hover:scale-105`}
                 onClick={() => handleNavigation('attendance')}
               >
-                <Calendar className="h-4 w-4" />
-                {sidebarOpen && <span>Attendance</span>}
+                <Calendar className="h-4 w-4 flex-shrink-0" />
+                {sidebarOpen && <span className="truncate">Attendance</span>}
               </Button>
             )}
-            
-            <Button 
-              variant={activeTab === 'tasks' ? 'secondary' : 'ghost'} 
-              className={`w-full justify-start gap-2 ${!sidebarOpen ? 'justify-center' : ''} transition-colors`}
+
+            <Button
+              variant={activeTab === 'tasks' ? 'secondary' : 'ghost'}
+              className={`w-full gap-2 transition-all duration-200 ${!sidebarOpen ? 'justify-center px-2 lg:px-2' : 'justify-start'} hover:scale-105`}
               onClick={() => handleNavigation('tasks')}
             >
-              <CheckSquare className="h-4 w-4" />
-              {sidebarOpen && <span>Tasks</span>}
+              <CheckSquare className="h-4 w-4 flex-shrink-0" />
+              {sidebarOpen && <span className="truncate">Tasks</span>}
             </Button>
-            
-            <Button 
-              variant={activeTab === 'documents' ? 'secondary' : 'ghost'} 
-              className={`w-full justify-start gap-2 ${!sidebarOpen ? 'justify-center' : ''} transition-colors`}
+
+            <Button
+              variant={activeTab === 'documents' ? 'secondary' : 'ghost'}
+              className={`w-full gap-2 transition-all duration-200 ${!sidebarOpen ? 'justify-center px-2 lg:px-2' : 'justify-start'} hover:scale-105`}
               onClick={() => handleNavigation('documents')}
             >
-              <FolderOpen className="h-4 w-4" />
-              {sidebarOpen && <span>Documents</span>}
+              <FolderOpen className="h-4 w-4 flex-shrink-0" />
+              {sidebarOpen && <span className="truncate">Documents</span>}
             </Button>
-            
+
             {canViewReports && (
-              <Button 
-                variant={activeTab === 'analytics' ? 'secondary' : 'ghost'} 
-                className={`w-full justify-start gap-2 ${!sidebarOpen ? 'justify-center' : ''} transition-colors`}
+              <Button
+                variant={activeTab === 'analytics' ? 'secondary' : 'ghost'}
+                className={`w-full gap-2 transition-all duration-200 ${!sidebarOpen ? 'justify-center px-2 lg:px-2' : 'justify-start'} hover:scale-105`}
                 onClick={() => handleNavigation('analytics')}
               >
-                <BarChart3 className="h-4 w-4" />
-                {sidebarOpen && <span>Analytics</span>}
+                <BarChart3 className="h-4 w-4 flex-shrink-0" />
+                {sidebarOpen && <span className="truncate">Analytics</span>}
               </Button>
             )}
           </div>
         </nav>
         
-        <div className="p-4 border-t border-gray-200">
+        <div className="p-4 border-t border-gray-200 mt-auto">
           {sidebarOpen ? (
             <>
-              <div className="flex items-center gap-3 mb-3">
-                <Avatar>
+              <div className="flex items-center gap-3 mb-3 overflow-hidden">
+                <Avatar className="flex-shrink-0">
                   <AvatarImage src="/placeholder-avatar.jpg" />
                   <AvatarFallback>{user?.name?.charAt(0) || 'A'}</AvatarFallback>
                 </Avatar>
@@ -1783,93 +1905,174 @@ Average Credit Score: ${Math.round(leads.reduce((sum, lead) => sum + (lead.credi
                   <p className="text-xs text-gray-500 truncate">{user?.role || 'Admin'}</p>
                 </div>
               </div>
-              <Button 
-                variant="outline" 
-                size="sm" 
-                className="w-full justify-start gap-2"
+              <Button
+                variant="outline"
+                size="sm"
+                className="w-full justify-start gap-2 hover:bg-red-50 hover:text-red-600 hover:border-red-200 transition-colors"
                 onClick={handleLogout}
               >
-                <LogOut className="h-4 w-4" />
-                Logout
+                <LogOut className="h-4 w-4 flex-shrink-0" />
+                <span>Logout</span>
               </Button>
             </>
           ) : (
-            <div className="flex flex-col items-center">
-              <Button 
-                variant="outline" 
-                size="sm" 
-                className="w-10 h-10 p-0 rounded-full mb-2"
+            <div className="flex flex-col items-center gap-2">
+              <Avatar className="w-8 h-8">
+                <AvatarImage src="/placeholder-avatar.jpg" />
+                <AvatarFallback className="text-xs">{user?.name?.charAt(0) || 'A'}</AvatarFallback>
+              </Avatar>
+              <Button
+                variant="outline"
+                size="sm"
+                className="w-10 h-10 p-0 rounded-full hover:bg-red-50 hover:text-red-600 hover:border-red-200 transition-colors"
                 onClick={handleLogout}
+                aria-label="Logout"
               >
                 <LogOut className="h-4 w-4" />
               </Button>
             </div>
           )}
         </div>
-      </div>
+      </aside>
 
       {/* Main Content */}
-      <div className="flex-1 flex flex-col overflow-hidden">
+      <div className="flex-1 flex flex-col overflow-hidden min-w-0">
         {/* Header */}
-        <header className="bg-white border-b border-gray-200 px-6 py-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-2xl font-bold text-gray-900">
-                {activeTab === 'overview' && 'Dashboard'}
-                {activeTab === 'employees' && 'Employee Management'}
-                {activeTab === 'leads' && 'Lead Management'}
-                {activeTab === 'attendance' && 'Attendance Tracking'}
-                {activeTab === 'tasks' && 'Task Management'}
-                {activeTab === 'documents' && 'Document Management'}
-                {activeTab === 'analytics' && 'Analytics & Reports'}
-              </h1>
-              <p className="text-sm text-gray-500">Welcome back, {user?.name || 'Admin'}</p>
+        <header className="bg-white border-b border-gray-200 px-4 sm:px-6 py-3 sm:py-4 sticky top-0 z-30">
+          <div className="flex items-center justify-between gap-3">
+            {/* Left Section - Mobile Menu + Title */}
+            <div className="flex items-center gap-3 min-w-0 flex-1">
+              {/* Mobile Menu Toggle */}
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setSidebarOpen(!sidebarOpen)}
+                className="lg:hidden flex-shrink-0"
+                aria-label="Toggle menu"
+              >
+                <Menu className="h-5 w-5" />
+              </Button>
+
+              <div className="min-w-0 flex-1">
+                <h1 className="text-lg sm:text-xl lg:text-2xl font-bold text-gray-900 truncate">
+                  {activeTab === 'overview' && 'Dashboard'}
+                  {activeTab === 'employees' && 'Employee Management'}
+                  {activeTab === 'leads' && 'Lead Management'}
+                  {activeTab === 'attendance' && 'Attendance Tracking'}
+                  {activeTab === 'tasks' && 'Task Management'}
+                  {activeTab === 'documents' && 'Document Management'}
+                  {activeTab === 'analytics' && 'Analytics & Reports'}
+                </h1>
+                <p className="text-xs sm:text-sm text-gray-500 truncate hidden sm:block">
+                  Welcome back, {user?.name || 'Admin'}
+                </p>
+              </div>
             </div>
-            <div className="flex items-center gap-3">
-              <Button 
-                variant="outline" 
+
+            {/* Right Section - Actions & Profile */}
+            <div className="flex items-center gap-2 flex-shrink-0">
+              {/* Refresh Button */}
+              <Button
+                variant="outline"
                 size="sm"
                 onClick={refreshData}
                 disabled={isRefreshing}
+                className="hidden sm:flex"
               >
                 {isRefreshing ? (
-                  <Clock className="h-4 w-4 mr-2 animate-spin" />
+                  <Clock className="h-4 w-4 sm:mr-2 animate-spin" />
                 ) : (
-                  <Clock className="h-4 w-4 mr-2" />
+                  <Clock className="h-4 w-4 sm:mr-2" />
                 )}
-                {isRefreshing ? 'Refreshing...' : 'Refresh'}
+                <span className="hidden md:inline">{isRefreshing ? 'Refreshing...' : 'Refresh'}</span>
               </Button>
-              
-              {/* Notifications dropdown */}
+
+              {/* Notifications Dropdown */}
               <div className="relative">
-                <Button 
-                  variant="outline" 
-                  size="sm"
-                  onClick={() => {
-                    // Toggle notifications dropdown by navigating to notifications tab
-                    handleNotificationsClick();
-                  }}
-                  className="relative"
-                >
-                  <Bell className="h-4 w-4 mr-2" />
-                  {unreadNotifications > 0 && (
-                    <span className="absolute -top-1 -right-1 h-4 w-4 bg-red-500 text-white text-xs rounded-full flex items-center justify-center">
-                      {unreadNotifications}
-                    </span>
-                  )}
-                  <span className="hidden sm:inline">Notifications</span>
-                  <ChevronDown className="h-4 w-4 ml-1" />
-                </Button>
+                <Popover open={notificationPopoverOpen} onOpenChange={setNotificationPopoverOpen}>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="relative"
+                      aria-label="Notifications"
+                    >
+                      <Bell className="h-4 w-4 sm:mr-2" />
+                      {unreadNotifications > 0 && (
+                        <span className="absolute -top-1 -right-1 h-4 w-4 bg-red-500 text-white text-xs rounded-full flex items-center justify-center animate-pulse">
+                          {unreadNotifications > 9 ? '9+' : unreadNotifications}
+                        </span>
+                      )}
+                      <span className="hidden lg:inline">Notifications</span>
+                      <ChevronDown className="h-4 w-4 ml-1 hidden lg:inline" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-80 p-0" align="end">
+                    <div className="p-4 border-b">
+                      <div className="flex justify-between items-center">
+                        <h3 className="font-semibold text-lg">Notifications</h3>
+                        <Button 
+                          variant="ghost" 
+                          size="sm" 
+                          onClick={markAllNotificationsAsRead}
+                          disabled={notifications.length === 0}
+                        >
+                          Mark all as read
+                        </Button>
+                      </div>
+                    </div>
+                    <ScrollArea className="h-80">
+                      <div className="divide-y">
+                        {notifications.length === 0 ? (
+                          <div className="p-6 text-center text-gray-500">
+                            No notifications
+                          </div>
+                        ) : (
+                          notifications.map((notification) => (
+                            <div 
+                              key={notification.id} 
+                              className={`p-4 cursor-pointer hover:bg-gray-50 transition-colors ${!notification.isRead ? 'bg-blue-50' : ''}`}
+                              onClick={async () => {
+                                await handleNotificationClick(notification);
+                                setNotificationPopoverOpen(false); // Close the popover after clicking
+                              }}
+                            >
+                              <div className="flex justify-between">
+                                <h4 className={`font-medium ${!notification.isRead ? 'text-blue-700' : 'text-gray-900'}`}>
+                                  {notification.title}
+                                </h4>
+                                {!notification.isRead && (
+                                  <span className="h-2 w-2 bg-blue-500 rounded-full flex-shrink-0 mt-1.5"></span>
+                                )}
+                              </div>
+                              <p className="text-sm text-gray-600 mt-1">
+                                {notification.message}
+                              </p>
+                              <p className="text-xs text-gray-400 mt-2">
+                                {new Date(notification.createdAt || notification.time || notification.timestamp).toLocaleString()}
+                              </p>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    </ScrollArea>
+                  </PopoverContent>
+                </Popover>
               </div>
-              
+
+              {/* User Profile */}
               <div className="flex items-center gap-2">
-                <Avatar>
+                <Avatar className="h-8 w-8 sm:h-9 sm:w-9">
                   <AvatarImage src="/placeholder-avatar.jpg" />
-                  <AvatarFallback>{user?.name?.charAt(0) || 'A'}</AvatarFallback>
+                  <AvatarFallback className="text-xs">{user?.name?.charAt(0) || 'A'}</AvatarFallback>
                 </Avatar>
-                <div className="hidden md:block">
-                  <p className="text-sm font-medium text-gray-900">{user?.name || 'Admin'}</p>
-                  <p className="text-xs text-gray-500">{user?.role || 'System Admin'}</p>
+                <div className="hidden xl:block">
+                  <p className="text-sm font-medium text-gray-900 truncate max-w-[120px]">
+                    {user?.name || 'Admin'}
+                  </p>
+                  <p className="text-xs text-gray-500 truncate max-w-[120px]">
+                    {user?.role || 'System Admin'}
+                  </p>
                 </div>
               </div>
             </div>
@@ -2364,6 +2567,15 @@ Average Credit Score: ${Math.round(leads.reduce((sum, lead) => sum + (lead.credi
                       <Download className="h-4 w-4 mr-2" />
                       Export
                     </Button>
+                    {(user?.role === 'Administrator' || user?.role === 'Manager') && (
+                      <Button 
+                        variant="outline"
+                        onClick={() => setShowBulkImportModal(true)}
+                      >
+                        <Upload className="h-4 w-4 mr-2" />
+                        Import
+                      </Button>
+                    )}
                     <Button 
                       onClick={handleAddLeadClick}
                       className="bg-blue-600 hover:bg-blue-700 text-white"
@@ -2578,25 +2790,19 @@ Average Credit Score: ${Math.round(leads.reduce((sum, lead) => sum + (lead.credi
 
             <TabsContent value="attendance">
               <div className="space-y-6">
+                {/* Admin: Geofence Location Management */}
+                {user?.role === 'Admin' && (
+                  <GeofenceLocationManager companyId="default-company" />
+                )}
+
                 {/* Geofence Attendance Section */}
                 {showGeofenceAttendance && (
-                  <Card>
-                    <CardHeader>
-                      <CardTitle className="flex items-center gap-2">
-                        <Map className="h-5 w-5" />
-                        Geofence Attendance System
-                      </CardTitle>
-                      <CardDescription>
-                        Location-verified attendance with automatic geofencing
-                      </CardDescription>
-                    </CardHeader>
-                    <CardContent>
-                      <GeofenceAttendance 
-                        onCheckIn={handleAttendanceCheckIn}
-                        onCheckOut={handleAttendanceCheckOut}
-                      />
-                    </CardContent>
-                  </Card>
+                  <GeofenceAttendance
+                    companyId="default-company"
+                    employeeId={user?.id || 'current-user'}
+                    onCheckIn={handleAttendanceCheckIn}
+                    onCheckOut={handleAttendanceCheckOut}
+                  />
                 )}
                 {/* Attendance Header */}
                 <div className="flex items-center justify-between">
@@ -2800,27 +3006,32 @@ Average Credit Score: ${Math.round(leads.reduce((sum, lead) => sum + (lead.credi
                                 </td>
                                 <td className="p-3">
                                   <div className="flex gap-2">
-                                    <Button 
-                                      variant="outline" 
+                                    <Button
+                                      variant="outline"
                                       size="sm"
                                       onClick={() => handleViewAttendanceClick(record)}
                                     >
                                       View
                                     </Button>
-                                    <Button 
-                                      variant="ghost" 
-                                      size="sm"
-                                      onClick={() => handleEditAttendanceClick(record)}
-                                    >
-                                      Edit
-                                    </Button>
-                                    <Button 
-                                      variant="destructive" 
-                                      size="sm"
-                                      onClick={() => handleDeleteAttendance(record.id)}
-                                    >
-                                      Delete
-                                    </Button>
+                                    {/* Admin only buttons */}
+                                    {user?.role === 'Admin' && (
+                                      <>
+                                        <Button
+                                          variant="ghost"
+                                          size="sm"
+                                          onClick={() => handleEditAttendanceClick(record)}
+                                        >
+                                          Edit
+                                        </Button>
+                                        <Button
+                                          variant="destructive"
+                                          size="sm"
+                                          onClick={() => handleDeleteAttendance(record.id)}
+                                        >
+                                          Delete
+                                        </Button>
+                                      </>
+                                    )}
                                   </div>
                                 </td>
                               </tr>
@@ -2838,6 +3049,127 @@ Average Credit Score: ${Math.round(leads.reduce((sum, lead) => sum + (lead.credi
                     )}
                   </CardContent>
                 </Card>
+
+                {/* Edit Attendance Dialog */}
+                {editingAttendance && (
+                  <Dialog open={!!editingAttendance} onOpenChange={(open) => !open && setEditingAttendance(null)}>
+                    <DialogContent className="max-w-2xl">
+                      <DialogHeader>
+                        <DialogTitle>Edit Attendance Record</DialogTitle>
+                        <DialogDescription>
+                          Update attendance details for {editingAttendance.name}
+                        </DialogDescription>
+                      </DialogHeader>
+                      <div className="space-y-4">
+                        <div className="grid grid-cols-2 gap-4">
+                          <div>
+                            <Label>Employee Name</Label>
+                            <Input value={editingAttendance.name} disabled />
+                          </div>
+                          <div>
+                            <Label>Department</Label>
+                            <Input value={editingAttendance.department} disabled />
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-2 gap-4">
+                          <div>
+                            <Label htmlFor="checkInTime">Check In Time</Label>
+                            <Input
+                              id="checkInTime"
+                              type="datetime-local"
+                              value={editingAttendance.checkInTime ? new Date(editingAttendance.checkInTime).toISOString().slice(0, 16) : ''}
+                              onChange={(e) => setEditingAttendance({
+                                ...editingAttendance,
+                                checkInTime: e.target.value ? new Date(e.target.value).toISOString() : null
+                              })}
+                            />
+                          </div>
+                          <div>
+                            <Label htmlFor="checkOutTime">Check Out Time</Label>
+                            <Input
+                              id="checkOutTime"
+                              type="datetime-local"
+                              value={editingAttendance.checkOutTime ? new Date(editingAttendance.checkOutTime).toISOString().slice(0, 16) : ''}
+                              onChange={(e) => setEditingAttendance({
+                                ...editingAttendance,
+                                checkOutTime: e.target.value ? new Date(e.target.value).toISOString() : null
+                              })}
+                            />
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-2 gap-4">
+                          <div>
+                            <Label htmlFor="status">Status</Label>
+                            <Select
+                              value={editingAttendance.status}
+                              onValueChange={(value) => setEditingAttendance({
+                                ...editingAttendance,
+                                status: value
+                              })}
+                            >
+                              <SelectTrigger>
+                                <SelectValue placeholder="Select status" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="PRESENT">Present</SelectItem>
+                                <SelectItem value="LATE">Late</SelectItem>
+                                <SelectItem value="ABSENT">Absent</SelectItem>
+                                <SelectItem value="HALF_DAY">Half Day</SelectItem>
+                                <SelectItem value="ON_LEAVE">On Leave</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div>
+                            <Label htmlFor="location">Location</Label>
+                            <Input
+                              id="location"
+                              value={editingAttendance.location || ''}
+                              onChange={(e) => setEditingAttendance({
+                                ...editingAttendance,
+                                location: e.target.value
+                              })}
+                              placeholder="Work location"
+                            />
+                          </div>
+                        </div>
+                        <div>
+                          <Label htmlFor="notes">Notes</Label>
+                          <Input
+                            id="notes"
+                            value={editingAttendance.notes || ''}
+                            onChange={(e) => setEditingAttendance({
+                              ...editingAttendance,
+                              notes: e.target.value
+                            })}
+                            placeholder="Additional notes"
+                          />
+                        </div>
+                      </div>
+                      <DialogFooter>
+                        <Button
+                          variant="outline"
+                          onClick={() => setEditingAttendance(null)}
+                        >
+                          Cancel
+                        </Button>
+                        <Button
+                          onClick={() => {
+                            handleUpdateAttendance(editingAttendance.id, {
+                              checkInTime: editingAttendance.checkInTime,
+                              checkOutTime: editingAttendance.checkOutTime,
+                              status: editingAttendance.status,
+                              checkInAddress: editingAttendance.location,
+                              notes: editingAttendance.notes
+                            })
+                            setEditingAttendance(null)
+                          }}
+                        >
+                          Save Changes
+                        </Button>
+                      </DialogFooter>
+                    </DialogContent>
+                  </Dialog>
+                )}
               </div>
             </TabsContent>
 
