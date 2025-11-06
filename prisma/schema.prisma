@@ -6,9 +6,9 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
-  directUrl = env("DIRECT_URL")
+  provider  = "postgresql"
+  url       = "postgresql://postgres.kqdwgfrfgctacmwdykmq:Sonu%4021%40@aws-1-ap-southeast-2.pooler.supabase.com:6543/erp?pgbouncer=true&sslmode=require"
+  directUrl = "postgresql://postgres.kqdwgfrfgctacmwdykmq:Sonu%4021%40@aws-1-ap-southeast-2.pooler.supabase.com:5432/erp?sslmode=require"
 }
 
 // Multi-tenant Company Model
