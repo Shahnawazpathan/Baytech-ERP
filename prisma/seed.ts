@@ -314,6 +314,49 @@ async function main() {
     },
   })
 
+  // Create some leads
+  await prisma.lead.upsert({
+    where: { leadNumber: 'LEAD001' },
+    update: {},
+    create: {
+      leadNumber: 'LEAD001',
+      firstName: 'John',
+      lastName: 'Doe',
+      email: 'john.doe@example.com',
+      phone: '123-456-7890',
+      loanAmount: 250000,
+      propertyType: 'Single Family',
+      creditScore: 720,
+      income: 80000,
+      source: 'Website',
+      status: 'NEW',
+      priority: 'MEDIUM',
+      companyId: company.id,
+      assignedToId: employeeUser.id,
+    },
+  })
+
+  await prisma.lead.upsert({
+    where: { leadNumber: 'LEAD002' },
+    update: {},
+    create: {
+      leadNumber: 'LEAD002',
+      firstName: 'Jane',
+      lastName: 'Smith',
+      email: 'jane.smith@example.com',
+      phone: '098-765-4321',
+      loanAmount: 400000,
+      propertyType: 'Condo',
+      creditScore: 780,
+      income: 120000,
+      source: 'Referral',
+      status: 'NEW',
+      priority: 'HIGH',
+      companyId: company.id,
+      assignedToId: employeeUser.id,
+    },
+  })
+
   console.log('✅ Database seeded successfully!')
   console.log('Company:', company.name)
   console.log('Admin User:', `${adminUser.firstName} ${adminUser.lastName}`)
