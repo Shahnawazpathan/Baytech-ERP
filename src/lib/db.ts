@@ -1,5 +1,3 @@
-import 'server-only'
-
 import { PrismaClient } from '@prisma/client'
 
 const globalForPrisma = globalThis as unknown as {
@@ -8,23 +6,24 @@ const globalForPrisma = globalThis as unknown as {
 }
 
 // Lazy initialization function
-function initializePrisma() {
+function initializePrisma(): PrismaClient {
   if (typeof window !== 'undefined') {
     throw new Error('Prisma Client cannot be used in the browser')
   }
 
-  // Turso Database Configuration (Evaluated at runtime with hardcoded fallbacks)
-  const TURSO_DATABASE_URL = process.env.TURSO_DATABASE_URL || 'libsql://baytech-shahnawazpathan.aws-ap-south-1.turso.io'
-  const TURSO_AUTH_TOKEN = process.env.TURSO_AUTH_TOKEN || 'eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJpYXQiOjE3NjI0OTM1OTIsImlkIjoiZmJlMjM5MzktYzc4OC00OWQzLWEzYzEtNjU5YTIyZDNhZTBjIiwicmlkIjoiYzNjY2Y4MDctYmVjOS00ZWNmLWJhZDItNzQ1NjkwMjJkZWYwIn0.iONfkGJQnBcIDl0ncthJnRktWkUBNV9sr2km2eKHEgd0UzNtdSE709py9CgA4CDozdEYvQgct90zw4H9pFqSDw'
+  // Return cached instance if already initialized
+  if (globalForPrisma.prisma) {
+    return globalForPrisma.prisma
+  }
 
   // Dynamically import to avoid bundling issues
   const { PrismaLibSQL } = require('@prisma/adapter-libsql')
   const { createClient } = require('@libsql/client/http')
 
-  // Use direct Turso HTTP connection (no native bindings needed)
+  // Use direct Turso HTTP connection with hardcoded credentials (no native bindings needed)
   const libsql = globalForPrisma.libsql ?? createClient({
-    url: TURSO_DATABASE_URL, // Direct remote connection via HTTP
-    authToken: TURSO_AUTH_TOKEN,
+    url: process.env.TURSO_DATABASE_URL || 'libsql://baytech-shahnawazpathan.aws-ap-south-1.turso.io',
+    authToken: process.env.TURSO_AUTH_TOKEN || 'eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJpYXQiOjE3NjI0OTM1OTIsImlkIjoiZmJlMjM5MzktYzc4OC00OWQzLWEzYzEtNjU5YTIyZDNhZTBjIiwicmlkIjoiYzNjY2Y4MDctYmVjOS00ZWNmLWJhZDItNzQ1NjkwMjJkZWYwIn0.iONfkGJQnBcIDl0ncthJnRktWkUBNV9sr2km2eKHEgd0UzNtdSE709py9CgA4CDozdEYvQgct90zw4H9pFqSDw',
   })
 
   // Create Prisma adapter for libsql
@@ -36,16 +35,19 @@ function initializePrisma() {
     log: [],
   })
 
+  // Cache for reuse
   if (process.env.NODE_ENV !== 'production') {
     globalForPrisma.libsql = libsql
+    globalForPrisma.prisma = client
   }
 
   return client
 }
 
-// Export lazy-initialized db
-export const db = globalForPrisma.prisma ?? initializePrisma()
-
-if (process.env.NODE_ENV !== 'production') {
-  globalForPrisma.prisma = db
-}
+// Export proxy that initializes on first access (truly lazy)
+export const db = new Proxy({} as PrismaClient, {
+  get(target, prop) {
+    const client = initializePrisma()
+    return client[prop as keyof PrismaClient]
+  },
+})
