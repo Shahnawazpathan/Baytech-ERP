@@ -1,3 +1,4 @@
+import 'dotenv/config';
 // server.ts - Next.js Standalone + Socket.IO
 import { setupSocket } from '@/lib/socket';
 import { createServer } from 'http';
@@ -7,8 +8,9 @@ import { initializeSystem } from '@/lib/init';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
-// Set Turso database URL directly with authentication token (hardcoded)
-process.env.DATABASE_URL = "libsql://baytech-shahnawazpathan.aws-ap-south-1.turso.io?authToken=eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJhIjoicnciLCJpYXQiOjE3NjI0OTIzMTQsImlkIjoiZmJlMjM5MzktYzc4OC00OWQzLWEzYzEtNjU5YTIyZDNhZTBjIiwicmlkIjoiYzNjY2Y4MDctYmVjOS00ZWNmLWJhZDItNzQ1NjkwMjJkZWYwIn0.59R-7AQScJl1Qici4Uhqwt-FviLgvnYyxvlaIrQQ4LHY7tmeZnJ3fZn36iGSRVmpNA_tj1JyrJbKdOwg3wgbCA";
+
+
+
 
 const dev = process.env.NODE_ENV !== 'production';
 const currentPort = process.env.PORT ? parseInt(process.env.PORT) : 3000;

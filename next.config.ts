@@ -18,6 +18,7 @@ const nextConfig: NextConfig = {
       '@libsql/client',
       '@prisma/adapter-libsql',
       '@prisma/client',
+      '@prisma/engines',
     ],
     outputFileTracingIncludes: {
       '/api/**/*': ['./node_modules/@libsql/client/http/**/*'],
@@ -58,6 +59,26 @@ const nextConfig: NextConfig = {
       use: 'null-loader',
     });
 
+    // Handle Prisma native bindings - exclude from webpack bundling
+    if (isServer) {
+      // Externalize Prisma native bindings on server side
+      config.externals = config.externals || [];
+      config.externals.push({
+        '.prisma/client/index-browser': '@prisma/client/index-browser',
+        '@prisma/client': 'commonjs @prisma/client',
+        '@prisma/engines': 'commonjs @prisma/engines',
+      });
+
+      // Ignore platform-specific binaries that webpack tries to include
+      config.plugins = config.plugins || [];
+      config.plugins.push(
+        new (require('webpack').IgnorePlugin)({
+          resourceRegExp: /^\.\/darwin-arm64$|^\.\/darwin-x64$|^\.\/linux-arm64$|^\.\/linux-x64$|^\.\/win32-x64$/,
+          contextRegExp: /@prisma\/client/,
+        })
+      );
+    }
+
     // Only on client side, ignore server packages
     if (!isServer) {
       config.resolve = config.resolve || {};
@@ -81,10 +102,6 @@ const nextConfig: NextConfig = {
   },
   // Ensure development features are disabled in production
   productionBrowserSourceMaps: false,
-  // Remove any development-related features in production
-  experimental: {
-    // Disable any experimental features that might show dev tools
-  }
 };
 
 export default nextConfig;

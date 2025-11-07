@@ -2,8 +2,6 @@ import { NextRequest } from 'next/server';
 import bcrypt from 'bcrypt';
 import { db } from '@/lib/db';
 
-const prisma = db;
-
 export async function POST(request: NextRequest) {
   try {
     const { email, password } = await request.json();
@@ -16,7 +14,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Find the employee by email
-    const employee = await prisma.employee.findUnique({
+    const employee = await db.employee.findUnique({
       where: { email },
       include: {
         company: true,
@@ -67,7 +65,5 @@ export async function POST(request: NextRequest) {
       { error: 'An error occurred during login' },
       { status: 500 }
     );
-  } finally {
-    await prisma.$disconnect();
   }
 }
