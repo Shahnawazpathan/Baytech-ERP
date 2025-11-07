@@ -20,14 +20,17 @@ function initializePrisma(): PrismaClient {
   const { PrismaLibSQL } = require('@prisma/adapter-libsql')
   const { createClient } = require('@libsql/client/http')
 
-  // Use direct Turso HTTP connection with hardcoded credentials (no native bindings needed)
-  const libsql = globalForPrisma.libsql ?? createClient({
-    url: process.env.TURSO_DATABASE_URL || 'libsql://baytech-shahnawazpathan.aws-ap-south-1.turso.io',
-    authToken: process.env.TURSO_AUTH_TOKEN || 'eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJpYXQiOjE3NjI0OTM1OTIsImlkIjoiZmJlMjM5MzktYzc4OC00OWQzLWEzYzEtNjU5YTIyZDNhZTBjIiwicmlkIjoiYzNjY2Y4MDctYmVjOS00ZWNmLWJhZDItNzQ1NjkwMjJkZWYwIn0.iONfkGJQnBcIDl0ncthJnRktWkUBNV9sr2km2eKHEgd0UzNtdSE709py9CgA4CDozdEYvQgct90zw4H9pFqSDw',
-  })
+  // Create or reuse libsql client
+  if (!globalForPrisma.libsql) {
+    // Use direct Turso HTTP connection with hardcoded credentials (no native bindings needed)
+    globalForPrisma.libsql = createClient({
+      url: process.env.TURSO_DATABASE_URL || 'libsql://baytech-shahnawazpathan.aws-ap-south-1.turso.io',
+      authToken: process.env.TURSO_AUTH_TOKEN || 'eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJpYXQiOjE3NjI0OTM1OTIsImlkIjoiZmJlMjM5MzktYzc4OC00OWQzLWEzYzEtNjU5YTIyZDNhZTBjIiwicmlkIjoiYzNjY2Y4MDctYmVjOS00ZWNmLWJhZDItNzQ1NjkwMjJkZWYwIn0.iONfkGJQnBcIDl0ncthJnRktWkUBNV9sr2km2eKHEgd0UzNtdSE709py9CgA4CDozdEYvQgct90zw4H9pFqSDw',
+    })
+  }
 
   // Create Prisma adapter for libsql
-  const adapter = new PrismaLibSQL(libsql)
+  const adapter = new PrismaLibSQL(globalForPrisma.libsql)
 
   // Initialize Prisma Client with Turso adapter
   const client = new PrismaClient({
@@ -36,10 +39,7 @@ function initializePrisma(): PrismaClient {
   })
 
   // Cache for reuse
-  if (process.env.NODE_ENV !== 'production') {
-    globalForPrisma.libsql = libsql
-    globalForPrisma.prisma = client
-  }
+  globalForPrisma.prisma = client
 
   return client
 }
@@ -48,6 +48,13 @@ function initializePrisma(): PrismaClient {
 export const db = new Proxy({} as PrismaClient, {
   get(target, prop) {
     const client = initializePrisma()
-    return client[prop as keyof PrismaClient]
+    const value = client[prop as keyof PrismaClient]
+
+    // Bind functions to the client context
+    if (typeof value === 'function') {
+      return value.bind(client)
+    }
+
+    return value
   },
 })
