@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Alert, AlertDescription } from '@/components/ui/alert'
-import { Building2, Eye, EyeOff } from 'lucide-react'
+import { Eye, EyeOff } from 'lucide-react'
 
 export default function LoginPage() {
   const [email, setEmail] = useState('')
@@ -56,7 +56,9 @@ export default function LoginPage() {
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
           <div className="flex items-center justify-center mb-4">
-            <Building2 className="h-12 w-12 text-blue-600" />
+            <div className="bg-white rounded-full p-3 shadow-md">
+              <img src="/baytechlogo.svg" alt="Baytech Logo" className="h-16 w-16" />
+            </div>
           </div>
           <h1 className="text-3xl font-bold text-gray-900">Baytech Mortgage</h1>
           <p className="text-gray-600 mt-2">ERP System</p>
