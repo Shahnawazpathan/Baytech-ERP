@@ -6,7 +6,7 @@ import { hasPermission } from '@/lib/rbac'
 export async function PUT(request: NextRequest, { params }: { params: { id: string } }) {
   try {
     const userId = request.headers.get('x-user-id');
-    const { id } = params
+    const id = params.id;
     const body = await request.json()
     
     // Check permission to UPDATE employees
@@ -98,8 +98,8 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
 export async function GET(request: NextRequest, { params }: { params: { id: string } }) {
   try {
     const userId = request.headers.get('x-user-id');
-    const { id } = params
-    
+    const id = params.id;
+
     // Check permission to READ employees
     if (userId) {
       const canRead = await hasPermission(userId, 'employee', 'READ')

@@ -6,7 +6,7 @@ import { hasPermission } from '@/lib/rbac'
 export async function PATCH(request: NextRequest, { params }: { params: { id: string } }) {
   try {
     const userId = request.headers.get('x-user-id');
-    const { id } = params
+    const id = params.id;
     const { status } = await request.json()
     
     // Check permission to UPDATE employees

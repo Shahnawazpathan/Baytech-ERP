@@ -155,7 +155,7 @@ export async function PUT(request: NextRequest) {
   try {
     const userId = request.headers.get('x-user-id');
     const body = await request.json()
-    const { leadIds, employeeId, strategy = 'round_robin' } = body
+    const { leadIds, employeeId, employeeIds, strategy = 'round_robin' } = body
 
     if (!userId) {
       return NextResponse.json(
@@ -164,9 +164,23 @@ export async function PUT(request: NextRequest) {
       )
     }
 
-    if (!leadIds || !Array.isArray(leadIds) || leadIds.length === 0 || !employeeId) {
+    if (!leadIds || !Array.isArray(leadIds) || leadIds.length === 0) {
       return NextResponse.json(
-        { success: false, error: 'Invalid request parameters' },
+        { success: false, error: 'Lead IDs are required' },
+        { status: 400 }
+      )
+    }
+
+    // Support both single employee (employeeId) and multiple employees (employeeIds)
+    const targetEmployeeIds = employeeIds && Array.isArray(employeeIds) && employeeIds.length > 0
+      ? employeeIds
+      : employeeId
+        ? [employeeId]
+        : null;
+
+    if (!targetEmployeeIds || targetEmployeeIds.length === 0) {
+      return NextResponse.json(
+        { success: false, error: 'At least one employee ID is required' },
         { status: 400 }
       )
     }
@@ -180,8 +194,13 @@ export async function PUT(request: NextRequest) {
       );
     }
 
-    const employee = await db.employee.findUnique({
-      where: { id: employeeId },
+    // Get all employees to assign to
+    const employees = await db.employee.findMany({
+      where: {
+        id: { in: targetEmployeeIds },
+        status: 'ACTIVE',
+        isActive: true
+      },
       select: {
         id: true,
         firstName: true,
@@ -191,9 +210,9 @@ export async function PUT(request: NextRequest) {
       }
     })
 
-    if (!employee) {
+    if (employees.length === 0) {
       return NextResponse.json(
-        { success: false, error: 'Employee not found' },
+        { success: false, error: 'No valid employees found' },
         { status: 404 }
       )
     }
@@ -213,51 +232,122 @@ export async function PUT(request: NextRequest) {
       )
     }
 
-    // Update all leads
-    const updatePromises = leads.map(async (lead) => {
-      const updatedLead = await db.lead.update({
-        where: { id: lead.id },
-        data: { 
-          assignedToId: employeeId,
-          assignedAt: new Date() // Set the assignment timestamp
-        }
-      })
+    // Assign leads based on strategy
+    const assignments: { [key: string]: string[] } = {}
+    employees.forEach(emp => assignments[emp.id] = [])
 
-      // Create lead history
-      await db.leadHistory.create({
-        data: {
-          leadId: lead.id,
-          employeeId,
-          action: 'BULK_ASSIGNED',
-          oldValue: JSON.stringify({ assignedToId: lead.assignedToId }),
-          newValue: JSON.stringify({ assignedToId: employeeId }),
-          notes: `Bulk assigned to ${employee.firstName} ${employee.lastName}`
-        }
-      })
+    if (strategy === 'round_robin' || strategy === 'equal') {
+      // Round-robin distribution
+      let employeeIndex = 0
+      for (const lead of leads) {
+        const employee = employees[employeeIndex]
+        assignments[employee.id].push(lead.id)
+        employeeIndex = (employeeIndex + 1) % employees.length
+      }
+    } else if (strategy === 'least_loaded') {
+      // Get current lead counts for each employee
+      const leadCounts = await Promise.all(
+        employees.map(async (emp) => {
+          const count = await db.lead.count({
+            where: {
+              assignedToId: emp.id,
+              status: { in: ['NEW', 'CONTACTED', 'QUALIFIED', 'APPLICATION'] }
+            }
+          })
+          return { employeeId: emp.id, count }
+        })
+      )
 
-      // Create notification
+      // Sort employees by lead count (ascending)
+      leadCounts.sort((a, b) => a.count - b.count)
+
+      // Assign leads to employees with least load
+      for (const lead of leads) {
+        // Find employee with minimum current assignments
+        const minEmployee = leadCounts.reduce((min, curr) =>
+          curr.count < min.count ? curr : min
+        )
+        assignments[minEmployee.employeeId].push(lead.id)
+        minEmployee.count++ // Increment count for next iteration
+      }
+    } else {
+      // Default to first employee if strategy is unknown
+      assignments[employees[0].id] = leadIds
+    }
+
+    // Process all assignments
+    const updatedLeads = []
+    const employeeNotifications: { [key: string]: number } = {}
+
+    for (const employee of employees) {
+      const employeeLeadIds = assignments[employee.id]
+      if (employeeLeadIds.length === 0) continue
+
+      employeeNotifications[employee.id] = employeeLeadIds.length
+
+      for (const leadId of employeeLeadIds) {
+        const lead = leads.find(l => l.id === leadId)
+        if (!lead) continue
+
+        const updatedLead = await db.lead.update({
+          where: { id: leadId },
+          data: {
+            assignedToId: employee.id,
+            assignedAt: new Date()
+          }
+        })
+
+        // Create lead history
+        await db.leadHistory.create({
+          data: {
+            leadId,
+            employeeId: employee.id,
+            action: 'BULK_ASSIGNED',
+            oldValue: JSON.stringify({ assignedToId: lead.assignedToId }),
+            newValue: JSON.stringify({ assignedToId: employee.id }),
+            notes: `Bulk assigned to ${employee.firstName} ${employee.lastName} using ${strategy} strategy`
+          }
+        })
+
+        updatedLeads.push(updatedLead)
+      }
+    }
+
+    // Create notifications for each employee
+    for (const employee of employees) {
+      const count = employeeNotifications[employee.id] || 0
+      if (count === 0) continue
+
       await db.notification.create({
         data: {
           title: 'Bulk Lead Assignment',
-          message: `${leads.length} leads have been assigned to you`,
+          message: `${count} lead${count > 1 ? 's have' : ' has'} been assigned to you`,
           type: 'INFO',
           category: 'LEAD',
           companyId: employee.companyId,
-          employeeId,
-          metadata: JSON.stringify({ leadIds, count: leads.length })
+          employeeId: employee.id,
+          metadata: JSON.stringify({
+            leadIds: assignments[employee.id],
+            count,
+            strategy
+          })
         }
       })
-
-      return updatedLead
-    })
-
-    const updatedLeads = await Promise.all(updatePromises)
+    }
 
     return NextResponse.json({
       success: true,
       data: {
         assignedLeads: updatedLeads.length,
-        employee: `${employee.firstName} ${employee.lastName}`
+        employees: employees.map(emp => `${emp.firstName} ${emp.lastName}`),
+        strategy,
+        distribution: Object.keys(assignments).map(empId => {
+          const emp = employees.find(e => e.id === empId)
+          return {
+            employee: emp ? `${emp.firstName} ${emp.lastName}` : 'Unknown',
+            leadCount: assignments[empId].length
+          }
+        })
       }
     })
   } catch (error) {

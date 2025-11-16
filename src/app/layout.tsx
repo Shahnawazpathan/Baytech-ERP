@@ -20,6 +20,11 @@ export const metadata: Metadata = {
   description: "Complete mortgage ERP system with employee management, lead tracking, and attendance monitoring",
   keywords: ["Baytech", "Mortgage", "ERP", "Employee Management", "Lead Tracking", "Attendance"],
   authors: [{ name: "Baytech Team" }],
+  icons: {
+    icon: '/baytechlogo.svg',
+    shortcut: '/baytechlogo.svg',
+    apple: '/baytechlogo.svg',
+  },
   openGraph: {
     title: "Baytech Mortgage ERP",
     description: "Complete mortgage ERP system",

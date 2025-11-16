@@ -24,7 +24,11 @@ import {
   ResponsiveContainer,
   PieChart,
   Pie,
-  Cell
+  Cell,
+  LineChart,
+  Line,
+  AreaChart,
+  Area
 } from 'recharts'
 import { ProtectedRoute } from '@/components/auth/protected-route'
 import { useAuth } from '@/hooks/use-auth'
@@ -32,6 +36,7 @@ import { useToast } from '@/hooks/use-toast'
 import { useLenis } from '@/hooks/use-lenis'
 import { LeadImportModal } from '@/components/LeadImportModal'
 import { LeadAssignment } from '@/components/LeadAssignment'
+import { LeadsPool } from '@/components/LeadsPool'
 import { GeofenceAttendance } from '@/components/GeofenceAttendance'
 import { GeofenceLocationManager } from '@/components/GeofenceLocationManager'
 import { TaskManagement } from '@/components/TaskManagement'
@@ -123,7 +128,7 @@ export default function Home() {
         // Authenticate user after connection
         newSocket.emit('authenticate', {
           userId: user.id,
-          companyId: 'default-company' // This should be dynamic in a real app
+          companyId: user.companyId
         });
       });
 
@@ -182,14 +187,14 @@ export default function Home() {
         const [departmentsRes, rolesRes] = await Promise.all([
           fetch('/api/departments', {
             headers: {
-              'x-user-id': user?.id || '',
-              'x-company-id': 'default-company'
+              'x-user-id': user?.id,
+              'x-company-id': user?.companyId
             }
           }),
           fetch('/api/roles', {
             headers: {
-              'x-user-id': user?.id || '',
-              'x-company-id': 'default-company'
+              'x-user-id': user?.id,
+              'x-company-id': user?.companyId
             }
           })
         ]);
@@ -278,6 +283,11 @@ export default function Home() {
     conversionRate: 0
   })
 
+  // Analytics state
+  const [analyticsData, setAnalyticsData] = useState<any>(null)
+  const [analyticsDateRange, setAnalyticsDateRange] = useState('30') // days
+  const [loadingAnalytics, setLoadingAnalytics] = useState(false)
+
   // Fetch data from API
   const fetchData = async () => {
     try {
@@ -285,8 +295,8 @@ export default function Home() {
       if (canViewEmployees) {
         const employeesRes = await fetch('/api/employees', {
           headers: {
-            'x-user-id': user?.id || '',
-            'x-company-id': 'default-company'
+            'x-user-id': user?.id,
+            'x-company-id': user?.companyId
           }
         })
         if (employeesRes.ok) {
@@ -299,8 +309,8 @@ export default function Home() {
       if (canViewLeads) {
         const leadsRes = await fetch('/api/leads', {
           headers: {
-            'x-user-id': user?.id || '',
-            'x-company-id': 'default-company'
+            'x-user-id': user?.id,
+            'x-company-id': user?.companyId
           }
         })
         if (leadsRes.ok) {
@@ -313,8 +323,8 @@ export default function Home() {
       if (canViewAttendance) {
         const attendanceRes = await fetch('/api/attendance', {
           headers: {
-            'x-user-id': user?.id || '',
-            'x-company-id': 'default-company'
+            'x-user-id': user?.id,
+            'x-company-id': user?.companyId
           }
         })
         if (attendanceRes.ok) {
@@ -326,8 +336,8 @@ export default function Home() {
       setLoading(prev => ({ ...prev, notifications: true }))
       const notificationsRes = await fetch('/api/notifications', {
         headers: {
-          'x-user-id': user?.id || '',
-          'x-company-id': 'default-company'
+          'x-user-id': user?.id,
+          'x-company-id': user?.companyId
         }
       })
       if (notificationsRes.ok) {
@@ -342,8 +352,8 @@ export default function Home() {
       if (canViewReports) {
         const statsRes = await fetch('/api/reports/overview-stats', {
           headers: {
-            'x-user-id': user?.id || '',
-            'x-company-id': 'default-company'
+            'x-user-id': user?.id,
+            'x-company-id': user?.companyId
           }
         })
         if (statsRes.ok) {
@@ -430,8 +440,8 @@ export default function Home() {
     try {
       const reportsRes = await fetch('/api/reports', {
         headers: {
-          'x-user-id': user?.id || '',
-          'x-company-id': 'default-company'
+          'x-user-id': user?.id,
+          'x-company-id': user?.companyId
         }
       });
       if (reportsRes.ok) {
@@ -452,6 +462,7 @@ export default function Home() {
     } else if (activeTab === 'analytics') {
       // Fetch reports data when on analytics tab
       fetchReportsData()
+      fetchAnalytics(analyticsDateRange)
     } else {
       // Refresh specific tab data
       const refreshTabData = async () => {
@@ -462,8 +473,8 @@ export default function Home() {
               if (canViewEmployees) {
                 const employeesRes = await fetch('/api/employees', {
                   headers: {
-                    'x-user-id': user?.id || '',
-                    'x-company-id': 'default-company'
+                    'x-user-id': user?.id,
+                    'x-company-id': user?.companyId
                   }
                 })
                 if (employeesRes.ok) {
@@ -476,8 +487,8 @@ export default function Home() {
               if (canViewLeads) {
                 const leadsRes = await fetch('/api/leads', {
                   headers: {
-                    'x-user-id': user?.id || '',
-                    'x-company-id': 'default-company'
+                    'x-user-id': user?.id,
+                    'x-company-id': user?.companyId
                   }
                 })
                 if (leadsRes.ok) {
@@ -490,8 +501,8 @@ export default function Home() {
               if (canViewAttendance) {
                 const attendanceRes = await fetch('/api/attendance', {
                   headers: {
-                    'x-user-id': user?.id || '',
-                    'x-company-id': 'default-company'
+                    'x-user-id': user?.id,
+                    'x-company-id': user?.companyId
                   }
                 })
                 if (attendanceRes.ok) {
@@ -526,8 +537,8 @@ export default function Home() {
               if (canViewEmployees) {
                 const employeesRes = await fetch('/api/employees', {
                   headers: {
-                    'x-user-id': user?.id || '',
-                    'x-company-id': 'default-company'
+                    'x-user-id': user?.id,
+                    'x-company-id': user?.companyId
                   }
                 })
                 if (employeesRes.ok) {
@@ -540,8 +551,8 @@ export default function Home() {
               if (canViewLeads) {
                 const leadsRes = await fetch('/api/leads', {
                   headers: {
-                    'x-user-id': user?.id || '',
-                    'x-company-id': 'default-company'
+                    'x-user-id': user?.id,
+                    'x-company-id': user?.companyId
                   }
                 })
                 if (leadsRes.ok) {
@@ -554,8 +565,8 @@ export default function Home() {
               if (canViewAttendance) {
                 const attendanceRes = await fetch('/api/attendance', {
                   headers: {
-                    'x-user-id': user?.id || '',
-                    'x-company-id': 'default-company'
+                    'x-user-id': user?.id,
+                    'x-company-id': user?.companyId
                   }
                 })
                 if (attendanceRes.ok) {
@@ -676,7 +687,11 @@ export default function Home() {
         const fullPhoneNumber = `${newEmployee.countryCode}${newEmployee.phone}`;
         const response = await fetch('/api/employees', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            'x-user-id': user?.id,
+            'x-company-id': user?.companyId
+          },
           body: JSON.stringify({
             firstName: newEmployee.firstName,
             lastName: newEmployee.lastName,
@@ -685,7 +700,7 @@ export default function Home() {
             position: newEmployee.position,
             departmentId: newEmployee.departmentId,
             roleId: newEmployee.roleId,
-            companyId: 'default-company', // Default company ID
+            companyId: user?.companyId,
             address: newEmployee.address,
             status: newEmployee.status,
             hireDate: new Date(newEmployee.hireDate).toISOString()
@@ -694,7 +709,7 @@ export default function Home() {
 
         if (response.ok) {
           const createdEmployee = await response.json()
-          setEmployees([...employees, createdEmployee])
+
           setNewEmployee({
             firstName: '',
             lastName: '',
@@ -708,18 +723,20 @@ export default function Home() {
             hireDate: new Date().toISOString().split('T')[0]
           })
           setShowAddEmployeeModal(false)
-          fetchData() // Refresh data
-          
+
+          // Refresh data to get the latest list with proper permissions
+          await fetchData()
+
           // Emit real-time event for employee update
           if (socket) {
             socket.emit('employee_update', {
               employeeId: createdEmployee.id,
-              companyId: 'default-company',
+              companyId: user?.companyId,
               action: 'added',
               updatedBy: user?.name || 'System'
             });
           }
-          
+
           toast({
             title: "Success",
             description: "Employee added successfully",
@@ -809,10 +826,10 @@ export default function Home() {
         const fullPhoneNumber = `${newEmployee.countryCode}${newEmployee.phone}`;
         const response = await fetch(`/api/employees/${editingEmployee.id}`, {
           method: 'PUT',
-          headers: { 
+          headers: {
             'Content-Type': 'application/json',
-            'x-user-id': user?.id || '',
-            'x-company-id': 'default-company'
+            'x-user-id': user?.id,
+            'x-company-id': user?.companyId
           },
           body: JSON.stringify({
             firstName: newEmployee.firstName,
@@ -822,7 +839,7 @@ export default function Home() {
             position: newEmployee.position,
             departmentId: newEmployee.departmentId,
             roleId: newEmployee.roleId,
-            companyId: 'default-company',
+            companyId: user?.companyId,
             address: newEmployee.address,
             status: newEmployee.status,
             hireDate: new Date(newEmployee.hireDate).toISOString()
@@ -830,10 +847,6 @@ export default function Home() {
         })
 
         if (response.ok) {
-          const updatedEmployee = await response.json()
-          setEmployees(employees.map(emp => 
-            emp.id === updatedEmployee.id ? updatedEmployee : emp
-          ))
           setEditingEmployee(null);
           setNewEmployee({
             firstName: '',
@@ -848,17 +861,20 @@ export default function Home() {
             hireDate: new Date().toISOString().split('T')[0]
           });
           setShowAddEmployeeModal(false);
-          
+
+          // Refresh data to get the latest list with proper permissions
+          await fetchData();
+
           // Emit real-time event for employee update
           if (socket) {
             socket.emit('employee_update', {
-              employeeId: updatedEmployee.id,
-              companyId: 'default-company',
+              employeeId: editingEmployee.id,
+              companyId: user?.companyId,
               action: 'updated',
               updatedBy: user?.name || 'System'
             });
           }
-          
+
           toast({
             title: "Success",
             description: "Employee updated successfully",
@@ -882,30 +898,28 @@ export default function Home() {
       const newStatus = currentStatus === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE';
       const response = await fetch(`/api/employees/${employeeId}/status`, {
         method: 'PATCH',
-        headers: { 
+        headers: {
           'Content-Type': 'application/json',
-          'x-user-id': user?.id || '',
-          'x-company-id': 'default-company'
+          'x-user-id': user?.id,
+          'x-company-id': user?.companyId
         },
         body: JSON.stringify({ status: newStatus })
       });
 
       if (response.ok) {
-        const updatedEmployee = await response.json();
-        setEmployees(employees.map(emp => 
-          emp.id === employeeId ? updatedEmployee : emp
-        ));
-        
+        // Refresh data to get the latest list with proper permissions
+        await fetchData();
+
         // Emit real-time event for employee status update
         if (socket) {
           socket.emit('employee_update', {
             employeeId,
-            companyId: 'default-company',
+            companyId: user?.companyId,
             action: `marked as ${newStatus.toLowerCase()}`,
             updatedBy: user?.name || 'System'
           });
         }
-        
+
         toast({
           title: "Success",
           description: `Employee ${newStatus.toLowerCase()} successfully`,
@@ -954,7 +968,7 @@ export default function Home() {
                 position: emp.position,
                 departmentId: emp.department, // This would need to be the actual department ID
                 roleId: 'default-role', // Default role ID
-                companyId: 'default-company', // Default company ID
+                companyId: user?.companyId,
                 hireDate: new Date().toISOString()
               })
             })
@@ -998,46 +1012,40 @@ export default function Home() {
 
   const handleBulkImportComplete = async (importedLeads: any[]) => {
     try {
-      // Send all imported leads to the backend
-      for (const lead of importedLeads) {
-        const response = await fetch('/api/leads', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            ...lead,
-            firstName: lead.firstName,
-            lastName: lead.lastName,
-            email: lead.email || '',
-            phone: lead.phone,
-            loanAmount: parseFloat(lead.loanAmount) || 0,
-            status: lead.status || "NEW",
-            priority: lead.priority || "MEDIUM",
-            assignedToId: lead.assignedToId || null,
-            propertyAddress: lead.propertyAddress || '',
-            creditScore: parseInt(lead.creditScore) || 0,
-            source: lead.source || 'Import',
-            companyId: 'default-company',
-            notes: lead.notes || ''
-          })
-        });
-        
-        if (!response.ok) {
-          throw new Error(`Failed to import lead: ${response.statusText}`);
-        }
+      // Use the bulk import endpoint with auto-assignment
+      const response = await fetch('/api/leads', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-user-id': user?.id,
+          'x-company-id': user?.companyId
+        },
+        body: JSON.stringify({
+          leads: importedLeads,
+          autoAssign: true, // Enable automatic assignment
+          companyId: user?.companyId
+        })
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Failed to import leads');
       }
-      
+
+      const result = await response.json();
+
       // Refresh data from backend to get all leads
       await fetchData();
-      
+
       toast({
         title: "Bulk Import Successful",
-        description: `Successfully imported ${importedLeads.length} leads`,
+        description: `Successfully imported ${result.imported} leads and assigned to ${result.assignedToEmployees} employees`,
         duration: 4000,
       });
     } catch (error) {
       toast({
         title: "Import Failed",
-        description: "Failed to import some leads. Please try again.",
+        description: error instanceof Error ? error.message : "Failed to import leads. Please try again.",
         variant: "destructive",
         duration: 4000,
       });
@@ -1069,10 +1077,10 @@ export default function Home() {
       try {
         const response = await fetch(`/api/leads/${editingLead.id}`, {
           method: 'PUT',
-          headers: { 
+          headers: {
             'Content-Type': 'application/json',
-            'x-user-id': user?.id || '',
-            'x-company-id': 'default-company'
+            'x-user-id': user?.id,
+            'x-company-id': user?.companyId
           },
           body: JSON.stringify({
             firstName: newLead.firstName,
@@ -1086,7 +1094,7 @@ export default function Home() {
             propertyAddress: newLead.propertyAddress,
             creditScore: parseInt(newLead.creditScore) || 0,
             source: newLead.source,
-            companyId: 'default-company',
+            companyId: user?.companyId,
             notes: newLead.notes
           })
         })
@@ -1116,7 +1124,7 @@ export default function Home() {
           if (socket) {
             socket.emit('lead_update', {
               leadId: updatedLead.id,
-              companyId: 'default-company',
+              companyId: user?.companyId,
               action: 'updated',
               updatedBy: user?.name || 'System'
             });
@@ -1150,10 +1158,10 @@ export default function Home() {
       
       const response = await fetch(`/api/leads/${leadId}/status`, {
         method: 'PATCH',
-        headers: { 
+        headers: {
           'Content-Type': 'application/json',
-          'x-user-id': user?.id || '',
-          'x-company-id': 'default-company'
+          'x-user-id': user?.id,
+          'x-company-id': user?.companyId
         },
         body: JSON.stringify({ status: newStatus })
       });
@@ -1168,7 +1176,7 @@ export default function Home() {
         if (socket) {
           socket.emit('lead_update', {
             leadId,
-            companyId: 'default-company',
+            companyId: user?.companyId,
             action: `status changed to ${newStatus}`,
             updatedBy: user?.name || 'System'
           });
@@ -1197,8 +1205,8 @@ export default function Home() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'x-user-id': user?.id || '',
-          'x-company-id': 'default-company'
+          'x-user-id': user?.id,
+          'x-company-id': user?.companyId
         },
         body: JSON.stringify({
           leadId,
@@ -1218,7 +1226,7 @@ export default function Home() {
         if (socket) {
           socket.emit('lead_update', {
             leadId,
-            companyId: 'default-company',
+            companyId: user?.companyId,
             action: `assigned to ${employeeId}`,
             updatedBy: user?.name || 'System'
           });
@@ -1241,8 +1249,8 @@ export default function Home() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'x-user-id': user?.id || '',
-          'x-company-id': 'default-company'
+          'x-user-id': user?.id,
+          'x-company-id': user?.companyId
         },
         body: JSON.stringify({
           leadId
@@ -1260,7 +1268,7 @@ export default function Home() {
         if (socket) {
           socket.emit('lead_update', {
             leadId,
-            companyId: 'default-company',
+            companyId: user?.companyId,
             action: 'marked as contacted',
             updatedBy: user?.name || 'System'
           });
@@ -1312,12 +1320,16 @@ export default function Home() {
           for (const lead of importedLeads) {
             await fetch('/api/leads', {
               method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
+              headers: {
+                'Content-Type': 'application/json',
+                'x-user-id': user?.id,
+                'x-company-id': user?.companyId
+              },
               body: JSON.stringify({
                 ...lead,
                 firstName: lead.name?.split(' ')[0] || '',
                 lastName: lead.name?.split(' ').slice(1).join(' ') || '',
-                companyId: 'default-company'
+                companyId: user?.companyId
               })
             })
           }
@@ -1345,7 +1357,11 @@ export default function Home() {
       try {
         const response = await fetch('/api/leads', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            'x-user-id': user?.id,
+            'x-company-id': user?.companyId
+          },
           body: JSON.stringify({
             firstName: newLead.firstName,
             lastName: newLead.lastName,
@@ -1358,7 +1374,7 @@ export default function Home() {
             propertyAddress: newLead.propertyAddress,
             creditScore: parseInt(newLead.creditScore) || 0,
             source: newLead.source,
-            companyId: 'default-company'
+            companyId: user?.companyId
           })
         })
 
@@ -1385,7 +1401,7 @@ export default function Home() {
           if (socket) {
             socket.emit('lead_update', {
               leadId: createdLead.id,
-              companyId: 'default-company',
+              companyId: user?.companyId,
               action: 'created',
               updatedBy: user?.name || 'System'
             });
@@ -1455,8 +1471,8 @@ export default function Home() {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          employeeId: user?.id || 'default-employee',
-          companyId: 'default-company',
+          employeeId: user?.id,
+          companyId: user?.companyId,
           latitude: location?.lat,
           longitude: location?.lng,
           address: 'Office Location',
@@ -1472,8 +1488,8 @@ export default function Home() {
         // Emit real-time event for attendance update
         if (socket) {
           socket.emit('attendance_update', {
-            employeeId: user?.id || 'default-employee',
-            companyId: 'default-company',
+            employeeId: user?.id,
+            companyId: user?.companyId,
             action: 'checked in',
             timestamp: new Date()
           });
@@ -1513,8 +1529,8 @@ export default function Home() {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          employeeId: user?.id || 'default-employee',
-          companyId: 'default-company',
+          employeeId: user?.id,
+          companyId: user?.companyId,
           latitude: location?.lat,
           longitude: location?.lng,
           address: 'Office Location',
@@ -1530,8 +1546,8 @@ export default function Home() {
         // Emit real-time event for attendance update
         if (socket) {
           socket.emit('attendance_update', {
-            employeeId: user?.id || 'default-employee',
-            companyId: 'default-company',
+            employeeId: user?.id,
+            companyId: user?.companyId,
             action: 'checked out',
             timestamp: new Date()
           });
@@ -1569,10 +1585,10 @@ export default function Home() {
     try {
       const response = await fetch(`/api/attendance/${attendanceId}`, {
         method: 'PUT',
-        headers: { 
+        headers: {
           'Content-Type': 'application/json',
-          'x-user-id': user?.id || '',
-          'x-company-id': 'default-company'
+          'x-user-id': user?.id,
+          'x-company-id': user?.companyId
         },
         body: JSON.stringify(updatedData)
       });
@@ -1589,7 +1605,7 @@ export default function Home() {
         if (socket) {
           socket.emit('attendance_update', {
             employeeId: updatedAttendance.employeeId,
-            companyId: 'default-company',
+            companyId: user?.companyId,
             action: 'attendance updated',
             updatedBy: user?.name || 'System'
           });
@@ -1620,9 +1636,9 @@ export default function Home() {
     try {
       const response = await fetch(`/api/attendance/${attendanceId}`, {
         method: 'DELETE',
-        headers: { 
-          'x-user-id': user?.id || '',
-          'x-company-id': 'default-company'
+        headers: {
+          'x-user-id': user?.id,
+          'x-company-id': user?.companyId
         }
       });
 
@@ -1664,6 +1680,34 @@ export default function Home() {
   }
 
   // Analytics Functions
+  const fetchAnalytics = async (range: string = '30') => {
+    try {
+      setLoadingAnalytics(true)
+      const response = await fetch(`/api/reports/analytics?range=${range}`, {
+        headers: {
+          'x-user-id': user?.id || '',
+          'x-company-id': user?.companyId || 'default-company'
+        }
+      })
+
+      if (response.ok) {
+        const result = await response.json()
+        if (result.success) {
+          setAnalyticsData(result.data)
+        }
+      }
+    } catch (error) {
+      console.error('Error fetching analytics:', error)
+      toast({
+        title: "Error",
+        description: "Failed to fetch analytics data",
+        variant: "destructive",
+      })
+    } finally {
+      setLoadingAnalytics(false)
+    }
+  }
+
   const generateReport = async (type: string) => {
     try {
       const response = await fetch('/api/reports', {
@@ -1869,8 +1913,8 @@ Average Credit Score: ${Math.round(leads.reduce((sum, lead) => sum + (lead.credi
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          employeeId: user?.id || 'default-employee',
-          companyId: 'default-company',
+          employeeId: user?.id,
+          companyId: user?.companyId,
           latitude: data.latitude,
           longitude: data.longitude,
           address: data.locationName,
@@ -1908,8 +1952,8 @@ Average Credit Score: ${Math.round(leads.reduce((sum, lead) => sum + (lead.credi
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          employeeId: user?.id || 'default-employee',
-          companyId: 'default-company',
+          employeeId: user?.id,
+          companyId: user?.companyId,
           latitude: data.latitude,
           longitude: data.longitude,
           address: data.locationName,
@@ -2036,12 +2080,12 @@ Average Credit Score: ${Math.round(leads.reduce((sum, lead) => sum + (lead.credi
         shadow-xl lg:shadow-none
       `}>
         <div className="px-4 sm:px-6 py-3 sm:py-4 border-b border-gray-200 flex items-center justify-between">
-          <div 
+          <div
             className={`flex items-center gap-3 ${sidebarOpen ? 'w-[calc(100%-40px)]' : 'w-full'} overflow-hidden`}
             onClick={() => !sidebarOpen && setSidebarOpen(true)}
             style={{ cursor: sidebarOpen ? 'default' : 'pointer' }}
           >
-            <Building2 className="h-8 w-8 text-blue-600 flex-shrink-0" />
+            <img src="/baytechlogo.svg" alt="Baytech Logo" className="h-8 w-8 flex-shrink-0" />
             {sidebarOpen && (
               <div className="min-w-0 flex-1">
                 <h1 className="text-xl font-bold text-gray-900 truncate">Baytech ERP</h1>
@@ -2095,6 +2139,17 @@ Average Credit Score: ${Math.round(leads.reduce((sum, lead) => sum + (lead.credi
               </Button>
             )}
 
+            {canViewLeads && (
+              <Button
+                variant={activeTab === 'leads-pool' ? 'secondary' : 'ghost'}
+                className={`w-full gap-2 transition-all duration-200 ${!sidebarOpen ? 'justify-center px-2 lg:px-2' : 'justify-start'} hover:scale-105`}
+                onClick={() => handleNavigation('leads-pool')}
+              >
+                <Users className="h-4 w-4 flex-shrink-0" />
+                {sidebarOpen && <span className="truncate">Leads Pool</span>}
+              </Button>
+            )}
+
             {canViewAttendance && (
               <Button
                 variant={activeTab === 'attendance' ? 'secondary' : 'ghost'}
@@ -2144,7 +2199,7 @@ Average Credit Score: ${Math.round(leads.reduce((sum, lead) => sum + (lead.credi
               <Button
                 variant="outline"
                 size="sm"
-                className="w-full justify-start gap-2 bg-gradient-to-r from-red-50 to-rose-50 border-red-200 text-red-600 hover:from-red-100 hover:to-rose-100 hover:text-red-700 hover:border-red-300 transition-all duration-200 transform hover:scale-[1.02] shadow-sm hover:shadow-md"
+                className="w-full justify-center gap-2 bg-gradient-to-r from-red-50 to-rose-50 border-red-200 text-red-600 hover:from-red-100 hover:to-rose-100 hover:text-red-700 hover:border-red-300 transition-all duration-200 transform hover:scale-[1.02] shadow-sm hover:shadow-md"
                 onClick={handleLogout}
               >
                 <LogOut className="h-4 w-4 flex-shrink-0" />
@@ -2194,6 +2249,7 @@ Average Credit Score: ${Math.round(leads.reduce((sum, lead) => sum + (lead.credi
                   {activeTab === 'overview' && 'Dashboard'}
                   {activeTab === 'employees' && 'Employee Management'}
                   {activeTab === 'leads' && 'Lead Management'}
+                  {activeTab === 'leads-pool' && 'Leads Pool'}
                   {activeTab === 'attendance' && 'Attendance Tracking'}
                   {activeTab === 'tasks' && 'Task Management'}
                   {activeTab === 'documents' && 'Document Management'}
@@ -2322,6 +2378,7 @@ Average Credit Score: ${Math.round(leads.reduce((sum, lead) => sum + (lead.credi
               <TabsTrigger value="overview">Overview</TabsTrigger>
               <TabsTrigger value="employees">Employees</TabsTrigger>
               <TabsTrigger value="leads">Leads</TabsTrigger>
+              <TabsTrigger value="leads-pool">Leads Pool</TabsTrigger>
               <TabsTrigger value="attendance">Attendance</TabsTrigger>
               <TabsTrigger value="tasks">Tasks</TabsTrigger>
               <TabsTrigger value="analytics">Analytics</TabsTrigger>
@@ -3068,14 +3125,14 @@ Average Credit Score: ${Math.round(leads.reduce((sum, lead) => sum + (lead.credi
               <div className="space-y-6">
                 {/* Admin: Geofence Location Management */}
                 {isAdmin() && (
-                  <GeofenceLocationManager companyId="default-company" />
+                  <GeofenceLocationManager companyId={user?.companyId} />
                 )}
 
                 {/* Geofence Attendance Section */}
                 {showGeofenceAttendance && (
                   <GeofenceAttendance
-                    companyId="default-company"
-                    employeeId={user?.id || 'current-user'}
+                    companyId={user?.companyId}
+                    employeeId={user?.id}
                     onCheckIn={handleAttendanceCheckIn}
                     onCheckOut={handleAttendanceCheckOut}
                   />
@@ -3452,60 +3509,67 @@ Average Credit Score: ${Math.round(leads.reduce((sum, lead) => sum + (lead.credi
             <TabsContent value="tasks">
               <div className="space-y-6">
                 <TaskManagement
-                  companyId="default-company"
+                  companyId={user?.companyId}
                   userId={user?.id}
                   userRole={user?.role}
                 />
               </div>
             </TabsContent>
 
-
+            <TabsContent value="leads-pool">
+              <LeadsPool user={user} onLeadClaimed={fetchData} />
+            </TabsContent>
 
             <TabsContent value="analytics">
               <div className="space-y-6">
-                {/* Analytics Header */}
-                <div className="flex items-center justify-between">
+                {/* Analytics Header with Date Range Filter */}
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
                   <div>
                     <h2 className="text-2xl font-bold text-gray-900">Analytics & Reports</h2>
-                    <p className="text-sm text-gray-500">Business intelligence and reporting</p>
+                    <p className="text-sm text-gray-500">Comprehensive business intelligence and insights</p>
                   </div>
-                  <div className="flex gap-2">
-                    <Button 
+                  <div className="flex flex-wrap gap-2">
+                    <Select
+                      value={analyticsDateRange}
+                      onValueChange={(value) => {
+                        setAnalyticsDateRange(value)
+                        fetchAnalytics(value)
+                      }}
+                    >
+                      <SelectTrigger className="w-[180px]">
+                        <SelectValue placeholder="Select range" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="7">Last 7 days</SelectItem>
+                        <SelectItem value="30">Last 30 days</SelectItem>
+                        <SelectItem value="90">Last 90 days</SelectItem>
+                        <SelectItem value="365">Last year</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <Button
                       variant="outline"
+                      size="sm"
                       onClick={() => handleGenerateReport('Sales')}
                     >
                       <FileText className="h-4 w-4 mr-2" />
-                      Sales Report
+                      Generate Report
                     </Button>
-                    <Button 
+                    <Button
                       variant="outline"
-                      onClick={() => handleGenerateReport('Employee Performance')}
-                    >
-                      <Users className="h-4 w-4 mr-2" />
-                      Employee Report
-                    </Button>
-                    <Button 
-                      variant="outline"
-                      onClick={() => handleGenerateReport('Lead Conversion')}
-                    >
-                      <TrendingUp className="h-4 w-4 mr-2" />
-                      Lead Analysis
-                    </Button>
-                    <Button 
-                      variant="outline"
+                      size="sm"
                       onClick={async () => {
                         try {
                           const reportsRes = await fetch('/api/reports', {
                             headers: {
-                              'x-user-id': user?.id || '',
-                              'x-company-id': 'default-company'
+                              'x-user-id': user?.id,
+                              'x-company-id': user?.companyId
                             }
                           });
-                          
+
                           if (reportsRes.ok) {
                             const reportsData = await reportsRes.json();
                             const reportsToExport = reportsData.success ? reportsData.data || [] : reports;
-                            
+
                             const csvContent = [
                               ['Report Name', 'Type', 'Generated Date', 'Status'],
                               ...reportsToExport.map(report => [
@@ -3520,31 +3584,10 @@ Average Credit Score: ${Math.round(leads.reduce((sum, lead) => sum + (lead.credi
                             a.download = `reports_${new Date().toISOString().split('T')[0]}.csv`;
                             a.click();
                             window.URL.revokeObjectURL(url);
-                            
+
                             toast({
                               title: "Export Success",
                               description: `Exported ${reportsToExport.length} reports successfully`,
-                            });
-                          } else {
-                            // Fallback to local data
-                            const csvContent = [
-                              ['Report Name', 'Type', 'Generated Date', 'Status'],
-                              ...reports.map(report => [
-                                report.name, report.type, report.generatedDate, report.status
-                              ])
-                            ].map(row => row.join(',')).join('\n');
-
-                            const blob = new Blob([csvContent], { type: 'text/csv' });
-                            const url = window.URL.createObjectURL(blob);
-                            const a = document.createElement('a');
-                            a.href = url;
-                            a.download = `reports_${new Date().toISOString().split('T')[0]}.csv`;
-                            a.click();
-                            window.URL.revokeObjectURL(url);
-                            
-                            toast({
-                              title: "Export Success",
-                              description: `Exported ${reports.length} reports successfully`,
                             });
                           }
                         } catch (error) {
@@ -3557,177 +3600,340 @@ Average Credit Score: ${Math.round(leads.reduce((sum, lead) => sum + (lead.credi
                       }}
                     >
                       <Download className="h-4 w-4 mr-2" />
-                      Export Reports
+                      Export
                     </Button>
                   </div>
                 </div>
 
-                {/* Analytics Overview */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                  <Card className={loading.stats ? "opacity-70 animate-pulse" : ""}>
-                    <CardHeader>
-                      <CardTitle>Lead Conversion Rate</CardTitle>
-                      <CardDescription>Monthly conversion trends</CardDescription>
-                    </CardHeader>
-                    <CardContent>
-                      <div className="text-3xl font-bold text-green-600">{stats.conversionRate}%</div>
-                      <p className="text-sm text-gray-500">+2.1% from last month</p>
-                    </CardContent>
-                  </Card>
-                  
-                  <Card className={loading.stats ? "opacity-70 animate-pulse" : ""}>
-                    <CardHeader>
-                      <CardTitle>Average Response Time</CardTitle>
-                      <CardDescription>Time to first contact</CardDescription>
-                    </CardHeader>
-                    <CardContent>
-                      <div className="text-3xl font-bold text-blue-600">2.3h</div>
-                      <p className="text-sm text-gray-500">-30m improvement</p>
-                    </CardContent>
-                  </Card>
-                  
-                  <Card className={loading.stats ? "opacity-70 animate-pulse" : ""}>
-                    <CardHeader>
-                      <CardTitle>Employee Productivity</CardTitle>
-                      <CardDescription>Leads per employee</CardDescription>
-                    </CardHeader>
-                    <CardContent>
-                      <div className="text-3xl font-bold text-purple-600">{stats.totalLeads && stats.totalEmployees ? Math.round(stats.totalLeads / stats.totalEmployees * 100) / 100 : 0}</div>
-                      <p className="text-sm text-gray-500">+3.2 from average</p>
-                    </CardContent>
-                  </Card>
-                </div>
+                {loadingAnalytics ? (
+                  <div className="text-center py-20">
+                    <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900"></div>
+                    <p className="mt-2 text-gray-500">Loading analytics...</p>
+                  </div>
+                ) : analyticsData ? (
+                  <>
+                    {/* Key Performance Indicators */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                      <Card className="bg-gradient-to-br from-blue-50 to-blue-100 border-blue-200">
+                        <CardHeader className="pb-2">
+                          <CardDescription className="text-blue-700 font-medium">Total Leads</CardDescription>
+                        </CardHeader>
+                        <CardContent>
+                          <div className="flex items-center justify-between">
+                            <div className="text-3xl font-bold text-blue-900">{analyticsData.overview.totalLeads}</div>
+                            <Users className="h-8 w-8 text-blue-600 opacity-50" />
+                          </div>
+                          <p className="text-xs text-blue-600 mt-2">
+                            {analyticsData.overview.activeLeads} active
+                          </p>
+                        </CardContent>
+                      </Card>
 
-                {/* Charts Section with Real Data */}
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                  {/* Lead Sources Pie Chart */}
-                  <Card>
-                    <CardHeader>
-                      <CardTitle>Lead Sources</CardTitle>
-                      <CardDescription>Where your leads come from</CardDescription>
-                    </CardHeader>
-                    <CardContent>
-                      {leads.length > 0 ? (
+                      <Card className="bg-gradient-to-br from-green-50 to-green-100 border-green-200">
+                        <CardHeader className="pb-2">
+                          <CardDescription className="text-green-700 font-medium">Conversion Rate</CardDescription>
+                        </CardHeader>
+                        <CardContent>
+                          <div className="flex items-center justify-between">
+                            <div className="text-3xl font-bold text-green-900">
+                              {analyticsData.overview.conversionRate.toFixed(1)}%
+                            </div>
+                            <TrendingUp className="h-8 w-8 text-green-600 opacity-50" />
+                          </div>
+                          <p className="text-xs text-green-600 mt-2">
+                            {analyticsData.overview.convertedLeads} converted
+                          </p>
+                        </CardContent>
+                      </Card>
+
+                      <Card className="bg-gradient-to-br from-purple-50 to-purple-100 border-purple-200">
+                        <CardHeader className="pb-2">
+                          <CardDescription className="text-purple-700 font-medium">Revenue Pipeline</CardDescription>
+                        </CardHeader>
+                        <CardContent>
+                          <div className="flex items-center justify-between">
+                            <div className="text-3xl font-bold text-purple-900">
+                              ${(analyticsData.overview.pipelineRevenue / 1000000).toFixed(1)}M
+                            </div>
+                            <DollarSign className="h-8 w-8 text-purple-600 opacity-50" />
+                          </div>
+                          <p className="text-xs text-purple-600 mt-2">
+                            ${(analyticsData.overview.convertedRevenue / 1000000).toFixed(1)}M converted
+                          </p>
+                        </CardContent>
+                      </Card>
+
+                      <Card className="bg-gradient-to-br from-orange-50 to-orange-100 border-orange-200">
+                        <CardHeader className="pb-2">
+                          <CardDescription className="text-orange-700 font-medium">Avg Response Time</CardDescription>
+                        </CardHeader>
+                        <CardContent>
+                          <div className="flex items-center justify-between">
+                            <div className="text-3xl font-bold text-orange-900">
+                              {analyticsData.overview.avgResponseTime}h
+                            </div>
+                            <Clock className="h-8 w-8 text-orange-600 opacity-50" />
+                          </div>
+                          <p className="text-xs text-orange-600 mt-2">
+                            {analyticsData.overview.responseRate.toFixed(0)}% within 2hrs
+                          </p>
+                        </CardContent>
+                      </Card>
+                    </div>
+
+                    {/* Lead Trends Chart */}
+                    <Card>
+                      <CardHeader>
+                        <CardTitle>Lead Trends Over Time</CardTitle>
+                        <CardDescription>Daily lead activity and conversions</CardDescription>
+                      </CardHeader>
+                      <CardContent>
                         <div className="h-80">
                           <ResponsiveContainer width="100%" height="100%">
-                            <PieChart>
-                              <Pie
-                                data={[
-                                  { 
-                                    name: "Website", 
-                                    value: leads.filter(lead => lead.source === "Website").length,
-                                    count: leads.filter(lead => lead.source === "Website").length
-                                  },
-                                  { 
-                                    name: "Referral", 
-                                    value: leads.filter(lead => lead.source === "Referral").length,
-                                    count: leads.filter(lead => lead.source === "Referral").length
-                                  },
-                                  { 
-                                    name: "Social Media", 
-                                    value: leads.filter(lead => lead.source === "Social Media").length,
-                                    count: leads.filter(lead => lead.source === "Social Media").length
-                                  },
-                                  { 
-                                    name: "Email Campaign", 
-                                    value: leads.filter(lead => lead.source === "Email Campaign").length,
-                                    count: leads.filter(lead => lead.source === "Email Campaign").length
-                                  },
-                                  { 
-                                    name: "Other", 
-                                    value: leads.filter(lead => !["Website", "Referral", "Social Media", "Email Campaign"].includes(lead.source || "")).length,
-                                    count: leads.filter(lead => !["Website", "Referral", "Social Media", "Email Campaign"].includes(lead.source || "")).length
-                                  }
-                                ]}
-                                cx="50%"
-                                cy="50%"
-                                labelLine={false}
-                                outerRadius={80}
-                                fill="#8884d8"
-                                dataKey="value"
-                                label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
-                              >
-                                {[
-                                  "#0088FE", "#00C49F", "#FFBB28", "#FF8042", "#8884D8"
-                                ].map((color, index) => (
-                                  <Cell key={`cell-${index}`} fill={color} />
-                                ))}
-                              </Pie>
-                              <Tooltip formatter={(value) => [`${value} leads`, 'Count']} />
-                              <Legend />
-                            </PieChart>
-                          </ResponsiveContainer>
-                        </div>
-                      ) : (
-                        <div className="text-center py-10 text-gray-500">
-                          No lead data available
-                        </div>
-                      )}
-                    </CardContent>
-                  </Card>
-
-                  {/* Department Performance Bar Chart */}
-                  <Card>
-                    <CardHeader>
-                      <CardTitle>Department Performance</CardTitle>
-                      <CardDescription>Leads handled by department</CardDescription>
-                    </CardHeader>
-                    <CardContent>
-                      {employees.length > 0 ? (
-                        <div className="h-80">
-                          <ResponsiveContainer width="100%" height="100%">
-                            <BarChart
-                              data={Array.from(new Set(employees.map(emp => emp.department))).map(deptName => {
-                                const deptEmployees = employees.filter(emp => emp.department === deptName);
-                                const deptLeads = leads.filter(lead => 
-                                  deptEmployees.some(emp => emp.id === lead.assignedToId)
-                                );
-                                const convertedLeads = deptLeads.filter(lead => lead.status === 'APPLICATION').length;
-                                const conversionRate = deptLeads.length > 0 ? (convertedLeads / deptLeads.length) * 100 : 0;
-                                
-                                return {
-                                  department: deptName,
-                                  leads: deptLeads.length,
-                                  converted: convertedLeads,
-                                  rate: parseFloat(conversionRate.toFixed(1))
-                                };
-                              })}
-                              margin={{
-                                top: 20,
-                                right: 30,
-                                left: 20,
-                                bottom: 60,
-                              }}
-                            >
+                            <AreaChart data={analyticsData.trends}>
+                              <defs>
+                                <linearGradient id="colorNew" x1="0" y1="0" x2="0" y2="1">
+                                  <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.8}/>
+                                  <stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/>
+                                </linearGradient>
+                                <linearGradient id="colorConverted" x1="0" y1="0" x2="0" y2="1">
+                                  <stop offset="5%" stopColor="#10b981" stopOpacity={0.8}/>
+                                  <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
+                                </linearGradient>
+                              </defs>
                               <CartesianGrid strokeDasharray="3 3" />
-                              <XAxis 
-                                dataKey="department" 
-                                angle={-45} 
-                                textAnchor="end"
-                                height={60}
-                                tick={{ fontSize: 12 }}
-                              />
+                              <XAxis dataKey="date" tick={{ fontSize: 12 }} />
                               <YAxis />
-                              <Tooltip 
-                                formatter={(value, name) => {
-                                  if (name === 'rate') return [`${value}%`, 'Conversion Rate'];
-                                  return [value, name === 'leads' ? 'Leads' : 'Converted'];
-                                }}
-                              />
+                              <Tooltip />
                               <Legend />
-                              <Bar dataKey="leads" name="Assigned Leads" fill="#8884d8" />
-                              <Bar dataKey="converted" name="Converted Leads" fill="#82ca9d" />
-                            </BarChart>
+                              <Area
+                                type="monotone"
+                                dataKey="total"
+                                stroke="#3b82f6"
+                                fillOpacity={1}
+                                fill="url(#colorNew)"
+                                name="Total Leads"
+                              />
+                              <Area
+                                type="monotone"
+                                dataKey="converted"
+                                stroke="#10b981"
+                                fillOpacity={1}
+                                fill="url(#colorConverted)"
+                                name="Converted"
+                              />
+                            </AreaChart>
                           </ResponsiveContainer>
                         </div>
-                      ) : (
-                        <div className="text-center py-10 text-gray-500">
-                          No employee data available
+                      </CardContent>
+                    </Card>
+
+                    {/* Charts Grid */}
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                      {/* Status Distribution */}
+                      <Card>
+                        <CardHeader>
+                          <CardTitle>Lead Status Distribution</CardTitle>
+                          <CardDescription>Current pipeline status</CardDescription>
+                        </CardHeader>
+                        <CardContent>
+                          <div className="h-80">
+                            <ResponsiveContainer width="100%" height="100%">
+                              <PieChart>
+                                <Pie
+                                  data={Object.entries(analyticsData.statusDistribution).map(([name, value]) => ({
+                                    name,
+                                    value
+                                  }))}
+                                  cx="50%"
+                                  cy="50%"
+                                  labelLine={false}
+                                  label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
+                                  outerRadius={80}
+                                  fill="#8884d8"
+                                  dataKey="value"
+                                >
+                                  {Object.keys(analyticsData.statusDistribution).map((_, index) => (
+                                    <Cell key={`cell-${index}`} fill={['#3b82f6', '#8b5cf6', '#10b981', '#f59e0b', '#ef4444', '#6b7280', '#000000'][index]} />
+                                  ))}
+                                </Pie>
+                                <Tooltip />
+                                <Legend />
+                              </PieChart>
+                            </ResponsiveContainer>
+                          </div>
+                        </CardContent>
+                      </Card>
+
+                      {/* Lead Sources */}
+                      <Card>
+                        <CardHeader>
+                          <CardTitle>Lead Sources</CardTitle>
+                          <CardDescription>Where your leads come from</CardDescription>
+                        </CardHeader>
+                        <CardContent>
+                          <div className="h-80">
+                            <ResponsiveContainer width="100%" height="100%">
+                              <BarChart
+                                data={Object.entries(analyticsData.sources).map(([name, value]) => ({
+                                  name,
+                                  leads: value
+                                }))}
+                              >
+                                <CartesianGrid strokeDasharray="3 3" />
+                                <XAxis dataKey="name" />
+                                <YAxis />
+                                <Tooltip />
+                                <Legend />
+                                <Bar dataKey="leads" fill="#8b5cf6" />
+                              </BarChart>
+                            </ResponsiveContainer>
+                          </div>
+                        </CardContent>
+                      </Card>
+
+                      {/* Department Performance */}
+                      <Card>
+                        <CardHeader>
+                          <CardTitle>Department Performance</CardTitle>
+                          <CardDescription>Conversion rates by department</CardDescription>
+                        </CardHeader>
+                        <CardContent>
+                          <div className="h-80">
+                            <ResponsiveContainer width="100%" height="100%">
+                              <BarChart data={analyticsData.departmentStats}>
+                                <CartesianGrid strokeDasharray="3 3" />
+                                <XAxis dataKey="name" />
+                                <YAxis />
+                                <Tooltip />
+                                <Legend />
+                                <Bar dataKey="totalLeads" name="Total Leads" fill="#3b82f6" />
+                                <Bar dataKey="converted" name="Converted" fill="#10b981" />
+                              </BarChart>
+                            </ResponsiveContainer>
+                          </div>
+                        </CardContent>
+                      </Card>
+
+                      {/* Priority Distribution */}
+                      <Card>
+                        <CardHeader>
+                          <CardTitle>Lead Priority Distribution</CardTitle>
+                          <CardDescription>Priority levels of current leads</CardDescription>
+                        </CardHeader>
+                        <CardContent>
+                          <div className="h-80">
+                            <ResponsiveContainer width="100%" height="100%">
+                              <PieChart>
+                                <Pie
+                                  data={Object.entries(analyticsData.priorityDistribution).map(([name, value]) => ({
+                                    name,
+                                    value
+                                  }))}
+                                  cx="50%"
+                                  cy="50%"
+                                  labelLine={false}
+                                  label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
+                                  outerRadius={80}
+                                  fill="#8884d8"
+                                  dataKey="value"
+                                >
+                                  {Object.keys(analyticsData.priorityDistribution).map((_, index) => (
+                                    <Cell key={`cell-${index}`} fill={['#10b981', '#3b82f6', '#f59e0b', '#ef4444'][index]} />
+                                  ))}
+                                </Pie>
+                                <Tooltip />
+                                <Legend />
+                              </PieChart>
+                            </ResponsiveContainer>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    </div>
+
+                    {/* Conversion Funnel */}
+                    <Card>
+                      <CardHeader>
+                        <CardTitle>Lead Conversion Funnel</CardTitle>
+                        <CardDescription>Track lead progression through stages</CardDescription>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="space-y-4">
+                          {analyticsData.funnel.map((stage: any, index: number) => (
+                            <div key={index} className="relative">
+                              <div className="flex items-center justify-between mb-2">
+                                <span className="text-sm font-medium text-gray-700">{stage.stage}</span>
+                                <span className="text-sm text-gray-500">{stage.count} leads ({stage.percentage.toFixed(1)}%)</span>
+                              </div>
+                              <div className="w-full bg-gray-200 rounded-full h-8 overflow-hidden">
+                                <div
+                                  className={`h-8 rounded-full flex items-center justify-center text-white text-sm font-medium transition-all duration-500 ${
+                                    index === 0 ? 'bg-blue-500' :
+                                    index === 1 ? 'bg-purple-500' :
+                                    index === 2 ? 'bg-green-500' :
+                                    index === 3 ? 'bg-yellow-500' :
+                                    'bg-red-500'
+                                  }`}
+                                  style={{ width: `${Math.max(stage.percentage, 5)}%` }}
+                                >
+                                  {stage.count > 0 && stage.count}
+                                </div>
+                              </div>
+                            </div>
+                          ))}
                         </div>
-                      )}
+                      </CardContent>
+                    </Card>
+
+                    {/* Top Performers */}
+                    <Card>
+                      <CardHeader>
+                        <CardTitle>Top Performers</CardTitle>
+                        <CardDescription>Employees with highest conversion rates</CardDescription>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="space-y-4">
+                          {analyticsData.topPerformers.slice(0, 5).map((performer: any, index: number) => (
+                            <div key={index} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                              <div className="flex items-center space-x-3">
+                                <div className={`flex items-center justify-center w-8 h-8 rounded-full ${
+                                  index === 0 ? 'bg-yellow-100 text-yellow-700' :
+                                  index === 1 ? 'bg-gray-100 text-gray-700' :
+                                  index === 2 ? 'bg-orange-100 text-orange-700' :
+                                  'bg-blue-100 text-blue-700'
+                                }`}>
+                                  {index + 1}
+                                </div>
+                                <div>
+                                  <p className="font-medium text-gray-900">{performer.name}</p>
+                                  <p className="text-sm text-gray-500">{performer.totalLeads} leads</p>
+                                </div>
+                              </div>
+                              <div className="text-right">
+                                <p className="font-semibold text-green-600">{performer.converted} converted</p>
+                                <p className="text-sm text-gray-500">{performer.conversionRate.toFixed(1)}% rate</p>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </CardContent>
+                    </Card>
+                  </>
+                ) : (
+                  <Card>
+                    <CardContent className="text-center py-20">
+                      <BarChart3 className="h-16 w-16 mx-auto text-gray-300 mb-4" />
+                      <p className="text-gray-500">No analytics data available</p>
+                      <Button
+                        onClick={() => fetchAnalytics(analyticsDateRange)}
+                        className="mt-4"
+                        variant="outline"
+                      >
+                        Load Analytics
+                      </Button>
                     </CardContent>
                   </Card>
-                </div>
+                )}
               </div>
             </TabsContent>
           </Tabs>

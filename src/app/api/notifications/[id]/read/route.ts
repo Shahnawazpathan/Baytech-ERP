@@ -4,7 +4,7 @@ import { db } from '@/lib/db'
 // Mark a single notification as read
 export async function PATCH(request: NextRequest, { params }: { params: { id: string } }) {
   try {
-    const { id } = params
+    const id = params.id;
     
     const updatedNotification = await db.notification.update({
       where: { id },

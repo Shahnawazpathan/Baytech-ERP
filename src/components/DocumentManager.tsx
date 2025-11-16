@@ -94,17 +94,17 @@ export function DocumentManager({ companyId = 'default' }: DocumentManagerProps)
     },
     {
       id: '4',
-      name: 'Company_Logo_2024.png',
+      name: 'baytechlogo.svg',
       type: 'Image',
       size: 256000,
       category: 'Assets',
-      uploadedBy: 'David Lee',
-      uploadedAt: '2024-01-05',
-      lastModified: '2024-01-05',
+      uploadedBy: 'System',
+      uploadedAt: '2025-11-16',
+      lastModified: '2025-11-16',
       isPrivate: false,
       tags: ['logo', 'branding', 'assets'],
-      description: 'Updated company logo for 2024',
-      mimeType: 'image/png'
+      description: 'Baytech official logo',
+      mimeType: 'image/svg+xml'
     }
   ])
 

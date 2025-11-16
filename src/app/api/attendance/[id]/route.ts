@@ -4,7 +4,7 @@ import { db } from '@/lib/db'
 // Update an attendance record
 export async function PUT(request: NextRequest, { params }: { params: { id: string } }) {
   try {
-    const { id } = params
+    const id = params.id;
     const body = await request.json()
     
     // Check if attendance record exists
@@ -74,7 +74,7 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
 // Get a single attendance record
 export async function GET(request: NextRequest, { params }: { params: { id: string } }) {
   try {
-    const { id } = params
+    const id = params.id;
     
     const attendance = await db.attendance.findUnique({
       where: { id },
@@ -121,7 +121,7 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
 // Delete an attendance record
 export async function DELETE(request: NextRequest, { params }: { params: { id: string } }) {
   try {
-    const { id } = params
+    const id = params.id;
     
     // Check if attendance record exists
     const existingAttendance = await db.attendance.findUnique({

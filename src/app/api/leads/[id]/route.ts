@@ -4,7 +4,7 @@ import { db } from '@/lib/db'
 // Update a lead
 export async function PUT(request: NextRequest, { params }: { params: { id: string } }) {
   try {
-    const { id } = params
+    const id = params.id;
     const body = await request.json()
     
     // Check if lead exists
@@ -77,7 +77,7 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
 // Get a single lead
 export async function GET(request: NextRequest, { params }: { params: { id: string } }) {
   try {
-    const { id } = params
+    const id = params.id;
     
     const lead = await db.lead.findUnique({
       where: { id },

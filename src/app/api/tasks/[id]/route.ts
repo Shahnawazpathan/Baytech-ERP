@@ -3,7 +3,7 @@ import { db } from '@/lib/db'
 
 export async function GET(request: NextRequest, { params }: { params: { id: string } }) {
   try {
-    const { id } = params
+    const id = params.id;
 
     const task = await db.task.findUnique({
       where: { id },
@@ -55,7 +55,7 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
 
 export async function PUT(request: NextRequest, { params }: { params: { id: string } }) {
   try {
-    const { id } = params
+    const id = params.id;
     const body = await request.json()
     const userId = request.headers.get('x-user-id')
 
@@ -184,7 +184,7 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
 
 export async function DELETE(request: NextRequest, { params }: { params: { id: string } }) {
   try {
-    const { id } = params
+    const id = params.id;
     const userId = request.headers.get('x-user-id')
 
     if (!userId) {

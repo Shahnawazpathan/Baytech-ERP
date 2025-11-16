@@ -13,19 +13,17 @@ const nextConfig: NextConfig = {
     TURSO_DATABASE_URL: process.env.TURSO_DATABASE_URL || 'libsql://baytech-shahnawazpathan.aws-ap-south-1.turso.io',
     TURSO_AUTH_TOKEN: process.env.TURSO_AUTH_TOKEN || 'eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJpYXQiOjE3NjI0OTM1OTIsImlkIjoiZmJlMjM5MzktYzc4OC00OWQzLWEzYzEtNjU5YTIyZDNhZTBjIiwicmlkIjoiYzNjY2Y4MDctYmVjOS00ZWNmLWJhZDItNzQ1NjkwMjJkZWYwIn0.iONfkGJQnBcIDl0ncthJnRktWkUBNV9sr2km2eKHEgd0UzNtdSE709py9CgA4CDozdEYvQgct90zw4H9pFqSDw',
   },
-  experimental: {
-    serverComponentsExternalPackages: [
-      '@libsql/client',
-      '@prisma/adapter-libsql',
-      '@prisma/client',
-      '@prisma/engines',
-    ],
-    outputFileTracingIncludes: {
-      '/api/**/*': ['./node_modules/@libsql/client/http/**/*'],
-    },
-    outputFileTracingExcludes: {
-      '/api/**/*': ['./node_modules/@libsql/darwin-arm64/**/*', './node_modules/@libsql/linux-x64/**/*', './node_modules/@libsql/win32-x64/**/*'],
-    },
+  serverExternalPackages: [
+    '@libsql/client',
+    '@prisma/adapter-libsql',
+    '@prisma/client',
+    '@prisma/engines',
+  ],
+  outputFileTracingIncludes: {
+    '/api/**/*': ['./node_modules/@libsql/client/http/**/*'],
+  },
+  outputFileTracingExcludes: {
+    '/api/**/*': ['./node_modules/@libsql/darwin-arm64/**/*', './node_modules/@libsql/linux-x64/**/*', './node_modules/@libsql/win32-x64/**/*'],
   },
   webpack: (config, { dev, isServer }) => {
     if (dev) {
