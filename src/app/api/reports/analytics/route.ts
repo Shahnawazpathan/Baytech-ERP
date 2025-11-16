@@ -76,7 +76,7 @@ export async function GET(request: NextRequest) {
         new: leadsOnDay.filter(l => l.status === 'NEW').length,
         contacted: leadsOnDay.filter(l => l.status === 'CONTACTED').length,
         qualified: leadsOnDay.filter(l => l.status === 'QUALIFIED').length,
-        converted: leadsOnDay.filter(l => l.status === 'APPLICATION').length,
+        converted: leadsOnDay.filter(l => l.status === 'APPLICATION' || l.status === 'REAL').length,
         total: leadsOnDay.length
       })
     }
@@ -89,7 +89,9 @@ export async function GET(request: NextRequest) {
       APPLICATION: allLeads.filter(l => l.status === 'APPLICATION').length,
       APPROVED: allLeads.filter(l => l.status === 'APPROVED').length,
       REJECTED: allLeads.filter(l => l.status === 'REJECTED').length,
-      CLOSED: allLeads.filter(l => l.status === 'CLOSED').length
+      CLOSED: allLeads.filter(l => l.status === 'CLOSED').length,
+      JUNK: allLeads.filter(l => l.status === 'JUNK').length,
+      REAL: allLeads.filter(l => l.status === 'REAL').length
     }
 
     // Priority distribution
@@ -126,7 +128,7 @@ export async function GET(request: NextRequest) {
         }
 
         acc[empId].totalLeads++
-        if (lead.status === 'APPLICATION' || lead.status === 'APPROVED') acc[empId].converted++
+        if (lead.status === 'APPLICATION' || lead.status === 'APPROVED' || lead.status === 'REAL') acc[empId].converted++
         if (lead.status === 'QUALIFIED') acc[empId].qualified++
         if (lead.status === 'CONTACTED') acc[empId].contacted++
         if (lead.status === 'NEW') acc[empId].new++
@@ -148,11 +150,11 @@ export async function GET(request: NextRequest) {
     }, 0)
 
     const convertedRevenue = allLeads
-      .filter(l => l.status === 'APPLICATION' || l.status === 'APPROVED')
+      .filter(l => l.status === 'APPLICATION' || l.status === 'APPROVED' || l.status === 'REAL')
       .reduce((sum, lead) => sum + (lead.loanAmount || 0), 0)
 
     const pipelineRevenue = allLeads
-      .filter(l => ['NEW', 'CONTACTED', 'QUALIFIED'].includes(l.status))
+      .filter(l => ['NEW', 'CONTACTED', 'QUALIFIED'].includes(l.status) && l.status !== 'JUNK')
       .reduce((sum, lead) => sum + (lead.loanAmount || 0), 0)
 
     // Response time analytics (mock data - would need actual timestamps)
@@ -186,6 +188,11 @@ export async function GET(request: NextRequest) {
         stage: 'Approved',
         count: statusDistribution.APPROVED,
         percentage: allLeads.length > 0 ? (statusDistribution.APPROVED / allLeads.length) * 100 : 0
+      },
+      {
+        stage: 'Real Leads',
+        count: statusDistribution.REAL,
+        percentage: allLeads.length > 0 ? (statusDistribution.REAL / allLeads.length) * 100 : 0
       }
     ]
 
@@ -207,7 +214,7 @@ export async function GET(request: NextRequest) {
     const departmentStats = departments.map(dept => {
       const totalLeads = dept.employees.reduce((sum, emp) => sum + emp.leads.length, 0)
       const convertedLeads = dept.employees.reduce((sum, emp) =>
-        sum + emp.leads.filter(l => l.status === 'APPLICATION' || l.status === 'APPROVED').length, 0
+        sum + emp.leads.filter(l => l.status === 'APPLICATION' || l.status === 'APPROVED' || l.status === 'REAL').length, 0
       )
 
       return {
@@ -224,10 +231,10 @@ export async function GET(request: NextRequest) {
       data: {
         overview: {
           totalLeads: allLeads.length,
-          activeLeads: allLeads.filter(l => ['NEW', 'CONTACTED', 'QUALIFIED'].includes(l.status)).length,
-          convertedLeads: statusDistribution.APPLICATION + statusDistribution.APPROVED,
+          activeLeads: allLeads.filter(l => ['NEW', 'CONTACTED', 'QUALIFIED'].includes(l.status) && l.status !== 'JUNK').length,
+          convertedLeads: statusDistribution.APPLICATION + statusDistribution.APPROVED + statusDistribution.REAL,
           conversionRate: allLeads.length > 0
-            ? ((statusDistribution.APPLICATION + statusDistribution.APPROVED) / allLeads.length) * 100
+            ? ((statusDistribution.APPLICATION + statusDistribution.APPROVED + statusDistribution.REAL) / allLeads.length) * 100
             : 0,
           totalRevenuePotential,
           convertedRevenue,

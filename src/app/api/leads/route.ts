@@ -4,15 +4,43 @@ import { db } from '@/lib/db'
 export async function GET(request: NextRequest) {
   try {
     const companyId = request.headers.get('x-company-id') || 'default-company'
-    
+
+    // Optimize: Only select necessary fields instead of fetching all
     const leads = await db.lead.findMany({
-      where: { 
+      where: {
         companyId,
         isActive: true
       },
-      include: {
-        assignedTo: true
-      }
+      select: {
+        id: true,
+        leadNumber: true,
+        firstName: true,
+        lastName: true,
+        email: true,
+        phone: true,
+        loanAmount: true,
+        status: true,
+        priority: true,
+        assignedToId: true,
+        assignedAt: true,
+        address: true,
+        creditScore: true,
+        source: true,
+        createdAt: true,
+        updatedAt: true,
+        notes: true,
+        assignedTo: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true
+          }
+        }
+      },
+      orderBy: [
+        { priority: 'desc' },
+        { createdAt: 'desc' }
+      ]
     })
 
     // Transform the data to match the expected format

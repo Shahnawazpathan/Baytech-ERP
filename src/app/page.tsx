@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, lazy, Suspense } from 'react'
 import { useRouter } from 'next/navigation'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -34,12 +34,16 @@ import { ProtectedRoute } from '@/components/auth/protected-route'
 import { useAuth } from '@/hooks/use-auth'
 import { useToast } from '@/hooks/use-toast'
 import { useLenis } from '@/hooks/use-lenis'
-import { LeadImportModal } from '@/components/LeadImportModal'
-import { LeadAssignment } from '@/components/LeadAssignment'
-import { LeadsPool } from '@/components/LeadsPool'
-import { GeofenceAttendance } from '@/components/GeofenceAttendance'
-import { GeofenceLocationManager } from '@/components/GeofenceLocationManager'
-import { TaskManagement } from '@/components/TaskManagement'
+import { useDebounce } from '@/hooks/use-debounce'
+
+// Lazy load heavy components for better performance
+const LeadImportModal = lazy(() => import('@/components/LeadImportModal').then(mod => ({ default: mod.LeadImportModal })))
+const LeadAssignment = lazy(() => import('@/components/LeadAssignment').then(mod => ({ default: mod.LeadAssignment })))
+const LeadsPool = lazy(() => import('@/components/LeadsPool').then(mod => ({ default: mod.LeadsPool })))
+const GeofenceAttendance = lazy(() => import('@/components/GeofenceAttendance').then(mod => ({ default: mod.GeofenceAttendance })))
+const GeofenceLocationManager = lazy(() => import('@/components/GeofenceLocationManager').then(mod => ({ default: mod.GeofenceLocationManager })))
+const TaskManagement = lazy(() => import('@/components/TaskManagement').then(mod => ({ default: mod.TaskManagement })))
+const AttendanceManagement = lazy(() => import('@/components/AttendanceManagement').then(mod => ({ default: mod.AttendanceManagement })))
 import { 
   Users, 
   Building2, 
@@ -598,6 +602,8 @@ export default function Home() {
       case 'ABSENT': return 'bg-red-100 text-red-800'
       case 'ACTIVE': return 'bg-green-100 text-green-800'
       case 'ON_LEAVE': return 'bg-yellow-100 text-yellow-800'
+      case 'JUNK': return 'bg-red-100 text-red-800'
+      case 'REAL': return 'bg-green-100 text-green-800'
       default: return 'bg-gray-100 text-gray-800'
     }
   }
@@ -1151,7 +1157,7 @@ export default function Home() {
   const toggleLeadStatus = async (leadId: string, currentStatus: string) => {
     try {
       // Define the next status in the pipeline
-      const statusOrder = ['NEW', 'CONTACTED', 'QUALIFIED', 'APPLICATION', 'APPROVED', 'REJECTED', 'CLOSED'];
+      const statusOrder = ['NEW', 'CONTACTED', 'QUALIFIED', 'APPLICATION', 'APPROVED', 'REJECTED', 'CLOSED', 'JUNK', 'REAL'];
       const currentIndex = statusOrder.indexOf(currentStatus);
       const nextIndex = (currentIndex + 1) % statusOrder.length;
       const newStatus = statusOrder[nextIndex];
@@ -1789,7 +1795,7 @@ export default function Home() {
 
   const generateSalesReport = () => {
     const totalLeads = leads.length
-    const convertedLeads = leads.filter(lead => lead.status === 'APPLICATION').length
+    const convertedLeads = leads.filter(lead => lead.status === 'APPLICATION' || lead.status === 'REAL').length
     const conversionRate = ((convertedLeads / totalLeads) * 100).toFixed(2)
     const totalLoanAmount = leads.reduce((sum, lead) => sum + (lead.loanAmount || 0), 0)
     
@@ -2895,7 +2901,7 @@ Average Credit Score: ${Math.round(leads.reduce((sum, lead) => sum + (lead.credi
                       <CardTitle className="text-sm font-medium text-gray-600">Active Leads</CardTitle>
                     </CardHeader>
                     <CardContent>
-                      <div className="text-2xl font-bold text-gray-900">{leads.filter(l => !['APPLICATION', 'REJECTED', 'CLOSED'].includes(l.status)).length}</div>
+                      <div className="text-2xl font-bold text-gray-900">{leads.filter(l => !['APPLICATION', 'REJECTED', 'CLOSED', 'JUNK'].includes(l.status)).length}</div>
                       <p className="text-xs text-gray-500">In pipeline</p>
                     </CardContent>
                   </Card>
@@ -2905,8 +2911,8 @@ Average Credit Score: ${Math.round(leads.reduce((sum, lead) => sum + (lead.credi
                       <CardTitle className="text-sm font-medium text-gray-600">Converted</CardTitle>
                     </CardHeader>
                     <CardContent>
-                      <div className="text-2xl font-bold text-gray-900">{leads.filter(l => l.status === 'APPLICATION' || l.status === 'APPROVED').length}</div>
-                      <p className="text-xs text-green-600">{leads.length ? Math.round((leads.filter(l => l.status === 'APPLICATION' || l.status === 'APPROVED').length / leads.length) * 100) : 0}% conversion</p>
+                      <div className="text-2xl font-bold text-gray-900">{leads.filter(l => l.status === 'APPLICATION' || l.status === 'APPROVED' || l.status === 'REAL').length}</div>
+                      <p className="text-xs text-green-600">{leads.length ? Math.round((leads.filter(l => l.status === 'APPLICATION' || l.status === 'APPROVED' || l.status === 'REAL').length / leads.length) * 100) : 0}% conversion</p>
                     </CardContent>
                   </Card>
                   
@@ -2950,6 +2956,11 @@ Average Credit Score: ${Math.round(leads.reduce((sum, lead) => sum + (lead.credi
                             <SelectItem value="CONTACTED">CONTACTED</SelectItem>
                             <SelectItem value="QUALIFIED">QUALIFIED</SelectItem>
                             <SelectItem value="APPLICATION">APPLICATION</SelectItem>
+                            <SelectItem value="APPROVED">APPROVED</SelectItem>
+                            <SelectItem value="REJECTED">REJECTED</SelectItem>
+                            <SelectItem value="CLOSED">CLOSED</SelectItem>
+                            <SelectItem value="JUNK">JUNK</SelectItem>
+                            <SelectItem value="REAL">REAL</SelectItem>
                           </SelectContent>
                         </Select>
                         <Select value={leadFilter.priority} onValueChange={(value) => setLeadFilter({...leadFilter, priority: value})}>
@@ -3122,388 +3133,21 @@ Average Credit Score: ${Math.round(leads.reduce((sum, lead) => sum + (lead.credi
             </TabsContent>
 
             <TabsContent value="attendance">
-              <div className="space-y-6">
-                {/* Admin: Geofence Location Management */}
-                {isAdmin() && (
-                  <GeofenceLocationManager companyId={user?.companyId} />
-                )}
-
-                {/* Geofence Attendance Section */}
-                {showGeofenceAttendance && (
-                  <GeofenceAttendance
-                    companyId={user?.companyId}
-                    employeeId={user?.id}
-                    onCheckIn={handleAttendanceCheckIn}
-                    onCheckOut={handleAttendanceCheckOut}
-                  />
-                )}
-                {/* Attendance Header */}
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h2 className="text-2xl font-bold text-gray-900">Attendance Tracking</h2>
-                    <p className="text-sm text-gray-500">Employee attendance and time tracking</p>
-                  </div>
-                  <div className="flex gap-2">
-                    <Button 
-                      variant="outline"
-                      onClick={handleExportAttendance}
-                    >
-                      <Download className="h-4 w-4 mr-2" />
-                      Export
-                    </Button>
-                    <Button 
-                      onClick={handleGeofenceAttendanceClick}
-                      className={`${showGeofenceAttendance ? 'bg-gray-600 hover:bg-gray-700' : 'bg-blue-600 hover:bg-blue-700'}`}
-                    >
-                      <Map className="h-4 w-4 mr-2" />
-                      {showGeofenceAttendance ? 'Hide' : 'Show'} Geofence
-                    </Button>
-                    <Button 
-                      onClick={handleCheckIn}
-                      disabled={checkInStatus === 'checking'}
-                      className="bg-green-600 hover:bg-green-700"
-                    >
-                      {checkInStatus === 'checking' ? (
-                        <Clock className="h-4 w-4 mr-2 animate-spin" />
-                      ) : (
-                        <Map className="h-4 w-4 mr-2" />
-                      )}
-                      Quick Check In
-                    </Button>
-                    <Button 
-                      variant="outline"
-                      onClick={handleCheckOut}
-                      disabled={checkInStatus === 'checking'}
-                      className="border-red-500 text-red-600 hover:bg-red-50"
-                    >
-                      {checkInStatus === 'checking' ? (
-                        <Clock className="h-4 w-4 mr-2 animate-spin" />
-                      ) : (
-                        <Navigation className="h-4 w-4 mr-2" />
-                      )}
-                      Check Out
-                    </Button>
-                  </div>
+              <Suspense fallback={
+                <div className="flex items-center justify-center p-12">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900"></div>
                 </div>
-
-                {/* Attendance Stats */}
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                  <Card className="border-l-4 border-l-green-500">
-                    <CardHeader className="pb-2">
-                      <CardTitle className="text-sm font-medium text-gray-600">Present Today</CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <div className="text-2xl font-bold text-gray-900">{attendanceRecords.filter(a => a.status === 'PRESENT').length}</div>
-                      <p className="text-xs text-green-600">{attendanceRecords.length ? Math.round((attendanceRecords.filter(a => a.status === 'PRESENT').length / attendanceRecords.length) * 100) : 0}% attendance</p>
-                    </CardContent>
-                  </Card>
-                  
-                  <Card className="border-l-4 border-l-yellow-500">
-                    <CardHeader className="pb-2">
-                      <CardTitle className="text-sm font-medium text-gray-600">Late Arrivals</CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <div className="text-2xl font-bold text-gray-900">{attendanceRecords.filter(a => a.status === 'LATE').length}</div>
-                      <p className="text-xs text-yellow-600">{attendanceRecords.length ? Math.round((attendanceRecords.filter(a => a.status === 'LATE').length / attendanceRecords.length) * 100) : 0}% late rate</p>
-                    </CardContent>
-                  </Card>
-                  
-                  <Card className="border-l-4 border-l-blue-500">
-                    <CardHeader className="pb-2">
-                      <CardTitle className="text-sm font-medium text-gray-600">On Leave</CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <div className="text-2xl font-bold text-gray-900">{attendanceRecords.filter(a => a.status === 'ON_LEAVE').length}</div>
-                      <p className="text-xs text-blue-600">Approved leave</p>
-                    </CardContent>
-                  </Card>
-                  
-                  <Card className="border-l-4 border-l-red-500">
-                    <CardHeader className="pb-2">
-                      <CardTitle className="text-sm font-medium text-gray-600">Absent</CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <div className="text-2xl font-bold text-gray-900">{attendanceRecords.filter(a => a.status === 'ABSENT').length}</div>
-                      <p className="text-xs text-red-600">Unexcused</p>
-                    </CardContent>
-                  </Card>
-                </div>
-
-                {/* Attendance List */}
-                <Card>
-                  <CardHeader>
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <CardTitle>Today's Attendance</CardTitle>
-                        <CardDescription>Real-time attendance status</CardDescription>
-                      </div>
-                      <div className="flex gap-2">
-                        <div className="flex gap-2">
-                          <div className="relative">
-                            <Search className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
-                            <Input
-                              placeholder="Search employees..."
-                              value={attendanceFilter.search}
-                              onChange={(e) => setAttendanceFilter({...attendanceFilter, search: e.target.value})}
-                              className="pl-10 w-64"
-                            />
-                          </div>
-                          <Select value={attendanceFilter.department} onValueChange={(value) => setAttendanceFilter({...attendanceFilter, department: value})}>
-                            <SelectTrigger className="w-40">
-                              <SelectValue placeholder="Department" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="ALL">All Departments</SelectItem>
-                              <SelectItem value="Sales">Sales</SelectItem>
-                              <SelectItem value="IT">IT</SelectItem>
-                              <SelectItem value="HR">HR</SelectItem>
-                              <SelectItem value="Support">Support</SelectItem>
-                              <SelectItem value="Administration">Administration</SelectItem>
-                            </SelectContent>
-                          </Select>
-                          <Select value={attendanceFilter.status} onValueChange={(value) => setAttendanceFilter({...attendanceFilter, status: value})}>
-                            <SelectTrigger className="w-32">
-                              <SelectValue placeholder="Status" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="ALL">All Status</SelectItem>
-                              <SelectItem value="PRESENT">Present</SelectItem>
-                              <SelectItem value="LATE">Late</SelectItem>
-                              <SelectItem value="ABSENT">Absent</SelectItem>
-                            </SelectContent>
-                          </Select>
-                        </div>
-                      </div>
-                    </div>
-                  </CardHeader>
-                  <CardContent>
-                    {loading.attendance ? (
-                      <div className="space-y-4">
-                        {[...Array(5)].map((_, index) => (
-                          <div key={index} className="flex items-center p-3 border-b animate-pulse">
-                            <div className="flex items-center gap-3 flex-1">
-                              <div className="bg-gray-200 rounded-full h-10 w-10" />
-                              <div className="space-y-2">
-                                <div className="h-4 bg-gray-200 rounded w-32" />
-                              </div>
-                            </div>
-                            <div className="h-4 bg-gray-200 rounded w-20" />
-                            <div className="h-4 bg-gray-200 rounded w-16" />
-                            <div className="h-4 bg-gray-200 rounded w-16" />
-                            <div className="h-6 bg-gray-200 rounded w-16" />
-                            <div className="h-6 bg-gray-200 rounded w-24" />
-                            <div className="h-8 bg-gray-200 rounded w-32 ml-2 flex gap-2" />
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <div className="overflow-x-auto">
-                        <table className="w-full">
-                          <thead>
-                            <tr className="border-b">
-                              <th className="text-left p-3">Employee</th>
-                              <th className="text-left p-3">Department</th>
-                              <th className="text-left p-3">Check In</th>
-                              <th className="text-left p-3">Check Out</th>
-                              <th className="text-left p-3">Status</th>
-                              <th className="text-left p-3">Location</th>
-                              <th className="text-left p-3">Actions</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {filteredAttendance.map((record) => (
-                              <tr key={record.id} className="border-b hover:bg-gray-50 transition-colors">
-                                <td className="p-3">
-                                  <div className="flex items-center gap-3">
-                                    <Avatar>
-                                      <AvatarFallback>{record.name.split(' ').map(n => n[0]).join('')}</AvatarFallback>
-                                    </Avatar>
-                                    <div>
-                                      <p className="font-medium">{record.name}</p>
-                                    </div>
-                                  </div>
-                                </td>
-                                <td className="p-3">{record.department}</td>
-                                <td className="p-3">{record.checkIn}</td>
-                                <td className="p-3">{record.checkOut}</td>
-                                <td className="p-3">
-                                  <Badge className={getStatusColor(record.status)}>
-                                    {record.status}
-                                  </Badge>
-                                </td>
-                                <td className="p-3">
-                                  <Badge variant="outline">
-                                    <MapPin className="h-3 w-3 mr-1" />
-                                    {record.location}
-                                  </Badge>
-                                </td>
-                                <td className="p-3">
-                                  <div className="flex gap-2">
-                                    <Button
-                                      variant="outline"
-                                      size="sm"
-                                      onClick={() => handleViewAttendanceClick(record)}
-                                    >
-                                      View
-                                    </Button>
-                                    {/* Admin only buttons */}
-                                    {isAdmin() && (
-                                      <>
-                                        <Button
-                                          variant="ghost"
-                                          size="sm"
-                                          onClick={() => handleEditAttendanceClick(record)}
-                                        >
-                                          Edit
-                                        </Button>
-                                        <Button
-                                          variant="destructive"
-                                          size="sm"
-                                          onClick={() => handleDeleteAttendance(record.id)}
-                                        >
-                                          Delete
-                                        </Button>
-                                      </>
-                                    )}
-                                  </div>
-                                </td>
-                              </tr>
-                            ))}
-                            {filteredAttendance.length === 0 && (
-                              <tr>
-                                <td colSpan={7} className="p-3 text-center text-gray-500">
-                                  No attendance records found
-                                </td>
-                              </tr>
-                            )}
-                          </tbody>
-                        </table>
-                      </div>
-                    )}
-                  </CardContent>
-                </Card>
-
-                {/* Edit Attendance Dialog */}
-                {editingAttendance && (
-                  <Dialog open={!!editingAttendance} onOpenChange={(open) => !open && setEditingAttendance(null)}>
-                    <DialogContent className="max-w-2xl">
-                      <DialogHeader>
-                        <DialogTitle>Edit Attendance Record</DialogTitle>
-                        <DialogDescription>
-                          Update attendance details for {editingAttendance.name}
-                        </DialogDescription>
-                      </DialogHeader>
-                      <div className="space-y-4">
-                        <div className="grid grid-cols-2 gap-4">
-                          <div>
-                            <Label>Employee Name</Label>
-                            <Input value={editingAttendance.name} disabled />
-                          </div>
-                          <div>
-                            <Label>Department</Label>
-                            <Input value={editingAttendance.department} disabled />
-                          </div>
-                        </div>
-                        <div className="grid grid-cols-2 gap-4">
-                          <div>
-                            <Label htmlFor="checkInTime">Check In Time</Label>
-                            <Input
-                              id="checkInTime"
-                              type="datetime-local"
-                              value={editingAttendance.checkInTime ? new Date(editingAttendance.checkInTime).toISOString().slice(0, 16) : ''}
-                              onChange={(e) => setEditingAttendance({
-                                ...editingAttendance,
-                                checkInTime: e.target.value ? new Date(e.target.value).toISOString() : null
-                              })}
-                            />
-                          </div>
-                          <div>
-                            <Label htmlFor="checkOutTime">Check Out Time</Label>
-                            <Input
-                              id="checkOutTime"
-                              type="datetime-local"
-                              value={editingAttendance.checkOutTime ? new Date(editingAttendance.checkOutTime).toISOString().slice(0, 16) : ''}
-                              onChange={(e) => setEditingAttendance({
-                                ...editingAttendance,
-                                checkOutTime: e.target.value ? new Date(e.target.value).toISOString() : null
-                              })}
-                            />
-                          </div>
-                        </div>
-                        <div className="grid grid-cols-2 gap-4">
-                          <div>
-                            <Label htmlFor="status">Status</Label>
-                            <Select
-                              value={editingAttendance.status}
-                              onValueChange={(value) => setEditingAttendance({
-                                ...editingAttendance,
-                                status: value
-                              })}
-                            >
-                              <SelectTrigger>
-                                <SelectValue placeholder="Select status" />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="PRESENT">Present</SelectItem>
-                                <SelectItem value="LATE">Late</SelectItem>
-                                <SelectItem value="ABSENT">Absent</SelectItem>
-                                <SelectItem value="HALF_DAY">Half Day</SelectItem>
-                                <SelectItem value="ON_LEAVE">On Leave</SelectItem>
-                              </SelectContent>
-                            </Select>
-                          </div>
-                          <div>
-                            <Label htmlFor="location">Location</Label>
-                            <Input
-                              id="location"
-                              value={editingAttendance.location || ''}
-                              onChange={(e) => setEditingAttendance({
-                                ...editingAttendance,
-                                location: e.target.value
-                              })}
-                              placeholder="Work location"
-                            />
-                          </div>
-                        </div>
-                        <div>
-                          <Label htmlFor="notes">Notes</Label>
-                          <Input
-                            id="notes"
-                            value={editingAttendance.notes || ''}
-                            onChange={(e) => setEditingAttendance({
-                              ...editingAttendance,
-                              notes: e.target.value
-                            })}
-                            placeholder="Additional notes"
-                          />
-                        </div>
-                      </div>
-                      <DialogFooter>
-                        <Button
-                          variant="outline"
-                          onClick={() => setEditingAttendance(null)}
-                        >
-                          Cancel
-                        </Button>
-                        <Button
-                          onClick={() => {
-                            handleUpdateAttendance(editingAttendance.id, {
-                              checkInTime: editingAttendance.checkInTime,
-                              checkOutTime: editingAttendance.checkOutTime,
-                              status: editingAttendance.status,
-                              checkInAddress: editingAttendance.location,
-                              notes: editingAttendance.notes
-                            })
-                            setEditingAttendance(null)
-                          }}
-                        >
-                          Save Changes
-                        </Button>
-                      </DialogFooter>
-                    </DialogContent>
-                  </Dialog>
-                )}
-              </div>
+              }>
+                <AttendanceManagement
+                  user={user}
+                  attendanceRecords={attendanceRecords}
+                  loading={loading.attendance}
+                  onRefresh={fetchData}
+                  onCheckIn={handleCheckIn}
+                  onCheckOut={handleCheckOut}
+                  checkInStatus={checkInStatus}
+                />
+              </Suspense>
             </TabsContent>
 
             <TabsContent value="tasks">

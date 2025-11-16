@@ -42,11 +42,37 @@ export async function GET(request: NextRequest) {
       }
     }
 
+    // Optimize: Use select to fetch only necessary fields
     const employees = await db.employee.findMany({
       where: whereClause,
-      include: {
-        department: true,
-        role: true
+      select: {
+        id: true,
+        employeeId: true,
+        firstName: true,
+        lastName: true,
+        email: true,
+        phone: true,
+        position: true,
+        salary: true,
+        status: true,
+        isActive: true,
+        createdAt: true,
+        updatedAt: true,
+        department: {
+          select: {
+            id: true,
+            name: true
+          }
+        },
+        role: {
+          select: {
+            id: true,
+            name: true
+          }
+        }
+      },
+      orderBy: {
+        createdAt: 'desc'
       }
     })
 
