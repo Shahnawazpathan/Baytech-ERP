@@ -1,0 +1,31 @@
+Loading src/lib/db.ts
+TURSO_DATABASE_URL: libsql://baytech-shahnawazpathan.aws-ap-south-1.turso.io
+TURSO_AUTH_TOKEN: Set
+Creating new LibSQL adapter...
+Creating new Prisma client...
+ ⚠ Warning: Next.js inferred your workspace root, but it may not be correct.
+ We detected multiple lockfiles and selected the directory of /Users/shahnawazpathan/package-lock.json as the root directory.
+ To silence this warning, set `outputFileTracingRoot` in your Next.js config, or consider removing one of the lockfiles if it's not needed.
+   See https://nextjs.org/docs/app/api-reference/config/next-config-js/output#caveats for more information.
+ Detected additional lockfiles: 
+   * /Users/shahnawazpathan/Documents/GitHub/Baytech-ERP/package-lock.json
+
+🔍 Checking system initialization...
+✅ Default company already exists
+✅ Department "Admin" already exists
+✅ Department "Manager" already exists
+✅ Department "Employee" already exists
+✅ Role "Administrator" already exists
+✅ Role "Manager" already exists
+✅ Role "Employee" already exists
+✅ Admin user already exists
+✅ System initialization completed successfully!
+> Ready on http://0.0.0.0:3000
+> Socket.IO server running at ws://0.0.0.0:3000/api/socketio
+Auto-assignment job scheduled to run every 2 hours
+Loading src/lib/db.ts
+TURSO_DATABASE_URL: libsql://baytech-shahnawazpathan.aws-ap-south-1.turso.io
+TURSO_AUTH_TOKEN: Set
+Starting automatic lead reassignment job...
+Found 0 leads to reassign
+No leads need reassignment

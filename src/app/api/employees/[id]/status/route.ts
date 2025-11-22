@@ -3,10 +3,10 @@ import { db } from '@/lib/db'
 import { hasPermission } from '@/lib/rbac'
 
 // Update employee status (activate/deactivate)
-export async function PATCH(request: NextRequest, { params }: { params: { id: string } }) {
+export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const userId = request.headers.get('x-user-id');
-    const id = params.id;
+    const { id } = await params;
     const { status } = await request.json()
     
     // Check permission to UPDATE employees

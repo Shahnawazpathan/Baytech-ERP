@@ -50,6 +50,7 @@ const nextConfig: NextConfig = {
     '@prisma/adapter-libsql',
     '@prisma/client',
     '@prisma/engines',
+    'nodemailer',
   ],
   outputFileTracingIncludes: {
     '/api/**/*': ['./node_modules/@libsql/client/http/**/*'],

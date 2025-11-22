@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useState, useEffect, lazy, Suspense } from 'react'
+import React, { useState, useEffect, useMemo, useCallback, lazy, Suspense } from 'react'
 import { useRouter } from 'next/navigation'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -109,15 +109,15 @@ export default function Home() {
   })
   const [isRefreshing, setIsRefreshing] = useState(false)
 
-  // Helper function to check if user is admin
-  const isAdmin = () => {
+  // Helper function to check if user is admin or manager (can set passwords)
+  const isAdmin = useCallback(() => {
     if (!user) return false
     // Check by email
     if (user.email === 'admin@baytech.com') return true
-    // Check by role (case-insensitive)
-    if (user.role && user.role.toLowerCase().includes('admin')) return true
+    // Check by role (case-insensitive) - Admin or Manager can set passwords
+    if (user.role && (user.role.toLowerCase().includes('admin') || user.role.toLowerCase().includes('manager'))) return true
     return false
-  }
+  }, [user])
 
   // Initialize socket connection
   useEffect(() => {
@@ -226,19 +226,30 @@ export default function Home() {
     department: 'ALL',
     status: 'ALL'
   })
-  
+
   const [leadFilter, setLeadFilter] = useState({
     search: '',
     status: 'ALL',
     priority: 'ALL'
   })
-  
+
   const [attendanceFilter, setAttendanceFilter] = useState({
     search: '',
     department: 'ALL',
     status: 'ALL'
   })
-  
+
+  // Debounced search values for better performance (300ms delay)
+  const debouncedEmployeeSearch = useDebounce(employeeFilter.search, 300)
+  const debouncedLeadSearch = useDebounce(leadFilter.search, 300)
+  const debouncedAttendanceSearch = useDebounce(attendanceFilter.search, 300)
+
+  // Pagination states for better performance with large lists
+  const [employeePage, setEmployeePage] = useState(1)
+  const [leadPage, setLeadPage] = useState(1)
+  const [attendancePage, setAttendancePage] = useState(1)
+  const itemsPerPage = 10
+
   // Form states
   const [showAddEmployeeModal, setShowAddEmployeeModal] = useState(false)
   const [showAddLeadModal, setShowAddLeadModal] = useState(false)
@@ -248,11 +259,11 @@ export default function Home() {
     lastName: '',
     email: '',
     phone: '',
+    password: '',
+    confirmPassword: '',
+    position: 'Employee', // Default position
     countryCode: '+1', // Default to US
-    position: '',
-    departmentId: '',
-    roleId: 'default-role',
-    address: '',
+    roleId: '',
     status: 'ACTIVE',
     hireDate: new Date().toISOString().split('T')[0]
   })
@@ -293,7 +304,7 @@ export default function Home() {
   const [loadingAnalytics, setLoadingAnalytics] = useState(false)
 
   // Fetch data from API
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
     try {
       setLoading(prev => ({ ...prev, employees: true }))
       if (canViewEmployees) {
@@ -308,7 +319,7 @@ export default function Home() {
           setEmployees(employeesData)
         }
       }
-      
+
       setLoading(prev => ({ ...prev, leads: true }))
       if (canViewLeads) {
         const leadsRes = await fetch('/api/leads', {
@@ -322,7 +333,7 @@ export default function Home() {
           setLeads(leadsData)
         }
       }
-      
+
       setLoading(prev => ({ ...prev, attendance: true }))
       if (canViewAttendance) {
         const attendanceRes = await fetch('/api/attendance', {
@@ -336,7 +347,7 @@ export default function Home() {
           setAttendanceRecords(attendanceData)
         }
       }
-      
+
       setLoading(prev => ({ ...prev, notifications: true }))
       const notificationsRes = await fetch('/api/notifications', {
         headers: {
@@ -351,7 +362,7 @@ export default function Home() {
         const unreadCount = notificationsData.filter(n => !n.isRead).length
         setUnreadNotifications(unreadCount)
       }
-      
+
       setLoading(prev => ({ ...prev, stats: true }))
       if (canViewReports) {
         const statsRes = await fetch('/api/reports/overview-stats', {
@@ -380,9 +391,9 @@ export default function Home() {
         stats: false
       }))
     }
-  }
+  }, [user?.id, user?.companyId, canViewEmployees, canViewLeads, canViewAttendance, canViewReports, toast])
 
-  const refreshData = async () => {
+  const refreshData = useCallback(async () => {
     setIsRefreshing(true)
     await fetchData()
     setIsRefreshing(false)
@@ -390,57 +401,48 @@ export default function Home() {
       title: "Data Refreshed",
       description: "All data has been updated successfully.",
     })
-  }
+  }, [fetchData, toast])
 
   // Mark notification as read
-  const markNotificationAsRead = async (notificationId: string) => {
+  const markNotificationAsRead = useCallback(async (notificationId: string) => {
     try {
       const response = await fetch(`/api/notifications/${notificationId}/read`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' }
       })
-      
+
       if (response.ok) {
         // Update local state to reflect the change
-        const updatedNotifications = notifications.map(n => 
+        setNotifications(prev => prev.map(n =>
           n.id === notificationId ? { ...n, isRead: true } : n
-        )
-        setNotifications(updatedNotifications)
+        ))
         setUnreadNotifications(prev => prev - 1)
       }
     } catch (error) {
       // Error handling would go here if needed
     }
-  }
+  }, [])
 
   // Mark all notifications as read
-  const markAllNotificationsAsRead = async () => {
+  const markAllNotificationsAsRead = useCallback(async () => {
     try {
       const response = await fetch('/api/notifications/mark-all-read', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' }
       })
-      
+
       if (response.ok) {
         // Update local state to reflect the change
-        const updatedNotifications = notifications.map(n => ({ ...n, isRead: true }))
-        setNotifications(updatedNotifications)
+        setNotifications(prev => prev.map(n => ({ ...n, isRead: true })))
         setUnreadNotifications(0)
       }
     } catch (error) {
       // Error handling would go here if needed
     }
-  }
-
-  // Initial data fetch
-  useEffect(() => {
-    fetchData()
-    // Also fetch reports data
-    fetchReportsData()
   }, [])
 
   // Function to specifically fetch reports data
-  const fetchReportsData = async () => {
+  const fetchReportsData = useCallback(async () => {
     try {
       const reportsRes = await fetch('/api/reports', {
         headers: {
@@ -457,7 +459,14 @@ export default function Home() {
     } catch (error) {
       // Error is handled elsewhere
     }
-  }
+  }, [user?.id, user?.companyId])
+
+  // Initial data fetch
+  useEffect(() => {
+    fetchData()
+    // Also fetch reports data
+    fetchReportsData()
+  }, [fetchData, fetchReportsData])
 
   // Refresh data when tab changes
   useEffect(() => {
@@ -617,78 +626,144 @@ export default function Home() {
     }
   }
 
-  // Filtered data
-  const filteredEmployees = employees.filter(employee => {
-    const matchesSearch = (employee.name && employee.name.toLowerCase().includes(employeeFilter.search.toLowerCase())) ||
-                         (employee.email && employee.email.toLowerCase().includes(employeeFilter.search.toLowerCase())) ||
-                         (employee.position && employee.position.toLowerCase().includes(employeeFilter.search.toLowerCase()))
-    const matchesDepartment = employeeFilter.department === 'ALL' || employee.departmentId === employeeFilter.department
-    const matchesStatus = employeeFilter.status === 'ALL' || employee.status === employeeFilter.status
-    
-    // Role-based filtering
-    let roleMatches = true;
-    if (user?.role !== 'Administrator' && user?.role !== 'Manager') {
-      // Employee can only see their own record
-      roleMatches = employee.id === user?.id;
-    }
-    
-    return (employeeFilter.search === '' || matchesSearch) && matchesDepartment && matchesStatus && roleMatches
-  })
+  // Filtered data with debounced search for better performance
+  const filteredEmployees = useMemo(() => {
+    return employees.filter(employee => {
+      const matchesSearch = (employee.name && employee.name.toLowerCase().includes(debouncedEmployeeSearch.toLowerCase())) ||
+                           (employee.email && employee.email.toLowerCase().includes(debouncedEmployeeSearch.toLowerCase())) ||
+                           (employee.position && employee.position.toLowerCase().includes(debouncedEmployeeSearch.toLowerCase()))
+      const matchesDepartment = employeeFilter.department === 'ALL' || employee.departmentId === employeeFilter.department
+      const matchesStatus = employeeFilter.status === 'ALL' || employee.status === employeeFilter.status
 
-  const filteredLeads = leads.filter(lead => {
-    const matchesSearch = (lead.name && lead.name.toLowerCase().includes(leadFilter.search.toLowerCase())) ||
-                         (lead.email && lead.email.toLowerCase().includes(leadFilter.search.toLowerCase()))
-    const matchesStatus = leadFilter.status === 'ALL' || lead.status === leadFilter.status
-    const matchesPriority = leadFilter.priority === 'ALL' || lead.priority === leadFilter.priority
-    
-    // Role-based filtering
-    let roleMatches = true;
-    if (user?.role !== 'Administrator' && user?.role !== 'Manager') {
-      // Employee can only see leads assigned to them
-      roleMatches = lead.assignedToId === user?.id || !lead.assignedToId; // Can see unassigned leads too
-    }
-    
-    return (leadFilter.search === '' || matchesSearch) && matchesStatus && matchesPriority && roleMatches
-  })
+      // Role-based filtering
+      let roleMatches = true;
+      if (user?.role !== 'Administrator' && user?.role !== 'Manager') {
+        // Employee can only see their own record
+        roleMatches = employee.id === user?.id;
+      }
 
-  const filteredAttendance = attendanceRecords.filter(record => {
-    const matchesSearch = (record.name && record.name.toLowerCase().includes(attendanceFilter.search.toLowerCase())) ||
-                         (record.department && record.department.toLowerCase().includes(attendanceFilter.search.toLowerCase())) ||
-                         (record.location && record.location.toLowerCase().includes(attendanceFilter.search.toLowerCase()))
-    const matchesDepartment = attendanceFilter.department === 'ALL' || record.department === attendanceFilter.department
-    const matchesStatus = attendanceFilter.status === 'ALL' || record.status === attendanceFilter.status
-    
-    // Role-based filtering
-    let roleMatches = true;
-    if (user?.role !== 'Administrator' && user?.role !== 'Manager') {
-      // Employee can only see their own attendance records
-      roleMatches = record.employeeId === user?.id;
-    }
-    
-    return (attendanceFilter.search === '' || matchesSearch) && matchesDepartment && matchesStatus && roleMatches
-  })
+      return (debouncedEmployeeSearch === '' || matchesSearch) && matchesDepartment && matchesStatus && roleMatches
+    })
+  }, [employees, debouncedEmployeeSearch, employeeFilter.department, employeeFilter.status, user?.role, user?.id])
+
+  const filteredLeads = useMemo(() => {
+    return leads.filter(lead => {
+      const matchesSearch = (lead.name && lead.name.toLowerCase().includes(debouncedLeadSearch.toLowerCase())) ||
+                           (lead.email && lead.email.toLowerCase().includes(debouncedLeadSearch.toLowerCase()))
+      const matchesStatus = leadFilter.status === 'ALL' || lead.status === leadFilter.status
+      const matchesPriority = leadFilter.priority === 'ALL' || lead.priority === leadFilter.priority
+
+      // Role-based filtering
+      let roleMatches = true;
+      if (user?.role !== 'Administrator' && user?.role !== 'Manager') {
+        // Employee can only see leads assigned to them
+        roleMatches = lead.assignedToId === user?.id || !lead.assignedToId; // Can see unassigned leads too
+      }
+
+      return (debouncedLeadSearch === '' || matchesSearch) && matchesStatus && matchesPriority && roleMatches
+    })
+  }, [leads, debouncedLeadSearch, leadFilter.status, leadFilter.priority, user?.role, user?.id])
+
+  const filteredAttendance = useMemo(() => {
+    return attendanceRecords.filter(record => {
+      const matchesSearch = (record.name && record.name.toLowerCase().includes(debouncedAttendanceSearch.toLowerCase())) ||
+                           (record.department && record.department.toLowerCase().includes(debouncedAttendanceSearch.toLowerCase())) ||
+                           (record.location && record.location.toLowerCase().includes(debouncedAttendanceSearch.toLowerCase()))
+      const matchesDepartment = attendanceFilter.department === 'ALL' || record.department === attendanceFilter.department
+      const matchesStatus = attendanceFilter.status === 'ALL' || record.status === attendanceFilter.status
+
+      // Role-based filtering
+      let roleMatches = true;
+      if (user?.role !== 'Administrator' && user?.role !== 'Manager') {
+        // Employee can only see their own attendance records
+        roleMatches = record.employeeId === user?.id;
+      }
+
+      return (debouncedAttendanceSearch === '' || matchesSearch) && matchesDepartment && matchesStatus && roleMatches
+    })
+  }, [attendanceRecords, debouncedAttendanceSearch, attendanceFilter.department, attendanceFilter.status, user?.role, user?.id])
 
   // Recent data for overview
-  const recentLeads = leads.slice(0, 4).map(lead => ({
-    id: lead.id,
-    name: lead.name,
-    amount: lead.loanAmount,
-    status: lead.status,
-    priority: lead.priority,
-    assignedTo: lead.assignedTo
-  }))
+  const recentLeads = useMemo(() => {
+    return leads.slice(0, 4).map(lead => ({
+      id: lead.id,
+      name: lead.name,
+      amount: lead.loanAmount,
+      status: lead.status,
+      priority: lead.priority,
+      assignedTo: lead.assignedTo
+    }))
+  }, [leads])
 
-  const recentAttendance = attendanceRecords.slice(0, 4).map(record => ({
-    id: record.id,
-    name: record.name,
-    checkIn: record.checkIn,
-    status: record.status,
-    location: record.location
-  }))
+  const recentAttendance = useMemo(() => {
+    return attendanceRecords.slice(0, 4).map(record => ({
+      id: record.id,
+      name: record.name,
+      checkIn: record.checkIn,
+      status: record.status,
+      location: record.location
+    }))
+  }, [attendanceRecords])
+
+  // Paginated data for better performance with large lists
+  const paginatedEmployees = useMemo(() => {
+    const startIndex = (employeePage - 1) * itemsPerPage
+    const endIndex = startIndex + itemsPerPage
+    return filteredEmployees.slice(startIndex, endIndex)
+  }, [filteredEmployees, employeePage, itemsPerPage])
+
+  const paginatedLeads = useMemo(() => {
+    const startIndex = (leadPage - 1) * itemsPerPage
+    const endIndex = startIndex + itemsPerPage
+    return filteredLeads.slice(startIndex, endIndex)
+  }, [filteredLeads, leadPage, itemsPerPage])
+
+  const paginatedAttendance = useMemo(() => {
+    const startIndex = (attendancePage - 1) * itemsPerPage
+    const endIndex = startIndex + itemsPerPage
+    return filteredAttendance.slice(startIndex, endIndex)
+  }, [filteredAttendance, attendancePage, itemsPerPage])
+
+  // Total pages for pagination
+  const totalEmployeePages = Math.ceil(filteredEmployees.length / itemsPerPage)
+  const totalLeadPages = Math.ceil(filteredLeads.length / itemsPerPage)
+  const totalAttendancePages = Math.ceil(filteredAttendance.length / itemsPerPage)
+
+  // Reset pagination when filters change
+  useEffect(() => {
+    setEmployeePage(1)
+  }, [debouncedEmployeeSearch, employeeFilter.department, employeeFilter.status])
+
+  useEffect(() => {
+    setLeadPage(1)
+  }, [debouncedLeadSearch, leadFilter.status, leadFilter.priority])
+
+  useEffect(() => {
+    setAttendancePage(1)
+  }, [debouncedAttendanceSearch, attendanceFilter.department, attendanceFilter.status])
 
   // Employee Management Functions
-  const handleAddEmployee = async () => {
-    if (newEmployee.firstName && newEmployee.email && newEmployee.position && newEmployee.departmentId) {
+  const handleAddEmployee = useCallback(async () => {
+    if (newEmployee.firstName && newEmployee.email && newEmployee.roleId) {
+      // If current user is admin, validate password fields
+      if (isAdmin() && newEmployee.password && newEmployee.password !== newEmployee.confirmPassword) {
+        toast({
+          title: "Error",
+          description: "Passwords do not match",
+          variant: "destructive",
+        })
+        return;
+      }
+
+      if (isAdmin() && !newEmployee.password) {
+        toast({
+          title: "Error",
+          description: "Please set a password for the new employee",
+          variant: "destructive",
+        })
+        return;
+      }
+
       try {
         const fullPhoneNumber = `${newEmployee.countryCode}${newEmployee.phone}`;
         const response = await fetch('/api/employees', {
@@ -703,11 +778,11 @@ export default function Home() {
             lastName: newEmployee.lastName,
             email: newEmployee.email,
             phone: fullPhoneNumber,
+            password: newEmployee.password,
             position: newEmployee.position,
-            departmentId: newEmployee.departmentId,
+            departmentId: departments.length > 0 ? departments[0].id : "", // Default to first department
             roleId: newEmployee.roleId,
             companyId: user?.companyId,
-            address: newEmployee.address,
             status: newEmployee.status,
             hireDate: new Date(newEmployee.hireDate).toISOString()
           })
@@ -721,10 +796,11 @@ export default function Home() {
             lastName: '',
             email: '',
             phone: '',
-            position: '',
-            departmentId: '',
-            roleId: 'default-role',
-            address: '',
+            password: '',
+            confirmPassword: '',
+            position: 'Employee',
+            countryCode: '+1',
+            roleId: '',
             status: 'ACTIVE',
             hireDate: new Date().toISOString().split('T')[0]
           })
@@ -761,13 +837,13 @@ export default function Home() {
     } else {
       toast({
         title: "Validation Error",
-        description: "Please fill in all required fields (First Name, Email, Position, Department)",
+        description: "Please fill in all required fields (First Name, Email, Role)",
         variant: "destructive",
       })
     }
-  }
+  }, [newEmployee, isAdmin, user?.id, user?.companyId, user?.name, departments, socket, fetchData, toast])
 
-  const handleExportEmployees = () => {
+  const handleExportEmployees = useCallback(() => {
     const csvContent = [
       ['Name', 'Email', 'Phone', 'Position', 'Department', 'Status', 'Hire Date'],
       ...filteredEmployees.map(emp => [
@@ -782,10 +858,10 @@ export default function Home() {
     a.download = `employees_${new Date().toISOString().split('T')[0]}.csv`
     a.click()
     window.URL.revokeObjectURL(url)
-  }
+  }, [filteredEmployees])
 
   // Function to handle editing an employee
-  const handleEditEmployeeClick = async (employee: any) => {
+  const handleEditEmployeeClick = useCallback(async (employee: any) => {
     setEditingEmployee(employee);
     // Parse phone number to extract country code and number
     let countryCode = '+1'; // Default
@@ -814,20 +890,30 @@ export default function Home() {
       lastName: employee.lastName || employee.name.split(' ').slice(1).join(' ') || '',
       email: employee.email,
       phone: phone,
+      password: '', // Initialize as empty for editing
+      confirmPassword: '', // Initialize as empty for editing
+      position: employee.position || 'Employee',
       countryCode: countryCode,
-      position: employee.position,
-      departmentId: employee.departmentId || employee.department,
-      roleId: employee.roleId || 'default-role',
-      address: employee.address || '',
+      roleId: employee.roleId || '',
       status: employee.status,
       hireDate: employee.hireDate ? new Date(employee.hireDate).toISOString().split('T')[0] : new Date().toISOString().split('T')[0]
     });
     setShowAddEmployeeModal(true);
-  };
+  }, [])
 
   // Function to update an employee
-  const handleUpdateEmployee = async () => {
-    if (editingEmployee && newEmployee.firstName && newEmployee.email && newEmployee.position && newEmployee.departmentId) {
+  const handleUpdateEmployee = useCallback(async () => {
+    if (editingEmployee && newEmployee.firstName && newEmployee.email && newEmployee.roleId) {
+      // If current user is admin and password is being updated, validate password fields
+      if (isAdmin() && newEmployee.password && newEmployee.password !== newEmployee.confirmPassword) {
+        toast({
+          title: "Error",
+          description: "Passwords do not match",
+          variant: "destructive",
+        })
+        return;
+      }
+
       try {
         const fullPhoneNumber = `${newEmployee.countryCode}${newEmployee.phone}`;
         const response = await fetch(`/api/employees/${editingEmployee.id}`, {
@@ -842,11 +928,11 @@ export default function Home() {
             lastName: newEmployee.lastName,
             email: newEmployee.email,
             phone: fullPhoneNumber,
+            password: newEmployee.password || undefined, // Only update password if provided
             position: newEmployee.position,
-            departmentId: newEmployee.departmentId,
+            departmentId: editingEmployee.departmentId || editingEmployee.department,
             roleId: newEmployee.roleId,
             companyId: user?.companyId,
-            address: newEmployee.address,
             status: newEmployee.status,
             hireDate: new Date(newEmployee.hireDate).toISOString()
           })
@@ -859,10 +945,11 @@ export default function Home() {
             lastName: '',
             email: '',
             phone: '',
-            position: '',
-            departmentId: '',
-            roleId: 'default-role',
-            address: '',
+            password: '',
+            confirmPassword: '',
+            position: 'Employee',
+            countryCode: '+1',
+            roleId: '',
             status: 'ACTIVE',
             hireDate: new Date().toISOString().split('T')[0]
           });
@@ -896,7 +983,7 @@ export default function Home() {
         });
       }
     }
-  };
+  }, [editingEmployee, newEmployee, isAdmin, user?.id, user?.companyId, user?.name, socket, fetchData, toast]);
 
   // Function to toggle employee status (activate/deactivate)
   const toggleEmployeeStatus = async (employeeId: string, currentStatus: string) => {
@@ -2785,7 +2872,7 @@ Average Credit Score: ${Math.round(leads.reduce((sum, lead) => sum + (lead.credi
                             </tr>
                           </thead>
                           <tbody>
-                            {filteredEmployees.map((employee) => (
+                            {paginatedEmployees.map((employee) => (
                               <tr key={employee.id} className="border-b hover:bg-gray-50 transition-colors">
                                 <td className="p-3">
                                   <div className="flex items-center gap-3">
@@ -2808,22 +2895,22 @@ Average Credit Score: ${Math.round(leads.reduce((sum, lead) => sum + (lead.credi
                                 <td className="p-3">{employee.hireDate ? new Date(employee.hireDate).toLocaleDateString() : 'N/A'}</td>
                                 <td className="p-3">
                                   <div className="flex gap-2">
-                                    <Button 
-                                      variant="outline" 
+                                    <Button
+                                      variant="outline"
                                       size="sm"
                                       onClick={() => toggleEmployeeStatus(employee.id, employee.status)}
                                     >
                                       {employee.status === 'ACTIVE' ? 'Deactivate' : 'Activate'}
                                     </Button>
-                                    <Button 
-                                      variant="ghost" 
+                                    <Button
+                                      variant="ghost"
                                       size="sm"
                                       onClick={() => handleEditEmployeeClick(employee)}
                                     >
                                       Edit
                                     </Button>
-                                    <Button 
-                                      variant="ghost" 
+                                    <Button
+                                      variant="ghost"
                                       size="sm"
                                       onClick={() => handleViewEmployeeClick(employee)}
                                     >
@@ -2842,6 +2929,45 @@ Average Credit Score: ${Math.round(leads.reduce((sum, lead) => sum + (lead.credi
                             )}
                           </tbody>
                         </table>
+                      </div>
+                    )}
+                    {/* Pagination Controls */}
+                    {filteredEmployees.length > itemsPerPage && (
+                      <div className="flex items-center justify-between px-4 py-3 border-t">
+                        <div className="text-sm text-gray-500">
+                          Showing {((employeePage - 1) * itemsPerPage) + 1} to {Math.min(employeePage * itemsPerPage, filteredEmployees.length)} of {filteredEmployees.length} employees
+                        </div>
+                        <div className="flex gap-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setEmployeePage(prev => Math.max(1, prev - 1))}
+                            disabled={employeePage === 1}
+                          >
+                            Previous
+                          </Button>
+                          <div className="flex items-center gap-1">
+                            {Array.from({ length: totalEmployeePages }, (_, i) => i + 1).map(page => (
+                              <Button
+                                key={page}
+                                variant={employeePage === page ? "default" : "outline"}
+                                size="sm"
+                                onClick={() => setEmployeePage(page)}
+                                className="w-8 h-8 p-0"
+                              >
+                                {page}
+                              </Button>
+                            ))}
+                          </div>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setEmployeePage(prev => Math.min(totalEmployeePages, prev + 1))}
+                            disabled={employeePage === totalEmployeePages}
+                          >
+                            Next
+                          </Button>
+                        </div>
                       </div>
                     )}
                   </CardContent>
@@ -3024,7 +3150,7 @@ Average Credit Score: ${Math.round(leads.reduce((sum, lead) => sum + (lead.credi
                             </tr>
                           </thead>
                           <tbody>
-                            {filteredLeads.map((lead) => {
+                            {paginatedLeads.map((lead) => {
                               // Calculate the 2-hour contact deadline if assigned
                               const contactDeadline = lead.assignedAt ? new Date(new Date(lead.assignedAt).getTime() + 2 * 60 * 60 * 1000) : null;
                               const isOverdue = contactDeadline && new Date() > contactDeadline && !lead.contactedAt;
@@ -3125,6 +3251,45 @@ Average Credit Score: ${Math.round(leads.reduce((sum, lead) => sum + (lead.credi
                             )}
                           </tbody>
                         </table>
+                      </div>
+                    )}
+                    {/* Pagination Controls */}
+                    {filteredLeads.length > itemsPerPage && (
+                      <div className="flex items-center justify-between px-4 py-3 border-t">
+                        <div className="text-sm text-gray-500">
+                          Showing {((leadPage - 1) * itemsPerPage) + 1} to {Math.min(leadPage * itemsPerPage, filteredLeads.length)} of {filteredLeads.length} leads
+                        </div>
+                        <div className="flex gap-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setLeadPage(prev => Math.max(1, prev - 1))}
+                            disabled={leadPage === 1}
+                          >
+                            Previous
+                          </Button>
+                          <div className="flex items-center gap-1">
+                            {Array.from({ length: Math.min(totalLeadPages, 10) }, (_, i) => i + 1).map(page => (
+                              <Button
+                                key={page}
+                                variant={leadPage === page ? "default" : "outline"}
+                                size="sm"
+                                onClick={() => setLeadPage(page)}
+                                className="w-8 h-8 p-0"
+                              >
+                                {page}
+                              </Button>
+                            ))}
+                          </div>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setLeadPage(prev => Math.min(totalLeadPages, prev + 1))}
+                            disabled={leadPage === totalLeadPages}
+                          >
+                            Next
+                          </Button>
+                        </div>
                       </div>
                     )}
                   </CardContent>
@@ -3669,35 +3834,6 @@ Average Credit Score: ${Math.round(leads.reduce((sum, lead) => sum + (lead.credi
               </div>
             </div>
             <div className="space-y-2">
-              <Label htmlFor="position" className="text-sm font-medium">
-                Position *
-              </Label>
-              <Input
-                id="position"
-                value={newEmployee.position}
-                onChange={(e) => setNewEmployee({...newEmployee, position: e.target.value})}
-                placeholder="Enter position"
-                className="h-10"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="departmentId" className="text-sm font-medium">
-                Department *
-              </Label>
-              <Select value={newEmployee.departmentId} onValueChange={(value) => setNewEmployee({...newEmployee, departmentId: value})}>
-                <SelectTrigger className="h-10">
-                  <SelectValue placeholder="Select department" />
-                </SelectTrigger>
-                <SelectContent>
-                  {departments.map((dept) => (
-                    <SelectItem key={dept.id} value={dept.id}>
-                      {dept.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
               <Label htmlFor="roleId" className="text-sm font-medium">
                 Role
               </Label>
@@ -3730,17 +3866,20 @@ Average Credit Score: ${Math.round(leads.reduce((sum, lead) => sum + (lead.credi
                 </SelectContent>
               </Select>
             </div>
-            <div className="space-y-2 md:col-span-2">
-              <Label htmlFor="address" className="text-sm font-medium">
-                Address
+            <div className="space-y-2">
+              <Label htmlFor="position" className="text-sm font-medium">
+                Position
               </Label>
-              <Input
-                id="address"
-                value={newEmployee.address}
-                onChange={(e) => setNewEmployee({...newEmployee, address: e.target.value})}
-                placeholder="Enter address"
-                className="h-10"
-              />
+              <Select value={newEmployee.position} onValueChange={(value) => setNewEmployee({...newEmployee, position: value})}>
+                <SelectTrigger className="h-10">
+                  <SelectValue placeholder="Select position" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Employee">Employee</SelectItem>
+                  <SelectItem value="Manager">Manager</SelectItem>
+                  <SelectItem value="Admin">Admin</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
             <div className="space-y-2 md:col-span-2">
               <Label htmlFor="hireDate" className="text-sm font-medium">
@@ -3754,6 +3893,36 @@ Average Credit Score: ${Math.round(leads.reduce((sum, lead) => sum + (lead.credi
                 className="h-10"
               />
             </div>
+            {isAdmin() && (
+              <>
+                <div className="space-y-2 md:col-span-2">
+                  <Label htmlFor="password" className="text-sm font-medium">
+                    Password *
+                  </Label>
+                  <Input
+                    id="password"
+                    type="password"
+                    value={newEmployee.password}
+                    onChange={(e) => setNewEmployee({...newEmployee, password: e.target.value})}
+                    placeholder="Enter password for new employee"
+                    className="h-10"
+                  />
+                </div>
+                <div className="space-y-2 md:col-span-2">
+                  <Label htmlFor="confirmPassword" className="text-sm font-medium">
+                    Confirm Password *
+                  </Label>
+                  <Input
+                    id="confirmPassword"
+                    type="password"
+                    value={newEmployee.confirmPassword}
+                    onChange={(e) => setNewEmployee({...newEmployee, confirmPassword: e.target.value})}
+                    placeholder="Confirm password"
+                    className="h-10"
+                  />
+                </div>
+              </>
+            )}
           </div>
           <DialogFooter className="flex sm:justify-between">
             <Button 
@@ -3767,11 +3936,11 @@ Average Credit Score: ${Math.round(leads.reduce((sum, lead) => sum + (lead.credi
                   lastName: '',
                   email: '',
                   phone: '',
+                  password: '',
+                  confirmPassword: '',
+                  position: 'Employee',
                   countryCode: '+1',
-                  position: '',
-                  departmentId: '',
-                  roleId: 'default-role',
-                  address: '',
+                  roleId: '',
                   status: 'ACTIVE',
                   hireDate: new Date().toISOString().split('T')[0]
                 });

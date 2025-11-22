@@ -325,6 +325,18 @@ model AuditLog {
   // Relations
   company  Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
   employee Employee? @relation(fields: [employeeId], references: [id])
-  
+
   @@map("audit_logs")
+}
+
+// Password Reset Token Model
+model PasswordResetToken {
+  id         String   @id @default(cuid())
+  email      String   // Store email instead of employeeId to allow reset even if account is deleted
+  token      String   @unique
+  expiresAt  DateTime
+  usedAt     DateTime?
+  createdAt  DateTime @default(now())
+
+  @@map("password_reset_tokens")
 }
