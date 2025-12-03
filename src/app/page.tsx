@@ -1577,42 +1577,57 @@ export default function Home() {
 
   // Attendance Management Functions
   const getCurrentLocation = () => {
-    return new Promise<{ lat: number; lng: number }>((resolve, reject) => {
-      if (navigator.geolocation) {
-        navigator.geolocation.getCurrentPosition(
-          (position) => {
-            resolve({
-              lat: position.coords.latitude,
-              lng: position.coords.longitude
-            })
-          },
-          (error) => {
-            reject(error)
-          }
-        )
-      } else {
-        reject(new Error('Geolocation is not supported by this browser.'))
+    return new Promise<{ lat: number; lng: number } | null>((resolve) => {
+      if (typeof navigator === 'undefined' || !navigator.geolocation) {
+        resolve(null)
+        return
       }
+
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          resolve({
+            lat: position.coords.latitude,
+            lng: position.coords.longitude
+          })
+        },
+        () => {
+          // Gracefully allow check-in/out without location
+          resolve(null)
+        },
+        { enableHighAccuracy: false, timeout: 8000, maximumAge: 60000 }
+      )
     })
   }
 
   const handleCheckIn = async () => {
+    if (!safeUserId || !safeCompanyId) {
+      toast({
+        title: "Unable to check in",
+        description: "User session missing. Please log in again.",
+        variant: "destructive",
+      })
+      return
+    }
     setCheckInStatus('checking')
     try {
       const location = await getCurrentLocation()
-      setCurrentLocation(location)
+      if (location) {
+        setCurrentLocation(location)
+      }
       
       const response = await fetch('/api/attendance/check-in', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'x-user-id': safeUserId,
+          'x-company-id': safeCompanyId,
         },
         body: JSON.stringify({
-          employeeId: user?.id,
-          companyId: user?.companyId,
-          latitude: location?.lat,
-          longitude: location?.lng,
-          address: 'Office Location',
+          employeeId: safeUserId,
+          companyId: safeCompanyId,
+          latitude: location?.lat ?? null,
+          longitude: location?.lng ?? null,
+          address: location ? 'Office Location' : 'Location not shared',
           notes: ''
         })
       })
@@ -1655,22 +1670,34 @@ export default function Home() {
   }
 
   const handleCheckOut = async () => {
+    if (!safeUserId || !safeCompanyId) {
+      toast({
+        title: "Unable to check out",
+        description: "User session missing. Please log in again.",
+        variant: "destructive",
+      })
+      return
+    }
     setCheckInStatus('checking')
     try {
       const location = await getCurrentLocation()
-      setCurrentLocation(location)
+      if (location) {
+        setCurrentLocation(location)
+      }
       
       const response = await fetch('/api/attendance/check-out', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'x-user-id': safeUserId,
+          'x-company-id': safeCompanyId,
         },
         body: JSON.stringify({
-          employeeId: user?.id,
-          companyId: user?.companyId,
-          latitude: location?.lat,
-          longitude: location?.lng,
-          address: 'Office Location',
+          employeeId: safeUserId,
+          companyId: safeCompanyId,
+          latitude: location?.lat ?? null,
+          longitude: location?.lng ?? null,
+          address: location ? 'Office Location' : 'Location not shared',
           notes: ''
         })
       })

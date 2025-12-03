@@ -2,9 +2,9 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 
 // Update an attendance record
-export async function PUT(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export async function PUT(request: NextRequest, context: any) {
   try {
-    const { id } = await params;
+    const { id } = context.params;
     const body = await request.json()
     
     // Check if attendance record exists
@@ -76,9 +76,9 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
 }
 
 // Get a single attendance record
-export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export async function GET(request: NextRequest, context: any) {
   try {
-    const { id } = await params;
+    const { id } = context.params;
     
     const attendance = await db.attendance.findUnique({
       where: { id },
@@ -127,9 +127,9 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
 }
 
 // Delete an attendance record
-export async function DELETE(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export async function DELETE(request: NextRequest, context: any) {
   try {
-    const { id } = await params;
+    const { id } = context.params;
     
     // Check if attendance record exists
     const existingAttendance = await db.attendance.findUnique({

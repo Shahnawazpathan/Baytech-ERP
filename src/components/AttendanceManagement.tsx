@@ -50,18 +50,24 @@ export function AttendanceManagement({
 
   const debouncedSearch = useDebounce(searchTerm, 300)
 
+  const records = useMemo(() => {
+    if (Array.isArray(attendanceRecords)) return attendanceRecords
+    if (attendanceRecords && Array.isArray((attendanceRecords as any).data)) return (attendanceRecords as any).data
+    return []
+  }, [attendanceRecords])
+
   // Calculate statistics
   const stats = useMemo(() => {
-    const present = attendanceRecords.filter(a => a.status === 'PRESENT').length
-    const late = attendanceRecords.filter(a => a.status === 'LATE').length
-    const onLeave = attendanceRecords.filter(a => a.status === 'ON_LEAVE').length
-    const absent = attendanceRecords.filter(a => a.status === 'ABSENT').length
-    const total = attendanceRecords.length
+    const present = records.filter(a => a.status === 'PRESENT').length
+    const late = records.filter(a => a.status === 'LATE').length
+    const onLeave = records.filter(a => a.status === 'ON_LEAVE').length
+    const absent = records.filter(a => a.status === 'ABSENT').length
+    const total = records.length
     const presentPercentage = total > 0 ? Math.round((present / total) * 100) : 0
     const latePercentage = total > 0 ? Math.round((late / total) * 100) : 0
 
     // Calculate average hours
-    const totalHours = attendanceRecords.reduce((sum, record) => {
+    const totalHours = records.reduce((sum, record) => {
       if (record.checkInTime && record.checkOutTime) {
         const checkIn = new Date(record.checkInTime)
         const checkOut = new Date(record.checkOutTime)
@@ -70,7 +76,7 @@ export function AttendanceManagement({
       }
       return sum
     }, 0)
-    const avgHours = attendanceRecords.length > 0 ? (totalHours / attendanceRecords.length).toFixed(1) : '0.0'
+    const avgHours = records.length > 0 ? (totalHours / records.length).toFixed(1) : '0.0'
 
     return {
       present,
@@ -82,17 +88,17 @@ export function AttendanceManagement({
       latePercentage,
       avgHours
     }
-  }, [attendanceRecords])
+  }, [records])
 
   // Filter records
   const filteredRecords = useMemo(() => {
-    return attendanceRecords.filter(record => {
-      const matchesSearch = record.name.toLowerCase().includes(debouncedSearch.toLowerCase()) ||
+    return records.filter(record => {
+      const matchesSearch = record.name?.toLowerCase().includes(debouncedSearch.toLowerCase()) ||
                            record.department?.toLowerCase().includes(debouncedSearch.toLowerCase())
       const matchesStatus = statusFilter === 'all' || record.status === statusFilter
       return matchesSearch && matchesStatus
     })
-  }, [attendanceRecords, debouncedSearch, statusFilter])
+  }, [records, debouncedSearch, statusFilter])
 
   // Get status badge
   const getStatusBadge = (status: string) => {
@@ -359,7 +365,7 @@ export function AttendanceManagement({
                       <div className="flex items-center gap-4 flex-1">
                         <Avatar className="h-12 w-12">
                           <AvatarFallback className="bg-gradient-to-br from-blue-500 to-purple-600 text-white font-semibold">
-                            {record.name.split(' ').map((n: string) => n[0]).join('')}
+                            {(record.name || 'U').split(' ').map((n: string) => n[0]).join('')}
                           </AvatarFallback>
                         </Avatar>
                         <div>

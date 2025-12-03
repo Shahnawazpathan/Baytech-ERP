@@ -53,7 +53,7 @@ export async function POST(request: NextRequest) {
     expiresAt.setHours(expiresAt.getHours() + 1)
 
     // Create the reset link
-    const resetLink = `${process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'}/reset-password?token=${resetToken}`
+    const resetLink = `https://baytech-erp.vercel.app/reset-password?token=${resetToken}`
 
     // Store the reset token in the database
     await db.passwordResetToken.create({

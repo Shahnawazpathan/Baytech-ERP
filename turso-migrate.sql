@@ -263,3 +263,13 @@ CREATE UNIQUE INDEX IF NOT EXISTS "employees_email_key" ON "employees"("email");
 
 -- CreateIndex
 CREATE UNIQUE INDEX IF NOT EXISTS "leads_leadNumber_key" ON "leads"("leadNumber");
+
+-- Password reset tokens
+CREATE TABLE IF NOT EXISTS "password_reset_tokens" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "email" TEXT NOT NULL,
+    "token" TEXT NOT NULL UNIQUE,
+    "expiresAt" DATETIME NOT NULL,
+    "usedAt" DATETIME,
+    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
