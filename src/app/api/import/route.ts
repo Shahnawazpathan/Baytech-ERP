@@ -64,9 +64,9 @@ async function importEmployees(buffer: Buffer, companyId: string) {
     // In a real implementation, you would use a library like xlsx to parse Excel
     // For demo purposes, we'll simulate the parsing and validation
     
-    const employees = []
-    const errors = []
-    const warnings = []
+    const employees: any[] = []
+    const errors: any[] = []
+    const warnings: any[] = []
 
     // Simulate parsing Excel data
     const mockData = [
@@ -175,7 +175,8 @@ async function importEmployees(buffer: Buffer, companyId: string) {
             roleId: role.id,
             salary: row.salary,
             companyId,
-            status: 'ACTIVE'
+            status: 'ACTIVE',
+            hireDate: new Date()
           }
         })
 
@@ -185,7 +186,7 @@ async function importEmployees(buffer: Buffer, companyId: string) {
         console.error(`Error processing row ${rowNum}:`, error)
         errors.push({
           row: rowNum,
-          message: `Processing error: ${error.message}`
+          message: `Processing error: ${(error as Error).message}`
         })
       }
     }
@@ -206,9 +207,9 @@ async function importEmployees(buffer: Buffer, companyId: string) {
 // Lead import function
 async function importLeads(buffer: Buffer, companyId: string) {
   try {
-    const leads = []
-    const errors = []
-    const warnings = []
+    const leads: any[] = []
+    const errors: any[] = []
+    const warnings: any[] = []
 
     // Simulate parsing Excel data
     const mockData = [
@@ -293,7 +294,7 @@ async function importLeads(buffer: Buffer, companyId: string) {
         console.error(`Error processing row ${rowNum}:`, error)
         errors.push({
           row: rowNum,
-          message: `Processing error: ${error.message}`
+          message: `Processing error: ${(error as Error).message}`
         })
       }
     }
@@ -314,9 +315,9 @@ async function importLeads(buffer: Buffer, companyId: string) {
 // Attendance import function
 async function importAttendance(buffer: Buffer, companyId: string) {
   try {
-    const attendanceRecords = []
-    const errors = []
-    const warnings = []
+    const attendanceRecords: any[] = []
+    const errors: any[] = []
+    const warnings: any[] = []
 
     // Simulate parsing Excel data
     const mockData = [
@@ -394,7 +395,7 @@ async function importAttendance(buffer: Buffer, companyId: string) {
         }
 
         // Calculate total hours
-        let totalHours = null
+        let totalHours: number | null = null
         if (checkOutTime) {
           totalHours = (checkOutTime.getTime() - checkInTime.getTime()) / (1000 * 60 * 60)
         }
@@ -418,7 +419,7 @@ async function importAttendance(buffer: Buffer, companyId: string) {
         console.error(`Error processing row ${rowNum}:`, error)
         errors.push({
           row: rowNum,
-          message: `Processing error: ${error.message}`
+          message: `Processing error: ${(error as Error).message}`
         })
       }
     }

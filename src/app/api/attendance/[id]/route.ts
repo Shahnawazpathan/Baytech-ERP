@@ -39,7 +39,11 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
         updatedAt: new Date()
       },
       include: {
-        employee: true,
+        employee: {
+          include: {
+            department: true
+          }
+        },
         company: true
       }
     })
@@ -72,14 +76,18 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
 }
 
 // Get a single attendance record
-export async function GET(request: NextRequest, { params }: { params: { id: string } }) {
+export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const id = params.id;
+    const { id } = await params;
     
     const attendance = await db.attendance.findUnique({
       where: { id },
       include: {
-        employee: true,
+        employee: {
+          include: {
+            department: true
+          }
+        },
         company: true
       }
     })
@@ -119,9 +127,9 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
 }
 
 // Delete an attendance record
-export async function DELETE(request: NextRequest, { params }: { params: { id: string } }) {
+export async function DELETE(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const id = params.id;
+    const { id } = await params;
     
     // Check if attendance record exists
     const existingAttendance = await db.attendance.findUnique({

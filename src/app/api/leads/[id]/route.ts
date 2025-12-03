@@ -75,9 +75,9 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
 }
 
 // Get a single lead
-export async function GET(request: NextRequest, { params }: { params: { id: string } }) {
+export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const id = params.id;
+    const { id } = await params;
     
     const lead = await db.lead.findUnique({
       where: { id },

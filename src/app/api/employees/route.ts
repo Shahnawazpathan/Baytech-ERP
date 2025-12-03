@@ -7,7 +7,13 @@ export async function GET(request: NextRequest) {
   try {
     const userId = request.headers.get('x-user-id')
     const companyId = request.headers.get('x-company-id') || 'default-company'
-    
+
+    // Parse pagination parameters
+    const { searchParams } = new URL(request.url)
+    const page = parseInt(searchParams.get('page') || '1')
+    const limit = parseInt(searchParams.get('limit') || '100')
+    const skip = (page - 1) * limit
+
     // Check permission to READ employees
     if (userId) {
       const canRead = await hasPermission(userId, 'employee', 'READ')
@@ -18,19 +24,19 @@ export async function GET(request: NextRequest) {
         )
       }
     }
-    
-    let whereClause: any = { 
+
+    let whereClause: any = {
       companyId,
       isActive: true
     };
-    
+
     // If it's not an admin, only show employees from same department or subordinates
     if (userId) {
       const requestingUser = await db.employee.findUnique({
         where: { id: userId },
         include: { role: true }
       });
-      
+
       // If user is not an admin, only return their own record or subordinates
       if (requestingUser?.role?.name !== 'Administrator') {
         whereClause = {
@@ -43,39 +49,47 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // Optimize: Use select to fetch only necessary fields
-    const employees = await db.employee.findMany({
-      where: whereClause,
-      select: {
-        id: true,
-        employeeId: true,
-        firstName: true,
-        lastName: true,
-        email: true,
-        phone: true,
-        position: true,
-        salary: true,
-        status: true,
-        isActive: true,
-        createdAt: true,
-        updatedAt: true,
-        department: {
-          select: {
-            id: true,
-            name: true
+    // Optimize: Run count and fetch in parallel
+    const [employees, total] = await Promise.all([
+      db.employee.findMany({
+        where: whereClause,
+        select: {
+          id: true,
+          employeeId: true,
+          firstName: true,
+          lastName: true,
+          email: true,
+          phone: true,
+          position: true,
+          departmentId: true,
+          roleId: true,
+          hireDate: true,
+          address: true,
+          status: true,
+          isActive: true,
+          createdAt: true,
+          updatedAt: true,
+          department: {
+            select: {
+              id: true,
+              name: true
+            }
+          },
+          role: {
+            select: {
+              id: true,
+              name: true
+            }
           }
         },
-        role: {
-          select: {
-            id: true,
-            name: true
-          }
-        }
-      },
-      orderBy: {
-        createdAt: 'desc'
-      }
-    })
+        orderBy: {
+          createdAt: 'desc'
+        },
+        skip,
+        take: limit
+      }),
+      db.employee.count({ where: whereClause })
+    ])
 
     // Transform the data to match the expected format
     const transformedEmployees = employees.map(emp => ({
@@ -95,7 +109,15 @@ export async function GET(request: NextRequest) {
       roleId: emp.roleId
     }))
 
-    return NextResponse.json(transformedEmployees)
+    return NextResponse.json({
+      data: transformedEmployees,
+      pagination: {
+        total,
+        page,
+        limit,
+        pages: Math.ceil(total / limit)
+      }
+    })
   } catch (error) {
     console.error('Error fetching employees:', error)
     return NextResponse.json(
@@ -131,7 +153,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Hash the password if provided
-    let hashedPassword = null;
+    let hashedPassword: any = null;
     if (body.password) {
       hashedPassword = await bcrypt.hash(body.password, 10);
     }
@@ -223,7 +245,7 @@ export async function PUT(request: NextRequest) {
     }
 
     // Hash the password if provided
-    let hashedPassword = undefined;
+    let hashedPassword: any = undefined;
     if (body.password) {
       hashedPassword = await bcrypt.hash(body.password, 10);
     }

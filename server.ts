@@ -30,9 +30,11 @@ async function runAutoAssignment() {
     const uncontactedLeads = await db.lead.findMany({
       where: {
         assignedToId: { not: null }, // Leads that are assigned
-        assignedAt: { not: null }, // Leads that have an assignment time
+        assignedAt: {
+          not: null,
+          lte: twoHoursAgo // Assigned more than 2 hours ago
+        },
         contactedAt: null, // Leads that haven't been contacted yet
-        assignedAt: { lte: twoHoursAgo }, // Assigned more than 2 hours ago
         status: { in: ['NEW', 'CONTACTED'] } // Only reassign active leads
       },
       include: {
@@ -52,7 +54,13 @@ async function runAutoAssignment() {
     }
 
     // Process each uncontacted lead
-    const results = [];
+    const results: Array<{
+      leadId: string;
+      status: string;
+      previousAssigneeId?: string;
+      newAssigneeId?: string;
+      error?: string;
+    }> = [];
     for (const lead of uncontactedLeads) {
       try {
         // Find available employees in the same department with the least assigned leads
@@ -179,10 +187,10 @@ async function runAutoAssignment() {
           });
         }
 
-        results.push({ 
-          leadId: lead.id, 
-          status: 'reassigned', 
-          previousAssigneeId,
+        results.push({
+          leadId: lead.id,
+          status: 'reassigned',
+          previousAssigneeId: previousAssigneeId || undefined,
           newAssigneeId: leastLoadedEmployee.id
         });
 
@@ -202,14 +210,18 @@ async function runAutoAssignment() {
 
 // Set up the auto-assignment job to run every 2 hours
 function setupAutoAssignmentJob() {
-  // Run immediately when server starts
-  runAutoAssignment();
-  
+  // Run after 10 seconds (non-blocking server startup)
+  setTimeout(() => {
+    runAutoAssignment();
+  }, 10000);
+
   // Then run every 2 hours (7,200,000 ms)
   const interval = 2 * 60 * 60 * 1000; // 2 hours in milliseconds
   setInterval(runAutoAssignment, interval);
-  
-  console.log('Auto-assignment job scheduled to run every 2 hours');
+
+  if (process.env.NODE_ENV === 'development') {
+    console.log('Auto-assignment job scheduled to run every 2 hours');
+  }
 }
 
 // Custom server with Socket.IO integration

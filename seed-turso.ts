@@ -1,7 +1,6 @@
 import bcrypt from 'bcrypt'
 import { PrismaClient } from '@prisma/client'
 import { PrismaLibSQL } from '@prisma/adapter-libsql'
-import { createClient } from '@libsql/client'
 
 // Turso Database Configuration (Hardcoded)
 const TURSO_DATABASE_URL = 'libsql://baytech-shahnawazpathan.aws-ap-south-1.turso.io'
@@ -10,16 +9,15 @@ const TURSO_AUTH_TOKEN = 'eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJpYXQiOjE3NjI0O
 console.log('Turso URL:', TURSO_DATABASE_URL)
 console.log('Turso Token length:', TURSO_AUTH_TOKEN.length)
 
-// Create libsql client for Turso
-const libsql = createClient({
+console.log('Creating Prisma adapter...')
+
+// Create Prisma adapter for libsql
+const adapter = new PrismaLibSQL({
   url: TURSO_DATABASE_URL,
   authToken: TURSO_AUTH_TOKEN,
 })
 
-console.log('LibSQL client created successfully')
-
-// Create Prisma adapter for libsql
-const adapter = new PrismaLibSQL(libsql)
+console.log('LibSQL adapter created successfully')
 
 // Set a dummy DATABASE_URL for Prisma schema validation (not actually used with adapter)
 process.env.DATABASE_URL = 'file:./dummy.db'
@@ -279,20 +277,29 @@ async function main() {
     })
   }
 
-  // Hash the admin password
-  const hashedPassword = await bcrypt.hash('Admin@123', 10)
+  // Delete all existing data with proper order (respecting foreign keys)
+  console.log('🗑️  Deleting all existing data...')
+  await prisma.notification.deleteMany({})
+  await prisma.auditLog.deleteMany({})
+  await prisma.leadHistory.deleteMany({})
+  await prisma.task.deleteMany({})
+  await prisma.attendance.deleteMany({})
+  await prisma.lead.deleteMany({})
+  await prisma.employee.deleteMany({})
 
-  // Create admin user with specified credentials
-  const adminUser = await prisma.employee.upsert({
-    where: { email: 'admin@baytech.com' },
-    update: {},
-    create: {
+  // Hash passwords
+  const defaultPassword = await bcrypt.hash('Baytech@123', 10)
+
+  // Create admin user - Ehsan
+  console.log('👤 Creating admin user: ehsan@baytech-uae.com')
+  const adminUser = await prisma.employee.create({
+    data: {
       employeeId: 'ADMIN001',
-      firstName: 'Admin',
-      lastName: 'User',
-      email: 'admin@baytech.com',
-      password: hashedPassword,
-      position: 'System Administrator',
+      firstName: 'Ehsan',
+      lastName: 'Admin',
+      email: 'ehsan@baytech-uae.com',
+      password: defaultPassword,
+      position: 'Administrator',
       departmentId: adminDepartment.id,
       roleId: adminRole.id,
       hireDate: new Date(),
@@ -301,17 +308,15 @@ async function main() {
     },
   })
 
-  // Create a manager user with Zohed Siddique's name
-  const managerPassword = await bcrypt.hash('Manager@123', 10)
-  const managerUser = await prisma.employee.upsert({
-    where: { email: 'zohed.siddique@baytech.com' },
-    update: {},
-    create: {
+  // Create manager user - Zoheb
+  console.log('👤 Creating manager user: zoheb@baytech-uae.com')
+  const managerUser = await prisma.employee.create({
+    data: {
       employeeId: 'MGR001',
-      firstName: 'Zohed',
-      lastName: 'Siddique',
-      email: 'zohed.siddique@baytech.com',
-      password: managerPassword,
+      firstName: 'Zoheb',
+      lastName: 'Manager',
+      email: 'zoheb@baytech-uae.com',
+      password: defaultPassword,
       position: 'Manager',
       departmentId: managerDepartment.id,
       roleId: managerRole.id,
@@ -321,18 +326,50 @@ async function main() {
     },
   })
 
-  // Create an employee user
-  const employeePassword = await bcrypt.hash('Employee@123', 10)
-  const employeeUser = await prisma.employee.upsert({
-    where: { email: 'employee@baytech.com' },
-    update: {},
-    create: {
+  // Create employee users
+  console.log('👤 Creating employee: ragab@baytech-uae.com')
+  const employeeRagab = await prisma.employee.create({
+    data: {
       employeeId: 'EMP001',
-      firstName: 'Regular',
+      firstName: 'Ragab',
       lastName: 'Employee',
-      email: 'employee@baytech.com',
-      password: employeePassword,
-      position: 'Staff Member',
+      email: 'ragab@baytech-uae.com',
+      password: defaultPassword,
+      position: 'Employee',
+      departmentId: employeeDepartment.id,
+      roleId: employeeRole.id,
+      hireDate: new Date(),
+      status: 'ACTIVE',
+      companyId: company.id,
+    },
+  })
+
+  console.log('👤 Creating employee: adem@baytech-uae.com')
+  const employeeAdem = await prisma.employee.create({
+    data: {
+      employeeId: 'EMP002',
+      firstName: 'Adem',
+      lastName: 'Employee',
+      email: 'adem@baytech-uae.com',
+      password: defaultPassword,
+      position: 'Employee',
+      departmentId: employeeDepartment.id,
+      roleId: employeeRole.id,
+      hireDate: new Date(),
+      status: 'ACTIVE',
+      companyId: company.id,
+    },
+  })
+
+  console.log('👤 Creating employee: gail@baytech-uae.com')
+  const employeeGail = await prisma.employee.create({
+    data: {
+      employeeId: 'EMP003',
+      firstName: 'Gail',
+      lastName: 'Employee',
+      email: 'gail@baytech-uae.com',
+      password: defaultPassword,
+      position: 'Employee',
       departmentId: employeeDepartment.id,
       roleId: employeeRole.id,
       hireDate: new Date(),
@@ -343,11 +380,17 @@ async function main() {
 
   console.log('✅ Turso database seeded successfully!')
   console.log('Company:', company.name)
-  console.log('Admin User:', `${adminUser.firstName} ${adminUser.lastName}`)
-  console.log('Manager User:', `${managerUser.firstName} ${managerUser.lastName}`)
-  console.log('Employee User:', `${employeeUser.firstName} ${employeeUser.lastName}`)
-  console.log('Emails: admin@baytech.com, zohed.siddique@baytech.com, employee@baytech.com')
-  console.log('Passwords: Admin@123, Manager@123, Employee@123')
+  console.log('')
+  console.log('👤 Users Created:')
+  console.log('====================')
+  console.log('Admin:', adminUser.email)
+  console.log('Manager:', managerUser.email)
+  console.log('Employee 1:', employeeRagab.email)
+  console.log('Employee 2:', employeeAdem.email)
+  console.log('Employee 3:', employeeGail.email)
+  console.log('')
+  console.log('🔐 Default Password: Baytech@123')
+  console.log('====================')
 }
 
 main()

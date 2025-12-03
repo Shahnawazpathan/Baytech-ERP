@@ -190,3 +190,13 @@ button {
 .dark .custom-scrollbar {
   scrollbar-color: #4b5563 transparent;
 }
+
+@layer utilities {
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+}

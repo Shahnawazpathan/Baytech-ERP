@@ -20,7 +20,11 @@ export async function GET(request: NextRequest) {
         }
       },
       include: {
-        employee: true,
+        employee: {
+          include: {
+            department: true
+          }
+        },
         company: true
       }
     })
@@ -100,7 +104,11 @@ export async function POST(request: NextRequest) {
           notes: body.notes
         },
         include: {
-          employee: true
+          employee: {
+          include: {
+            department: true
+          }
+        }
         }
       })
 
@@ -144,7 +152,11 @@ export async function POST(request: NextRequest) {
           status: 'PRESENT' // Default status, can be adjusted based on check-in time
         },
         include: {
-          employee: true
+          employee: {
+          include: {
+            department: true
+          }
+        }
         }
       })
 

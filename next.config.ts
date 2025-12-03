@@ -9,10 +9,10 @@ const nextConfig: NextConfig = {
   poweredByHeader: false, // Remove X-Powered-By header
 
   // Enable React optimizations
-  reactStrictMode: false,
+  reactStrictMode: true,
 
   typescript: {
-    ignoreBuildErrors: true,
+    ignoreBuildErrors: false,
   },
 
   // Compiler optimizations
@@ -128,11 +128,50 @@ const nextConfig: NextConfig = {
     return config;
   },
   eslint: {
-    // Ignore ESLint errors during builds
-    ignoreDuringBuilds: true,
+    // Ignore ESLint errors during builds (only in emergency)
+    ignoreDuringBuilds: false,
   },
   // Ensure development features are disabled in production
   productionBrowserSourceMaps: false,
+
+  // Security headers
+  async headers() {
+    return [
+      {
+        source: '/:path*',
+        headers: [
+          {
+            key: 'X-DNS-Prefetch-Control',
+            value: 'on'
+          },
+          {
+            key: 'Strict-Transport-Security',
+            value: 'max-age=63072000; includeSubDomains; preload'
+          },
+          {
+            key: 'X-Frame-Options',
+            value: 'SAMEORIGIN'
+          },
+          {
+            key: 'X-Content-Type-Options',
+            value: 'nosniff'
+          },
+          {
+            key: 'X-XSS-Protection',
+            value: '1; mode=block'
+          },
+          {
+            key: 'Referrer-Policy',
+            value: 'strict-origin-when-cross-origin'
+          },
+          {
+            key: 'Permissions-Policy',
+            value: 'camera=(), microphone=(), geolocation=(self)'
+          }
+        ]
+      }
+    ];
+  }
 };
 
 export default nextConfig;

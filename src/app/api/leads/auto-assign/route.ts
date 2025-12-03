@@ -10,9 +10,8 @@ export async function POST(request: NextRequest) {
     const uncontactedLeads = await db.lead.findMany({
       where: {
         assignedToId: { not: null }, // Leads that are assigned
-        assignedAt: { not: null }, // Leads that have an assignment time
+        assignedAt: { not: null, lte: twoHoursAgo }, // Leads that have an assignment time and are older than 2 hours
         contactedAt: null, // Leads that haven't been contacted yet
-        assignedAt: { lte: twoHoursAgo }, // Assigned more than 2 hours ago
         status: { in: ['NEW', 'CONTACTED'] } // Only reassign active leads
       },
       include: {
@@ -33,7 +32,13 @@ export async function POST(request: NextRequest) {
     }
 
     // Process each uncontacted lead
-    const results = [];
+    const results: Array<{
+      leadId: string;
+      status: string;
+      previousAssigneeId?: string | null;
+      newAssigneeId?: string;
+      error?: string;
+    }> = [];
     for (const lead of uncontactedLeads) {
       try {
         // Find available employees in the same department with the least assigned leads

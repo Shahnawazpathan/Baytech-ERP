@@ -4,15 +4,21 @@ import "./globals.css";
 import { Toaster } from "@/components/ui/toaster";
 import { AuthProvider } from "@/hooks/use-auth";
 import { LenisProvider } from "@/components/LenisProvider";
+import { ReactQueryProvider } from "@/components/ReactQueryProvider";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
   subsets: ["latin"],
+  display: 'swap',
+  preload: true,
 });
 
 const geistMono = Geist_Mono({
   variable: "--font-geist-mono",
   subsets: ["latin"],
+  display: 'swap',
+  preload: true,
 });
 
 export const metadata: Metadata = {
@@ -49,12 +55,16 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased bg-background text-foreground`}
       >
-        <AuthProvider>
-          <LenisProvider>
-            {children}
-          </LenisProvider>
-        </AuthProvider>
-        <Toaster />
+        <ErrorBoundary>
+          <ReactQueryProvider>
+            <AuthProvider>
+              <LenisProvider>
+                {children}
+              </LenisProvider>
+            </AuthProvider>
+          </ReactQueryProvider>
+          <Toaster />
+        </ErrorBoundary>
       </body>
     </html>
   );

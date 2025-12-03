@@ -44,13 +44,13 @@ const GeofenceAttendance = lazy(() => import('@/components/GeofenceAttendance').
 const GeofenceLocationManager = lazy(() => import('@/components/GeofenceLocationManager').then(mod => ({ default: mod.GeofenceLocationManager })))
 const TaskManagement = lazy(() => import('@/components/TaskManagement').then(mod => ({ default: mod.TaskManagement })))
 const AttendanceManagement = lazy(() => import('@/components/AttendanceManagement').then(mod => ({ default: mod.AttendanceManagement })))
-import { 
-  Users, 
-  Building2, 
-  Phone, 
-  Calendar, 
-  Bell, 
-  TrendingUp, 
+import {
+  Users,
+  Building2,
+  Phone,
+  Calendar,
+  Bell,
+  TrendingUp,
   AlertCircle,
   CheckCircle,
   Clock,
@@ -76,6 +76,8 @@ import {
   MoreVertical,
   ChevronDown
 } from 'lucide-react'
+import { EmployeeManagement } from '@/components/EmployeeManagement'
+import { LeadManagement } from '@/components/LeadManagement'
 import { usePermissions } from '@/hooks/use-permissions'
 import { io, Socket } from 'socket.io-client'
 
@@ -85,9 +87,14 @@ export default function Home() {
   const router = useRouter()
   const { toast } = useToast()
   const { scrollToElement, scrollToTop } = useLenis()
+  const safeUserId = user?.id || ''
+  const safeCompanyId = user?.companyId || ''
   const [activeTab, setActiveTab] = useState('overview')
   const [showBulkImportModal, setShowBulkImportModal] = useState(false)
-  const [sidebarOpen, setSidebarOpen] = useState(true)
+  const [sidebarOpen, setSidebarOpen] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false
+    return window.innerWidth >= 1024
+  })
   const [unreadNotifications, setUnreadNotifications] = useState(0)
   const [socket, setSocket] = useState<Socket | null>(null)
   const [notificationPopoverOpen, setNotificationPopoverOpen] = useState(false)
@@ -108,6 +115,11 @@ export default function Home() {
     stats: false
   })
   const [isRefreshing, setIsRefreshing] = useState(false)
+  const normalizeList = useCallback((value: any) => {
+    if (Array.isArray(value)) return value
+    if (value && Array.isArray(value.data)) return value.data
+    return []
+  }, [])
 
   // Helper function to check if user is admin or manager (can set passwords)
   const isAdmin = useCallback(() => {
@@ -191,14 +203,14 @@ export default function Home() {
         const [departmentsRes, rolesRes] = await Promise.all([
           fetch('/api/departments', {
             headers: {
-              'x-user-id': user?.id,
-              'x-company-id': user?.companyId
+              'x-user-id': safeUserId,
+              'x-company-id': safeCompanyId
             }
           }),
           fetch('/api/roles', {
             headers: {
-              'x-user-id': user?.id,
-              'x-company-id': user?.companyId
+              'x-user-id': safeUserId,
+              'x-company-id': safeCompanyId
             }
           })
         ]);
@@ -302,79 +314,113 @@ export default function Home() {
   const [analyticsData, setAnalyticsData] = useState<any>(null)
   const [analyticsDateRange, setAnalyticsDateRange] = useState('30') // days
   const [loadingAnalytics, setLoadingAnalytics] = useState(false)
+  const [initialized, setInitialized] = useState(false)
 
-  // Fetch data from API
+  // Fetch data from API using parallel requests
   const fetchData = useCallback(async () => {
+    if (permissionsLoading) return
     try {
-      setLoading(prev => ({ ...prev, employees: true }))
+      const promises: Array<Promise<Response | null>> = [];
+
       if (canViewEmployees) {
-        const employeesRes = await fetch('/api/employees', {
-          headers: {
-            'x-user-id': user?.id,
-            'x-company-id': user?.companyId
-          }
-        })
-        if (employeesRes.ok) {
-          const employeesData = await employeesRes.json()
-          setEmployees(employeesData)
-        }
+        promises.push(
+          fetch('/api/employees', {
+            headers: {
+              'x-user-id': safeUserId,
+              'x-company-id': safeCompanyId
+            }
+          })
+        );
+      } else {
+        promises.push(Promise.resolve(null)); // Placeholder
       }
 
-      setLoading(prev => ({ ...prev, leads: true }))
       if (canViewLeads) {
-        const leadsRes = await fetch('/api/leads', {
-          headers: {
-            'x-user-id': user?.id,
-            'x-company-id': user?.companyId
-          }
-        })
-        if (leadsRes.ok) {
-          const leadsData = await leadsRes.json()
-          setLeads(leadsData)
-        }
+        promises.push(
+          fetch('/api/leads', {
+            headers: {
+              'x-user-id': safeUserId,
+              'x-company-id': safeCompanyId
+            }
+          })
+        );
+      } else {
+        promises.push(Promise.resolve(null)); // Placeholder
       }
 
-      setLoading(prev => ({ ...prev, attendance: true }))
       if (canViewAttendance) {
-        const attendanceRes = await fetch('/api/attendance', {
-          headers: {
-            'x-user-id': user?.id,
-            'x-company-id': user?.companyId
-          }
-        })
-        if (attendanceRes.ok) {
-          const attendanceData = await attendanceRes.json()
-          setAttendanceRecords(attendanceData)
-        }
+        promises.push(
+          fetch('/api/attendance', {
+            headers: {
+              'x-user-id': safeUserId,
+              'x-company-id': safeCompanyId
+            }
+          })
+        );
+      } else {
+        promises.push(Promise.resolve(null)); // Placeholder
       }
 
-      setLoading(prev => ({ ...prev, notifications: true }))
-      const notificationsRes = await fetch('/api/notifications', {
-        headers: {
-          'x-user-id': user?.id,
-          'x-company-id': user?.companyId
-        }
-      })
-      if (notificationsRes.ok) {
-        const notificationsData = await notificationsRes.json()
-        setNotifications(notificationsData)
+      promises.push(
+        fetch('/api/notifications', {
+          headers: {
+            'x-user-id': safeUserId,
+            'x-company-id': safeCompanyId
+          }
+        })
+      );
+
+      if (canViewReports) {
+        promises.push(
+          fetch('/api/reports/overview-stats', {
+            headers: {
+              'x-user-id': safeUserId,
+              'x-company-id': safeCompanyId
+            }
+          })
+        );
+      } else {
+        promises.push(Promise.resolve(null)); // Placeholder
+      }
+
+      setLoading(prev => ({
+        ...prev,
+        employees: canViewEmployees ? true : false,
+        leads: canViewLeads ? true : false,
+        attendance: canViewAttendance ? true : false,
+        notifications: true,
+        stats: canViewReports ? true : false
+      }));
+
+      const responses = await Promise.all(promises);
+
+      // Process responses in parallel
+      if (responses[0]?.ok) { // employees
+        const employeesData = await responses[0].json();
+        setEmployees(normalizeList(employeesData));
+      }
+
+      if (responses[1]?.ok) { // leads
+        const leadsData = await responses[1].json();
+        setLeads(normalizeList(leadsData));
+      }
+
+      if (responses[2]?.ok) { // attendance
+        const attendanceData = await responses[2].json();
+        setAttendanceRecords(normalizeList(attendanceData));
+      }
+
+      if (responses[3]?.ok) { // notifications
+        const notificationsData = await responses[3].json();
+        setNotifications(notificationsData);
         // Update unread count
         const unreadCount = notificationsData.filter(n => !n.isRead).length
-        setUnreadNotifications(unreadCount)
+        setUnreadNotifications(unreadCount);
       }
 
-      setLoading(prev => ({ ...prev, stats: true }))
-      if (canViewReports) {
-        const statsRes = await fetch('/api/reports/overview-stats', {
-          headers: {
-            'x-user-id': user?.id,
-            'x-company-id': user?.companyId
-          }
-        })
-        if (statsRes.ok) {
-          const statsData = await statsRes.json()
-          setStats(statsData)
-        }
+      if (responses[4]?.ok) { // stats
+        const statsData = await responses[4].json();
+        setStats(statsData);
       }
     } catch (error) {
       toast({
@@ -389,9 +435,9 @@ export default function Home() {
         attendance: false,
         notifications: false,
         stats: false
-      }))
+      }));
     }
-  }, [user?.id, user?.companyId, canViewEmployees, canViewLeads, canViewAttendance, canViewReports, toast])
+  }, [safeUserId, safeCompanyId, canViewEmployees, canViewLeads, canViewAttendance, canViewReports, toast, normalizeList, permissionsLoading])
 
   const refreshData = useCallback(async () => {
     setIsRefreshing(true)
@@ -443,11 +489,12 @@ export default function Home() {
 
   // Function to specifically fetch reports data
   const fetchReportsData = useCallback(async () => {
+    if (permissionsLoading) return
     try {
       const reportsRes = await fetch('/api/reports', {
         headers: {
-          'x-user-id': user?.id,
-          'x-company-id': user?.companyId
+          'x-user-id': safeUserId,
+          'x-company-id': safeCompanyId
         }
       });
       if (reportsRes.ok) {
@@ -459,146 +506,139 @@ export default function Home() {
     } catch (error) {
       // Error is handled elsewhere
     }
-  }, [user?.id, user?.companyId])
+  }, [permissionsLoading, user?.id, user?.companyId])
 
-  // Initial data fetch
-  useEffect(() => {
-    fetchData()
-    // Also fetch reports data
-    fetchReportsData()
-  }, [fetchData, fetchReportsData])
+  // Analytics Functions
+  const fetchAnalytics = useCallback(async (range: string = '30') => {
+    if (permissionsLoading) return
+    try {
+      setLoadingAnalytics(true)
+      const response = await fetch(`/api/reports/analytics?range=${range}`, {
+        headers: {
+          'x-user-id': safeUserId || '',
+          'x-company-id': safeCompanyId || 'default-company'
+        }
+      })
 
-  // Refresh data when tab changes
+      if (response.ok) {
+        const result = await response.json()
+        if (result.success) {
+          setAnalyticsData(result.data)
+        }
+      }
+    } catch (error) {
+      console.error('Error fetching analytics:', error)
+      toast({
+        title: "Error",
+        description: "Failed to fetch analytics data",
+        variant: "destructive",
+      })
+    } finally {
+      setLoadingAnalytics(false)
+    }
+  }, [permissionsLoading, toast, user?.companyId, user?.id])
+
+
+  // Initial data fetch (run once when permissions are ready)
   useEffect(() => {
+    if (permissionsLoading) return
+    const loadInitial = async () => {
+      try {
+        await Promise.all([fetchData(), fetchReportsData()])
+      } finally {
+        setInitialized(true)
+      }
+    }
+    loadInitial()
+  }, [fetchData, fetchReportsData, permissionsLoading])
+
+  // Refresh data when tab changes (skip first render to avoid duplicate calls)
+  useEffect(() => {
+    if (!initialized || permissionsLoading) return
+
     if (activeTab === 'overview') {
-      fetchData() // Refresh all data for overview
-    } else if (activeTab === 'analytics') {
-      // Fetch reports data when on analytics tab
+      fetchData()
+      fetchReportsData()
+      return
+    }
+
+    if (activeTab === 'analytics') {
       fetchReportsData()
       fetchAnalytics(analyticsDateRange)
-    } else {
-      // Refresh specific tab data
-      const refreshTabData = async () => {
-        setIsRefreshing(true)
-        try {
-          switch (activeTab) {
-            case 'employees':
-              if (canViewEmployees) {
-                const employeesRes = await fetch('/api/employees', {
-                  headers: {
-                    'x-user-id': user?.id,
-                    'x-company-id': user?.companyId
-                  }
-                })
-                if (employeesRes.ok) {
-                  const data = await employeesRes.json()
-                  setEmployees(data)
-                }
-              }
-              break
-            case 'leads':
-              if (canViewLeads) {
-                const leadsRes = await fetch('/api/leads', {
-                  headers: {
-                    'x-user-id': user?.id,
-                    'x-company-id': user?.companyId
-                  }
-                })
-                if (leadsRes.ok) {
-                  const data = await leadsRes.json()
-                  setLeads(data)
-                }
-              }
-              break
-            case 'attendance':
-              if (canViewAttendance) {
-                const attendanceRes = await fetch('/api/attendance', {
-                  headers: {
-                    'x-user-id': user?.id,
-                    'x-company-id': user?.companyId
-                  }
-                })
-                if (attendanceRes.ok) {
-                  const data = await attendanceRes.json()
-                  setAttendanceRecords(data)
-                }
-              }
-              break
-          }
-        } catch (error) {
-          // Error is handled by toast notification elsewhere
-        } finally {
-          setIsRefreshing(false)
-        }
-      }
-      
-      refreshTabData()
+      return
     }
-  }, [activeTab, canViewEmployees, canViewLeads, canViewAttendance])
 
-  // Refresh data when tab changes
-  useEffect(() => {
-    if (activeTab === 'overview') {
-      fetchData() // Refresh all data for overview
-    } else {
-      // Refresh specific tab data
-      const refreshTabData = async () => {
-        setIsRefreshing(true)
-        try {
-          switch (activeTab) {
-            case 'employees':
-              if (canViewEmployees) {
-                const employeesRes = await fetch('/api/employees', {
-                  headers: {
-                    'x-user-id': user?.id,
-                    'x-company-id': user?.companyId
-                  }
-                })
-                if (employeesRes.ok) {
-                  const data = await employeesRes.json()
-                  setEmployees(data)
+    const refreshTabData = async () => {
+      setIsRefreshing(true)
+      try {
+        switch (activeTab) {
+          case 'employees': {
+            if (canViewEmployees) {
+              const employeesRes = await fetch('/api/employees', {
+                headers: {
+                  'x-user-id': safeUserId,
+                  'x-company-id': safeCompanyId
                 }
+              })
+              if (employeesRes.ok) {
+                const data = await employeesRes.json()
+                setEmployees(data)
               }
-              break
-            case 'leads':
-              if (canViewLeads) {
-                const leadsRes = await fetch('/api/leads', {
-                  headers: {
-                    'x-user-id': user?.id,
-                    'x-company-id': user?.companyId
-                  }
-                })
-                if (leadsRes.ok) {
-                  const data = await leadsRes.json()
-                  setLeads(data)
-                }
-              }
-              break
-            case 'attendance':
-              if (canViewAttendance) {
-                const attendanceRes = await fetch('/api/attendance', {
-                  headers: {
-                    'x-user-id': user?.id,
-                    'x-company-id': user?.companyId
-                  }
-                })
-                if (attendanceRes.ok) {
-                  const data = await attendanceRes.json()
-                  setAttendanceRecords(data)
-                }
-              }
-              break
+            }
+            break
           }
-        } catch (error) {
-          // Error is handled by toast notification elsewhere
-        } finally {
-          setIsRefreshing(false)
+          case 'leads': {
+            if (canViewLeads) {
+              const leadsRes = await fetch('/api/leads', {
+                headers: {
+                  'x-user-id': safeUserId,
+                  'x-company-id': safeCompanyId
+                }
+              })
+              if (leadsRes.ok) {
+                const data = await leadsRes.json()
+                setLeads(data)
+              }
+            }
+            break
+          }
+          case 'attendance': {
+            if (canViewAttendance) {
+              const attendanceRes = await fetch('/api/attendance', {
+                headers: {
+                  'x-user-id': safeUserId,
+                  'x-company-id': safeCompanyId
+                }
+              })
+              if (attendanceRes.ok) {
+                const data = await attendanceRes.json()
+                setAttendanceRecords(data)
+              }
+            }
+            break
+          }
         }
+      } catch (error) {
+        // Error handled by existing toasts
+      } finally {
+        setIsRefreshing(false)
       }
-      
-      refreshTabData()
     }
-  }, [activeTab, canViewEmployees, canViewLeads, canViewAttendance])
+    
+    refreshTabData()
+  }, [
+    activeTab,
+    analyticsDateRange,
+    canViewAttendance,
+    canViewEmployees,
+    canViewLeads,
+    fetchData,
+    fetchReportsData,
+    fetchAnalytics,
+    initialized,
+    user?.companyId,
+    user?.id
+  ])
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -627,8 +667,12 @@ export default function Home() {
   }
 
   // Filtered data with debounced search for better performance
+  const employeesList = useMemo(() => normalizeList(employees), [employees, normalizeList])
+  const leadsList = useMemo(() => normalizeList(leads), [leads, normalizeList])
+  const attendanceList = useMemo(() => normalizeList(attendanceRecords), [attendanceRecords, normalizeList])
+
   const filteredEmployees = useMemo(() => {
-    return employees.filter(employee => {
+    return employeesList.filter(employee => {
       const matchesSearch = (employee.name && employee.name.toLowerCase().includes(debouncedEmployeeSearch.toLowerCase())) ||
                            (employee.email && employee.email.toLowerCase().includes(debouncedEmployeeSearch.toLowerCase())) ||
                            (employee.position && employee.position.toLowerCase().includes(debouncedEmployeeSearch.toLowerCase()))
@@ -644,10 +688,10 @@ export default function Home() {
 
       return (debouncedEmployeeSearch === '' || matchesSearch) && matchesDepartment && matchesStatus && roleMatches
     })
-  }, [employees, debouncedEmployeeSearch, employeeFilter.department, employeeFilter.status, user?.role, user?.id])
+  }, [employeesList, debouncedEmployeeSearch, employeeFilter.department, employeeFilter.status, user?.role, user?.id])
 
   const filteredLeads = useMemo(() => {
-    return leads.filter(lead => {
+    return leadsList.filter(lead => {
       const matchesSearch = (lead.name && lead.name.toLowerCase().includes(debouncedLeadSearch.toLowerCase())) ||
                            (lead.email && lead.email.toLowerCase().includes(debouncedLeadSearch.toLowerCase()))
       const matchesStatus = leadFilter.status === 'ALL' || lead.status === leadFilter.status
@@ -662,10 +706,10 @@ export default function Home() {
 
       return (debouncedLeadSearch === '' || matchesSearch) && matchesStatus && matchesPriority && roleMatches
     })
-  }, [leads, debouncedLeadSearch, leadFilter.status, leadFilter.priority, user?.role, user?.id])
+  }, [leadsList, debouncedLeadSearch, leadFilter.status, leadFilter.priority, user?.role, user?.id])
 
   const filteredAttendance = useMemo(() => {
-    return attendanceRecords.filter(record => {
+    return attendanceList.filter(record => {
       const matchesSearch = (record.name && record.name.toLowerCase().includes(debouncedAttendanceSearch.toLowerCase())) ||
                            (record.department && record.department.toLowerCase().includes(debouncedAttendanceSearch.toLowerCase())) ||
                            (record.location && record.location.toLowerCase().includes(debouncedAttendanceSearch.toLowerCase()))
@@ -681,11 +725,11 @@ export default function Home() {
 
       return (debouncedAttendanceSearch === '' || matchesSearch) && matchesDepartment && matchesStatus && roleMatches
     })
-  }, [attendanceRecords, debouncedAttendanceSearch, attendanceFilter.department, attendanceFilter.status, user?.role, user?.id])
+  }, [attendanceList, debouncedAttendanceSearch, attendanceFilter.department, attendanceFilter.status, user?.role, user?.id])
 
   // Recent data for overview
   const recentLeads = useMemo(() => {
-    return leads.slice(0, 4).map(lead => ({
+    return leadsList.slice(0, 4).map(lead => ({
       id: lead.id,
       name: lead.name,
       amount: lead.loanAmount,
@@ -693,17 +737,17 @@ export default function Home() {
       priority: lead.priority,
       assignedTo: lead.assignedTo
     }))
-  }, [leads])
+  }, [leadsList])
 
   const recentAttendance = useMemo(() => {
-    return attendanceRecords.slice(0, 4).map(record => ({
+    return attendanceList.slice(0, 4).map(record => ({
       id: record.id,
       name: record.name,
       checkIn: record.checkIn,
       status: record.status,
       location: record.location
     }))
-  }, [attendanceRecords])
+  }, [attendanceList])
 
   // Paginated data for better performance with large lists
   const paginatedEmployees = useMemo(() => {
@@ -770,8 +814,8 @@ export default function Home() {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'x-user-id': user?.id,
-            'x-company-id': user?.companyId
+            'x-user-id': safeUserId,
+            'x-company-id': safeCompanyId
           },
           body: JSON.stringify({
             firstName: newEmployee.firstName,
@@ -920,8 +964,8 @@ export default function Home() {
           method: 'PUT',
           headers: {
             'Content-Type': 'application/json',
-            'x-user-id': user?.id,
-            'x-company-id': user?.companyId
+            'x-user-id': safeUserId,
+            'x-company-id': safeCompanyId
           },
           body: JSON.stringify({
             firstName: newEmployee.firstName,
@@ -993,8 +1037,8 @@ export default function Home() {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
-          'x-user-id': user?.id,
-          'x-company-id': user?.companyId
+          'x-user-id': safeUserId,
+          'x-company-id': safeCompanyId
         },
         body: JSON.stringify({ status: newStatus })
       });
@@ -1110,8 +1154,8 @@ export default function Home() {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
-          'x-user-id': user?.id,
-          'x-company-id': user?.companyId
+          'x-user-id': safeUserId,
+          'x-company-id': safeCompanyId
         },
         body: JSON.stringify({
           leads: importedLeads,
@@ -1172,8 +1216,8 @@ export default function Home() {
           method: 'PUT',
           headers: {
             'Content-Type': 'application/json',
-            'x-user-id': user?.id,
-            'x-company-id': user?.companyId
+            'x-user-id': safeUserId,
+            'x-company-id': safeCompanyId
           },
           body: JSON.stringify({
             firstName: newLead.firstName,
@@ -1253,8 +1297,8 @@ export default function Home() {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
-          'x-user-id': user?.id,
-          'x-company-id': user?.companyId
+          'x-user-id': safeUserId,
+          'x-company-id': safeCompanyId
         },
         body: JSON.stringify({ status: newStatus })
       });
@@ -1298,8 +1342,8 @@ export default function Home() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'x-user-id': user?.id,
-          'x-company-id': user?.companyId
+          'x-user-id': safeUserId,
+          'x-company-id': safeCompanyId
         },
         body: JSON.stringify({
           leadId,
@@ -1342,8 +1386,8 @@ export default function Home() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'x-user-id': user?.id,
-          'x-company-id': user?.companyId
+          'x-user-id': safeUserId,
+          'x-company-id': safeCompanyId
         },
         body: JSON.stringify({
           leadId
@@ -1415,8 +1459,8 @@ export default function Home() {
               method: 'POST',
               headers: {
                 'Content-Type': 'application/json',
-                'x-user-id': user?.id,
-                'x-company-id': user?.companyId
+                'x-user-id': safeUserId,
+                'x-company-id': safeCompanyId
               },
               body: JSON.stringify({
                 ...lead,
@@ -1452,8 +1496,8 @@ export default function Home() {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'x-user-id': user?.id,
-            'x-company-id': user?.companyId
+            'x-user-id': safeUserId,
+            'x-company-id': safeCompanyId
           },
           body: JSON.stringify({
             firstName: newLead.firstName,
@@ -1680,8 +1724,8 @@ export default function Home() {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
-          'x-user-id': user?.id,
-          'x-company-id': user?.companyId
+          'x-user-id': safeUserId,
+          'x-company-id': safeCompanyId
         },
         body: JSON.stringify(updatedData)
       });
@@ -1730,8 +1774,8 @@ export default function Home() {
       const response = await fetch(`/api/attendance/${attendanceId}`, {
         method: 'DELETE',
         headers: {
-          'x-user-id': user?.id,
-          'x-company-id': user?.companyId
+          'x-user-id': safeUserId,
+          'x-company-id': safeCompanyId
         }
       });
 
@@ -1770,35 +1814,6 @@ export default function Home() {
     a.download = `attendance_${new Date().toISOString().split('T')[0]}.csv`
     a.click()
     window.URL.revokeObjectURL(url)
-  }
-
-  // Analytics Functions
-  const fetchAnalytics = async (range: string = '30') => {
-    try {
-      setLoadingAnalytics(true)
-      const response = await fetch(`/api/reports/analytics?range=${range}`, {
-        headers: {
-          'x-user-id': user?.id || '',
-          'x-company-id': user?.companyId || 'default-company'
-        }
-      })
-
-      if (response.ok) {
-        const result = await response.json()
-        if (result.success) {
-          setAnalyticsData(result.data)
-        }
-      }
-    } catch (error) {
-      console.error('Error fetching analytics:', error)
-      toast({
-        title: "Error",
-        description: "Failed to fetch analytics data",
-        variant: "destructive",
-      })
-    } finally {
-      setLoadingAnalytics(false)
-    }
   }
 
   const generateReport = async (type: string) => {
@@ -1881,10 +1896,10 @@ export default function Home() {
   }
 
   const generateSalesReport = () => {
-    const totalLeads = leads.length
-    const convertedLeads = leads.filter(lead => lead.status === 'APPLICATION' || lead.status === 'REAL').length
-    const conversionRate = ((convertedLeads / totalLeads) * 100).toFixed(2)
-    const totalLoanAmount = leads.reduce((sum, lead) => sum + (lead.loanAmount || 0), 0)
+    const totalLeads = leadsList.length
+    const convertedLeads = leadsList.filter(lead => lead.status === 'APPLICATION' || lead.status === 'REAL').length
+    const conversionRate = totalLeads ? ((convertedLeads / totalLeads) * 100).toFixed(2) : '0'
+    const totalLoanAmount = leadsList.reduce((sum, lead) => sum + (lead.loanAmount || 0), 0)
     
     return `Sales Report
 Generated: ${new Date().toLocaleDateString()}
@@ -1896,39 +1911,43 @@ Total Loan Amount: $${totalLoanAmount.toLocaleString()}
 Average Loan Amount: $${Math.round(totalLoanAmount / totalLeads).toLocaleString()}
 
 Lead Status Breakdown:
-${leads.reduce((acc, lead) => {
-  acc[lead.status] = (acc[lead.status] || 0) + 1
-  return acc
-}, {} as Record<string, number>).map((count, status) => `${status}: ${count}`).join('\n')}
+${Object.entries(
+  leadsList.reduce((acc, lead) => {
+    acc[lead.status] = (acc[lead.status] || 0) + 1
+    return acc
+  }, {} as Record<string, number>)
+).map(([status, count]) => `${status}: ${count}`).join('\n')}
 `
   }
 
   const generateEmployeePerformanceReport = () => {
-    const activeEmployees = employees.filter(emp => emp.status === 'ACTIVE').length
-    const onLeaveEmployees = employees.filter(emp => emp.status === 'ON_LEAVE').length
+    const activeEmployees = employeesList.filter(emp => emp.status === 'ACTIVE').length
+    const onLeaveEmployees = employeesList.filter(emp => emp.status === 'ON_LEAVE').length
     
     return `Employee Performance Report
 Generated: ${new Date().toLocaleDateString()}
 
-Total Employees: ${employees.length}
+Total Employees: ${employeesList.length}
 Active Employees: ${activeEmployees}
 Employees on Leave: ${onLeaveEmployees}
 
 Department Breakdown:
-${employees.reduce((acc, emp) => {
-  acc[emp.department] = (acc[emp.department] || 0) + 1
-  return acc
-}, {} as Record<string, number>).map((count, dept) => `${dept}: ${count}`).join('\n')}
+${Object.entries(
+  employeesList.reduce((acc, emp) => {
+    acc[emp.department] = (acc[emp.department] || 0) + 1
+    return acc
+  }, {} as Record<string, number>)
+).map(([dept, count]) => `${dept}: ${count}`).join('\n')}
 
 Attendance Overview:
-Present: ${attendanceRecords.filter(r => r.status === 'PRESENT').length}
-Late: ${attendanceRecords.filter(r => r.status === 'LATE').length}
-Absent: ${attendanceRecords.filter(r => r.status === 'ABSENT').length}
+Present: ${attendanceList.filter(r => r.status === 'PRESENT').length}
+Late: ${attendanceList.filter(r => r.status === 'LATE').length}
+Absent: ${attendanceList.filter(r => r.status === 'ABSENT').length}
 `
   }
 
   const generateLeadConversionReport = () => {
-    const statusBreakdown = leads.reduce((acc, lead) => {
+    const statusBreakdown = leadsList.reduce((acc, lead) => {
       acc[lead.status] = (acc[lead.status] || 0) + 1
       return acc
     }, {} as Record<string, number>)
@@ -1936,17 +1955,17 @@ Absent: ${attendanceRecords.filter(r => r.status === 'ABSENT').length}
     return `Lead Conversion Analysis
 Generated: ${new Date().toLocaleDateString()}
 
-Total Leads: ${leads.length}
+Total Leads: ${leadsList.length}
 
 Status Breakdown:
-${Object.entries(statusBreakdown).map(([status, count]) => `${status}: ${count} (${((count / leads.length) * 100).toFixed(1)}%)`).join('\n')}
+${Object.entries(statusBreakdown as Record<string, number>).map(([status, count]) => `${status}: ${count} (${(leadsList.length ? ((count / leadsList.length) * 100) : 0).toFixed(1)}%)`).join('\n')}
 
 Priority Distribution:
-High: ${leads.filter(l => l.priority === 'HIGH').length}
-Medium: ${leads.filter(l => l.priority === 'MEDIUM').length}
-Low: ${leads.filter(l => l.priority === 'LOW').length}
+High: ${leadsList.filter(l => l.priority === 'HIGH').length}
+Medium: ${leadsList.filter(l => l.priority === 'MEDIUM').length}
+Low: ${leadsList.filter(l => l.priority === 'LOW').length}
 
-Average Credit Score: ${Math.round(leads.reduce((sum, lead) => sum + (lead.creditScore || 0), 0) / leads.length)}
+Average Credit Score: ${leadsList.length ? Math.round(leadsList.reduce((sum, lead) => sum + (lead.creditScore || 0), 0) / leadsList.length) : 0}
 `
   }
 
@@ -2149,7 +2168,7 @@ Average Credit Score: ${Math.round(leads.reduce((sum, lead) => sum + (lead.credi
 
   return (
     <ProtectedRoute>
-      <div className="flex h-screen bg-gray-50 transition-colors duration-200">
+      <div className="flex min-h-screen bg-gray-50 transition-colors duration-200">
 
       {/* Mobile Overlay */}
       {sidebarOpen && (
@@ -2167,7 +2186,7 @@ Average Credit Score: ${Math.round(leads.reduce((sum, lead) => sum + (lead.credi
         inset-y-0 left-0
         z-50 lg:z-auto
         w-64
-        bg-white border-r border-gray-200
+        bg-white border-r border-gray-200 max-h-screen
         flex flex-col
         transition-all duration-300 ease-in-out
         shadow-xl lg:shadow-none
@@ -2323,7 +2342,7 @@ Average Credit Score: ${Math.round(leads.reduce((sum, lead) => sum + (lead.credi
       <div className="flex-1 flex flex-col overflow-hidden min-w-0">
         {/* Header */}
         <header className="bg-white border-b border-gray-200 px-4 sm:px-6 py-3 sm:py-4 sticky top-0 z-30">
-          <div className="flex items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center justify-between gap-3 sm:gap-4">
             {/* Left Section - Mobile Menu + Title */}
             <div className="flex items-center gap-3 min-w-0 flex-1">
               {/* Mobile Menu Toggle */}
@@ -2355,7 +2374,7 @@ Average Credit Score: ${Math.round(leads.reduce((sum, lead) => sum + (lead.credi
             </div>
 
             {/* Right Section - Actions & Profile */}
-            <div className="flex items-center gap-2 flex-shrink-0">
+            <div className="flex items-center gap-2 sm:gap-3 flex-shrink-0 flex-wrap justify-end">
               {/* Refresh Button */}
               <Button
                 variant="outline"
@@ -2465,9 +2484,9 @@ Average Credit Score: ${Math.round(leads.reduce((sum, lead) => sum + (lead.credi
         </header>
 
         {/* Dashboard Content */}
-        <main className="flex-1 overflow-y-auto p-6" data-lenis-prevent>
-          <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-            <TabsList className="grid w-full grid-cols-7">
+        <main className="flex-1 overflow-y-auto p-4 sm:p-6 pb-24" data-lenis-prevent>
+          <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-5 sm:space-y-6">
+            <TabsList className="w-full sm:w-auto">
               <TabsTrigger value="overview">Overview</TabsTrigger>
               <TabsTrigger value="employees">Employees</TabsTrigger>
               <TabsTrigger value="leads">Leads</TabsTrigger>
@@ -2478,6 +2497,41 @@ Average Credit Score: ${Math.round(leads.reduce((sum, lead) => sum + (lead.credi
             </TabsList>
 
             <TabsContent value="overview" className="space-y-6">
+              {/* Mobile-first quick actions for field teams */}
+              <div className="grid grid-cols-2 gap-3 sm:hidden">
+                <Button
+                  variant="secondary"
+                  className="w-full"
+                  onClick={handleCheckIn}
+                >
+                  <MapPin className="h-4 w-4 mr-2" />
+                  Check In
+                </Button>
+                <Button
+                  variant="outline"
+                  className="w-full"
+                  onClick={handleCheckOut}
+                >
+                  <Clock className="h-4 w-4 mr-2" />
+                  Check Out
+                </Button>
+                <Button
+                  className="w-full"
+                  onClick={() => setShowAddLeadModal(true)}
+                >
+                  <UserPlus className="h-4 w-4 mr-2" />
+                  New Lead
+                </Button>
+                <Button
+                  variant="outline"
+                  className="w-full"
+                  onClick={() => handleNavigation('attendance')}
+                >
+                  <Calendar className="h-4 w-4 mr-2" />
+                  Attendance
+                </Button>
+              </div>
+
               {/* KPI Cards */}
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                 <Card className={loading.stats ? "opacity-70 animate-pulse" : ""}>
@@ -2716,585 +2770,33 @@ Average Credit Score: ${Math.round(leads.reduce((sum, lead) => sum + (lead.credi
             </TabsContent>
 
             <TabsContent value="employees">
-              <div className="space-y-6">
-                {/* Employee Management Header */}
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h2 className="text-2xl font-bold text-gray-900">Employee Management</h2>
-                    <p className="text-sm text-gray-500">Manage your workforce and organizational structure</p>
-                  </div>
-                  <div className="flex gap-2">
-                    <Button 
-                      variant="outline"
-                      onClick={handleExportEmployees}
-                    >
-                      <Download className="h-4 w-4 mr-2" />
-                      Export
-                    </Button>
-                    <Button 
-                      onClick={handleAddEmployeeClick}
-                      className="bg-blue-600 hover:bg-blue-700 text-white"
-                    >
-                      <UserPlus className="h-4 w-4 mr-2" />
-                      Add Employee
-                    </Button>
-                  </div>
-                </div>
-
-                {/* Employee Stats */}
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                  <Card>
-                    <CardHeader className="pb-2">
-                      <CardTitle className="text-sm font-medium">Total Employees</CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <div className="text-2xl font-bold">{employees.length}</div>
-                      <p className="text-xs text-muted-foreground">+{employees.filter(e => e.hireDate && new Date(e.hireDate) >= new Date(new Date().setDate(new Date().getDate() - 30))).length} this month</p>
-                    </CardContent>
-                  </Card>
-                  
-                  <Card>
-                    <CardHeader className="pb-2">
-                      <CardTitle className="text-sm font-medium">Active Employees</CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <div className="text-2xl font-bold">{employees.filter(e => e.status === 'ACTIVE').length}</div>
-                      <p className="text-xs text-muted-foreground">{employees.length ? Math.round((employees.filter(e => e.status === 'ACTIVE').length / employees.length) * 100) : 0}% active rate</p>
-                    </CardContent>
-                  </Card>
-                  
-                  <Card>
-                    <CardHeader className="pb-2">
-                      <CardTitle className="text-sm font-medium">Departments</CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <div className="text-2xl font-bold">{departments.length}</div>
-                      <p className="text-xs text-muted-foreground">Sales, Support, IT, etc.</p>
-                    </CardContent>
-                  </Card>
-                  
-                  <Card>
-                    <CardHeader className="pb-2">
-                      <CardTitle className="text-sm font-medium">Open Positions</CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <div className="text-2xl font-bold">8</div>
-                      <p className="text-xs text-muted-foreground">Actively recruiting</p>
-                    </CardContent>
-                  </Card>
-                </div>
-
-                {/* Employee List */}
-                <Card>
-                  <CardHeader>
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <CardTitle>Employee Directory</CardTitle>
-                        <CardDescription>View and manage all employees</CardDescription>
-                      </div>
-                      <div className="flex gap-2">
-                        <div className="relative">
-                          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-                          <Input
-                            type="text"
-                            placeholder="Search employees..."
-                            value={employeeFilter.search}
-                            onChange={(e) => setEmployeeFilter({...employeeFilter, search: e.target.value})}
-                            className="pl-10 pr-4 py-2 border border-gray-300 rounded-md text-sm w-64"
-                          />
-                        </div>
-                        <Select value={employeeFilter.department} onValueChange={(value) => setEmployeeFilter({...employeeFilter, department: value})}>
-                          <SelectTrigger className="w-40">
-                            <SelectValue placeholder="Department" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="ALL">All Departments</SelectItem>
-                            {departments.map((dept) => (
-                              <SelectItem key={dept.id} value={dept.id}>
-                                {dept.name}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        <Select value={employeeFilter.status} onValueChange={(value) => setEmployeeFilter({...employeeFilter, status: value})}>
-                          <SelectTrigger className="w-32">
-                            <SelectValue placeholder="Status" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="ALL">All Status</SelectItem>
-                            <SelectItem value="ACTIVE">Active</SelectItem>
-                            <SelectItem value="ON_LEAVE">On Leave</SelectItem>
-                          </SelectContent>
-                        </Select>
-                        {employeeFilter.search || employeeFilter.department !== 'ALL' || employeeFilter.status !== 'ALL' ? (
-                          <Button 
-                            variant="outline" 
-                            size="sm"
-                            onClick={() => setEmployeeFilter({ search: '', department: 'ALL', status: 'ALL' })}
-                          >
-                            <X className="h-4 w-4 mr-2" />
-                            Clear
-                          </Button>
-                        ) : null}
-                      </div>
-                    </div>
-                  </CardHeader>
-                  <CardContent>
-                    {loading.employees ? (
-                      <div className="space-y-4">
-                        {[...Array(5)].map((_, index) => (
-                          <div key={index} className="flex items-center p-3 border-b animate-pulse">
-                            <div className="flex items-center gap-3 flex-1">
-                              <div className="bg-gray-200 rounded-full h-10 w-10" />
-                              <div className="space-y-2">
-                                <div className="h-4 bg-gray-200 rounded w-32" />
-                                <div className="h-3 bg-gray-200 rounded w-24" />
-                              </div>
-                            </div>
-                            <div className="h-6 bg-gray-200 rounded w-16" />
-                            <div className="h-6 bg-gray-200 rounded w-16 ml-2" />
-                            <div className="h-6 bg-gray-200 rounded w-20 ml-2" />
-                            <div className="h-8 bg-gray-200 rounded w-32 ml-2 flex gap-2" />
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <div className="overflow-x-auto">
-                        <table className="w-full">
-                          <thead>
-                            <tr className="border-b">
-                              <th className="text-left p-3">Employee</th>
-                              <th className="text-left p-3">Position</th>
-                              <th className="text-left p-3">Department</th>
-                              <th className="text-left p-3">Status</th>
-                              <th className="text-left p-3">Hire Date</th>
-                              <th className="text-left p-3">Actions</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {paginatedEmployees.map((employee) => (
-                              <tr key={employee.id} className="border-b hover:bg-gray-50 transition-colors">
-                                <td className="p-3">
-                                  <div className="flex items-center gap-3">
-                                    <Avatar>
-                                      <AvatarFallback>{employee.name.split(' ').map(n => n[0]).join('')}</AvatarFallback>
-                                    </Avatar>
-                                    <div>
-                                      <p className="font-medium">{employee.name}</p>
-                                      <p className="text-sm text-gray-500">{employee.email}</p>
-                                    </div>
-                                  </div>
-                                </td>
-                                <td className="p-3">{employee.position}</td>
-                                <td className="p-3">{employee.department}</td>
-                                <td className="p-3">
-                                  <Badge className={getStatusColor(employee.status)}>
-                                    {employee.status}
-                                  </Badge>
-                                </td>
-                                <td className="p-3">{employee.hireDate ? new Date(employee.hireDate).toLocaleDateString() : 'N/A'}</td>
-                                <td className="p-3">
-                                  <div className="flex gap-2">
-                                    <Button
-                                      variant="outline"
-                                      size="sm"
-                                      onClick={() => toggleEmployeeStatus(employee.id, employee.status)}
-                                    >
-                                      {employee.status === 'ACTIVE' ? 'Deactivate' : 'Activate'}
-                                    </Button>
-                                    <Button
-                                      variant="ghost"
-                                      size="sm"
-                                      onClick={() => handleEditEmployeeClick(employee)}
-                                    >
-                                      Edit
-                                    </Button>
-                                    <Button
-                                      variant="ghost"
-                                      size="sm"
-                                      onClick={() => handleViewEmployeeClick(employee)}
-                                    >
-                                      View
-                                    </Button>
-                                  </div>
-                                </td>
-                              </tr>
-                            ))}
-                            {filteredEmployees.length === 0 && (
-                              <tr>
-                                <td colSpan={6} className="p-3 text-center text-gray-500">
-                                  No employees found
-                                </td>
-                              </tr>
-                            )}
-                          </tbody>
-                        </table>
-                      </div>
-                    )}
-                    {/* Pagination Controls */}
-                    {filteredEmployees.length > itemsPerPage && (
-                      <div className="flex items-center justify-between px-4 py-3 border-t">
-                        <div className="text-sm text-gray-500">
-                          Showing {((employeePage - 1) * itemsPerPage) + 1} to {Math.min(employeePage * itemsPerPage, filteredEmployees.length)} of {filteredEmployees.length} employees
-                        </div>
-                        <div className="flex gap-2">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => setEmployeePage(prev => Math.max(1, prev - 1))}
-                            disabled={employeePage === 1}
-                          >
-                            Previous
-                          </Button>
-                          <div className="flex items-center gap-1">
-                            {Array.from({ length: totalEmployeePages }, (_, i) => i + 1).map(page => (
-                              <Button
-                                key={page}
-                                variant={employeePage === page ? "default" : "outline"}
-                                size="sm"
-                                onClick={() => setEmployeePage(page)}
-                                className="w-8 h-8 p-0"
-                              >
-                                {page}
-                              </Button>
-                            ))}
-                          </div>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => setEmployeePage(prev => Math.min(totalEmployeePages, prev + 1))}
-                            disabled={employeePage === totalEmployeePages}
-                          >
-                            Next
-                          </Button>
-                        </div>
-                      </div>
-                    )}
-                  </CardContent>
-                </Card>
-              </div>
+              <EmployeeManagement
+                user={user}
+                employees={employees}
+                departments={departments}
+                roles={roles}
+                canViewEmployees={canViewEmployees}
+                canCreateEmployees={canCreateEmployees}
+                loading={loading.employees}
+                onRefresh={refreshData}
+                refreshData={refreshData}
+              />
             </TabsContent>
 
             <TabsContent value="leads">
-              <div className="space-y-6">
-                {/* Lead Management Header */}
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h2 className="text-2xl font-bold text-gray-900">Lead Management</h2>
-                    <p className="text-sm text-gray-500">Track and manage mortgage leads</p>
-                  </div>
-                  <div className="flex gap-2">
-                    <Button 
-                      variant="outline"
-                      onClick={handleExportLeads}
-                    >
-                      <Download className="h-4 w-4 mr-2" />
-                      Export
-                    </Button>
-                    {(user?.role === 'Administrator' || user?.role === 'Manager') && (
-                      <Button 
-                        variant="outline"
-                        onClick={() => setShowBulkImportModal(true)}
-                      >
-                        <Upload className="h-4 w-4 mr-2" />
-                        Import
-                      </Button>
-                    )}
-                    <Button 
-                      onClick={handleAddLeadClick}
-                      className="bg-blue-600 hover:bg-blue-700 text-white"
-                    >
-                      <UserPlus className="h-4 w-4 mr-2" />
-                      Add Lead
-                    </Button>
-                  </div>
-                </div>
-
-                {/* Lead Stats */}
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                  <Card className="border-l-4 border-l-blue-500">
-                    <CardHeader className="pb-2">
-                      <CardTitle className="text-sm font-medium text-gray-600">Total Leads</CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <div className="text-2xl font-bold text-gray-900">{leads.length}</div>
-                      <p className="text-xs text-green-600">+{leads.filter(l => l.createdAt && new Date(l.createdAt) >= new Date(new Date().setDate(new Date().getDate() - 30))).length} this month</p>
-                    </CardContent>
-                  </Card>
-                  
-                  <Card className="border-l-4 border-l-green-500">
-                    <CardHeader className="pb-2">
-                      <CardTitle className="text-sm font-medium text-gray-600">Active Leads</CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <div className="text-2xl font-bold text-gray-900">{leads.filter(l => !['APPLICATION', 'REJECTED', 'CLOSED', 'JUNK'].includes(l.status)).length}</div>
-                      <p className="text-xs text-gray-500">In pipeline</p>
-                    </CardContent>
-                  </Card>
-                  
-                  <Card className="border-l-4 border-l-purple-500">
-                    <CardHeader className="pb-2">
-                      <CardTitle className="text-sm font-medium text-gray-600">Converted</CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <div className="text-2xl font-bold text-gray-900">{leads.filter(l => l.status === 'APPLICATION' || l.status === 'APPROVED' || l.status === 'REAL').length}</div>
-                      <p className="text-xs text-green-600">{leads.length ? Math.round((leads.filter(l => l.status === 'APPLICATION' || l.status === 'APPROVED' || l.status === 'REAL').length / leads.length) * 100) : 0}% conversion</p>
-                    </CardContent>
-                  </Card>
-                  
-                  <Card className="border-l-4 border-l-orange-500">
-                    <CardHeader className="pb-2">
-                      <CardTitle className="text-sm font-medium text-gray-600">High Priority</CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <div className="text-2xl font-bold text-gray-900">{leads.filter(l => l.priority === 'HIGH' || l.priority === 'URGENT').length}</div>
-                      <p className="text-xs text-red-600">Need attention</p>
-                    </CardContent>
-                  </Card>
-                </div>
-
-                {/* Lead List */}
-                <Card>
-                  <CardHeader>
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <CardTitle>Lead Pipeline</CardTitle>
-                        <CardDescription>Manage and track all leads</CardDescription>
-                      </div>
-                      <div className="flex gap-2">
-                        <div className="relative">
-                          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-                          <Input
-                            type="text"
-                            placeholder="Search leads..."
-                            value={leadFilter.search}
-                            onChange={(e) => setLeadFilter({...leadFilter, search: e.target.value})}
-                            className="pl-10 pr-4 py-2 border border-gray-300 rounded-md text-sm w-64"
-                          />
-                        </div>
-                        <Select value={leadFilter.status} onValueChange={(value) => setLeadFilter({...leadFilter, status: value})}>
-                          <SelectTrigger className="w-32">
-                            <SelectValue placeholder="Status" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="ALL">All Status</SelectItem>
-                            <SelectItem value="NEW">NEW</SelectItem>
-                            <SelectItem value="CONTACTED">CONTACTED</SelectItem>
-                            <SelectItem value="QUALIFIED">QUALIFIED</SelectItem>
-                            <SelectItem value="APPLICATION">APPLICATION</SelectItem>
-                            <SelectItem value="APPROVED">APPROVED</SelectItem>
-                            <SelectItem value="REJECTED">REJECTED</SelectItem>
-                            <SelectItem value="CLOSED">CLOSED</SelectItem>
-                            <SelectItem value="JUNK">JUNK</SelectItem>
-                            <SelectItem value="REAL">REAL</SelectItem>
-                          </SelectContent>
-                        </Select>
-                        <Select value={leadFilter.priority} onValueChange={(value) => setLeadFilter({...leadFilter, priority: value})}>
-                          <SelectTrigger className="w-32">
-                            <SelectValue placeholder="Priority" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="ALL">All Priority</SelectItem>
-                            <SelectItem value="HIGH">HIGH</SelectItem>
-                            <SelectItem value="MEDIUM">MEDIUM</SelectItem>
-                            <SelectItem value="LOW">LOW</SelectItem>
-                          </SelectContent>
-                        </Select>
-                        {leadFilter.search || leadFilter.status !== 'ALL' || leadFilter.priority !== 'ALL' ? (
-                          <Button 
-                            variant="outline" 
-                            size="sm"
-                            onClick={() => setLeadFilter({ search: '', status: 'ALL', priority: 'ALL' })}
-                          >
-                            <X className="h-4 w-4 mr-2" />
-                            Clear
-                          </Button>
-                        ) : null}
-                      </div>
-                    </div>
-                  </CardHeader>
-                  <CardContent>
-                    {loading.leads ? (
-                      <div className="space-y-4">
-                        {[...Array(5)].map((_, index) => (
-                          <div key={index} className="flex items-center p-3 border-b animate-pulse">
-                            <div className="flex items-center gap-3 flex-1">
-                              <div className="bg-gray-200 rounded-full h-10 w-10" />
-                              <div className="space-y-2">
-                                <div className="h-4 bg-gray-200 rounded w-32" />
-                                <div className="h-3 bg-gray-200 rounded w-24" />
-                              </div>
-                            </div>
-                            <div className="h-4 bg-gray-200 rounded w-24" />
-                            <div className="h-6 bg-gray-200 rounded w-16" />
-                            <div className="h-6 bg-gray-200 rounded w-16 ml-2" />
-                            <div className="h-6 bg-gray-200 rounded w-24 ml-2" />
-                            <div className="h-8 bg-gray-200 rounded w-32 ml-2 flex gap-2" />
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <div className="overflow-x-auto">
-                        <table className="w-full">
-                          <thead>
-                            <tr className="border-b">
-                              <th className="text-left p-3">Lead</th>
-                              <th className="text-left p-3">Contact</th>
-                              <th className="text-left p-3">Loan Amount</th>
-                              <th className="text-left p-3">Status</th>
-                              <th className="text-left p-3">Priority</th>
-                              <th className="text-left p-3">Assigned To</th>
-                              <th className="text-left p-3">Assigned At</th>
-                              <th className="text-left p-3">Contact Required By</th>
-                              <th className="text-left p-3">Actions</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {paginatedLeads.map((lead) => {
-                              // Calculate the 2-hour contact deadline if assigned
-                              const contactDeadline = lead.assignedAt ? new Date(new Date(lead.assignedAt).getTime() + 2 * 60 * 60 * 1000) : null;
-                              const isOverdue = contactDeadline && new Date() > contactDeadline && !lead.contactedAt;
-
-                              return (
-                                <tr key={lead.id} className={`border-b hover:bg-gray-50 transition-colors ${isOverdue ? 'bg-red-50' : ''}`}>
-                                  <td className="p-3">
-                                    <div className="flex items-center gap-3">
-                                      <Avatar>
-                                        <AvatarFallback>{(lead.name || 'U').split(' ').map(n => n[0]).join('')}</AvatarFallback>
-                                      </Avatar>
-                                      <div>
-                                        <p className="font-medium">{lead.name}</p>
-                                        <p className="text-sm text-gray-500">{lead.phone}</p>
-                                      </div>
-                                    </div>
-                                  </td>
-                                  <td className="p-3">{lead.email}</td>
-                                  <td className="p-3">${lead.loanAmount?.toLocaleString() || 0}</td>
-                                  <td className="p-3">
-                                    <Badge className={getStatusColor(lead.status)}>
-                                      {lead.status}
-                                    </Badge>
-                                  </td>
-                                  <td className="p-3">
-                                    <Badge className={getPriorityColor(lead.priority)}>
-                                      {lead.priority}
-                                    </Badge>
-                                  </td>
-                                  <td className="p-3">
-                                    {((user?.role === 'Administrator' || user?.role === 'Manager') && canViewEmployees) ? (
-                                      <LeadAssignment 
-                                        lead={lead}
-                                        employees={employees}
-                                        onAssign={assignLeadToEmployee}
-                                        disabled={loading.leads}
-                                      />
-                                    ) : (
-                                      <span>{lead.assignedTo || 'Unassigned'}</span>
-                                    )}
-                                  </td>
-                                  <td className="p-3">
-                                    {lead.assignedAt ? new Date(lead.assignedAt).toLocaleString() : '-'}
-                                  </td>
-                                  <td className="p-3">
-                                    {contactDeadline ? (
-                                      <div className={isOverdue ? 'text-red-600' : ''}>
-                                        {contactDeadline.toLocaleString()}
-                                        {isOverdue && (
-                                          <div className="text-xs text-red-500 mt-1">Overdue for contact</div>
-                                        )}
-                                      </div>
-                                    ) : '-'}
-                                  </td>
-                                  <td className="p-3">
-                                    <div className="flex gap-2">
-                                      {lead.assignedToId && (user?.id === lead.assignedToId || user?.role === 'Administrator' || user?.role === 'Manager') && !lead.contactedAt && (
-                                        <Button 
-                                          variant="outline"
-                                          size="sm"
-                                          onClick={() => markLeadAsContacted(lead.id)}
-                                        >
-                                          Mark as Contacted
-                                        </Button>
-                                      )}
-                                      <Button 
-                                        variant="outline" 
-                                        size="sm"
-                                        onClick={() => toggleLeadStatus(lead.id, lead.status)}
-                                      >
-                                        Next Status
-                                      </Button>
-                                      <Button 
-                                        variant="ghost" 
-                                        size="sm"
-                                        onClick={() => handleEditLeadClick(lead)}
-                                      >
-                                        Edit
-                                      </Button>
-                                      <Button 
-                                        variant="ghost" 
-                                        size="sm"
-                                        onClick={() => handleViewLeadClick(lead)}
-                                      >
-                                        View
-                                      </Button>
-                                    </div>
-                                  </td>
-                                </tr>
-                              );
-                            })}
-                            {filteredLeads.length === 0 && (
-                              <tr>
-                                <td colSpan={9} className="p-3 text-center text-gray-500">
-                                  No leads found
-                                </td>
-                              </tr>
-                            )}
-                          </tbody>
-                        </table>
-                      </div>
-                    )}
-                    {/* Pagination Controls */}
-                    {filteredLeads.length > itemsPerPage && (
-                      <div className="flex items-center justify-between px-4 py-3 border-t">
-                        <div className="text-sm text-gray-500">
-                          Showing {((leadPage - 1) * itemsPerPage) + 1} to {Math.min(leadPage * itemsPerPage, filteredLeads.length)} of {filteredLeads.length} leads
-                        </div>
-                        <div className="flex gap-2">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => setLeadPage(prev => Math.max(1, prev - 1))}
-                            disabled={leadPage === 1}
-                          >
-                            Previous
-                          </Button>
-                          <div className="flex items-center gap-1">
-                            {Array.from({ length: Math.min(totalLeadPages, 10) }, (_, i) => i + 1).map(page => (
-                              <Button
-                                key={page}
-                                variant={leadPage === page ? "default" : "outline"}
-                                size="sm"
-                                onClick={() => setLeadPage(page)}
-                                className="w-8 h-8 p-0"
-                              >
-                                {page}
-                              </Button>
-                            ))}
-                          </div>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => setLeadPage(prev => Math.min(totalLeadPages, prev + 1))}
-                            disabled={leadPage === totalLeadPages}
-                          >
-                            Next
-                          </Button>
-                        </div>
-                      </div>
-                    )}
-                  </CardContent>
-                </Card>
-              </div>
+              <LeadManagement
+                user={user}
+                leads={leads}
+                employees={employees}
+                canViewLeads={canViewLeads}
+                canCreateLeads={canCreateLeads}
+                loading={loading.leads}
+                onRefresh={refreshData}
+                refreshData={refreshData}
+                showBulkImportModal={showBulkImportModal}
+                setShowBulkImportModal={setShowBulkImportModal}
+                handleBulkImportComplete={handleBulkImportComplete}
+              />
             </TabsContent>
 
             <TabsContent value="attendance">
@@ -3370,8 +2872,8 @@ Average Credit Score: ${Math.round(leads.reduce((sum, lead) => sum + (lead.credi
                         try {
                           const reportsRes = await fetch('/api/reports', {
                             headers: {
-                              'x-user-id': user?.id,
-                              'x-company-id': user?.companyId
+                              'x-user-id': safeUserId,
+                              'x-company-id': safeCompanyId
                             }
                           });
 

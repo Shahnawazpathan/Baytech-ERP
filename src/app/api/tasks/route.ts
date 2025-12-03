@@ -6,6 +6,13 @@ export async function GET(request: NextRequest) {
     const companyId = request.headers.get('x-company-id') || 'default-company'
     const userId = request.headers.get('x-user-id')
 
+    if (!userId) {
+      return NextResponse.json(
+        { success: false, error: 'User ID required' },
+        { status: 400 }
+      )
+    }
+
     // Get user to check role
     const user = userId ? await db.employee.findUnique({
       where: { id: userId },

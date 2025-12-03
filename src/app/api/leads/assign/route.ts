@@ -276,7 +276,7 @@ export async function PUT(request: NextRequest) {
     }
 
     // Process all assignments
-    const updatedLeads = []
+    const updatedLeads: any[] = []
     const employeeNotifications: { [key: string]: number } = {}
 
     for (const employee of employees) {

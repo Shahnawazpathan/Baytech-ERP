@@ -43,6 +43,12 @@ export function LeadsPool({ user, onLeadClaimed }: LeadsPoolProps) {
   const [showClaimDialog, setShowClaimDialog] = useState(false)
   const [claiming, setClaiming] = useState(false)
 
+  const normalizeLeads = (data: any): any[] => {
+    if (Array.isArray(data)) return data
+    if (data && Array.isArray(data.data)) return data.data
+    return []
+  }
+
   // Fetch leads pool
   const fetchLeadsPool = async () => {
     try {
@@ -57,8 +63,9 @@ export function LeadsPool({ user, onLeadClaimed }: LeadsPoolProps) {
       if (response.ok) {
         const result = await response.json()
         if (result.success) {
-          setLeads(result.data)
-          setFilteredLeads(result.data)
+          const parsed = normalizeLeads(result.data)
+          setLeads(parsed)
+          setFilteredLeads(parsed)
         }
       }
     } catch (error) {
@@ -75,7 +82,7 @@ export function LeadsPool({ user, onLeadClaimed }: LeadsPoolProps) {
 
   // Filter leads based on search and filters
   useEffect(() => {
-    let filtered = [...leads]
+    let filtered = [...normalizeLeads(leads)]
 
     // Search filter
     if (searchTerm) {
@@ -203,7 +210,7 @@ export function LeadsPool({ user, onLeadClaimed }: LeadsPoolProps) {
             <CardDescription>Total Available</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-blue-600">{leads.length}</div>
+            <div className="text-2xl font-bold text-blue-600">{normalizeLeads(leads).length}</div>
           </CardContent>
         </Card>
         <Card>
@@ -212,7 +219,7 @@ export function LeadsPool({ user, onLeadClaimed }: LeadsPoolProps) {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-green-600">
-              {leads.filter(l => !l.assignedToId).length}
+              {normalizeLeads(leads).filter(l => !l.assignedToId).length}
             </div>
           </CardContent>
         </Card>
@@ -222,7 +229,7 @@ export function LeadsPool({ user, onLeadClaimed }: LeadsPoolProps) {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-orange-600">
-              {leads.filter(l => l.priority === 'HIGH' || l.priority === 'URGENT').length}
+              {normalizeLeads(leads).filter(l => l.priority === 'HIGH' || l.priority === 'URGENT').length}
             </div>
           </CardContent>
         </Card>

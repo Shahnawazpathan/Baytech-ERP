@@ -58,7 +58,14 @@ export async function GET(request: NextRequest) {
     })
 
     // Lead trends by day
-    const leadTrends = []
+    const leadTrends: Array<{
+      date: string;
+      new: number;
+      contacted: number;
+      qualified: number;
+      converted: number;
+      total: number;
+    }> = []
     for (let i = daysAgo; i >= 0; i--) {
       const date = new Date()
       date.setDate(date.getDate() - i)

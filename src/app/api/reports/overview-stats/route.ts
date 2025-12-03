@@ -2,8 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { cache, createCacheKey } from '@/lib/cache'
 
-// Cache for 30 seconds to improve performance
-const CACHE_TTL = 30000
+// Cache for 2 minutes to improve performance
+const CACHE_TTL = 120000
 
 export async function GET(request: NextRequest) {
   try {
@@ -17,7 +17,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json(cachedStats, {
         headers: {
           'X-Cache': 'HIT',
-          'Cache-Control': 'public, max-age=30, stale-while-revalidate=60'
+          'Cache-Control': 'public, max-age=120, stale-while-revalidate=240'
         }
       })
     }
@@ -95,7 +95,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json(stats, {
       headers: {
         'X-Cache': 'MISS',
-        'Cache-Control': 'public, max-age=30, stale-while-revalidate=60'
+        'Cache-Control': 'public, max-age=120, stale-while-revalidate=240'
       }
     })
   } catch (error) {

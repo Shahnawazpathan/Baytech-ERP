@@ -5,43 +5,56 @@ export async function GET(request: NextRequest) {
   try {
     const companyId = request.headers.get('x-company-id') || 'default-company'
 
-    // Optimize: Only select necessary fields instead of fetching all
-    const leads = await db.lead.findMany({
-      where: {
-        companyId,
-        isActive: true
-      },
-      select: {
-        id: true,
-        leadNumber: true,
-        firstName: true,
-        lastName: true,
-        email: true,
-        phone: true,
-        loanAmount: true,
-        status: true,
-        priority: true,
-        assignedToId: true,
-        assignedAt: true,
-        address: true,
-        creditScore: true,
-        source: true,
-        createdAt: true,
-        updatedAt: true,
-        notes: true,
-        assignedTo: {
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true
+    // Parse pagination parameters
+    const { searchParams } = new URL(request.url)
+    const page = parseInt(searchParams.get('page') || '1')
+    const limit = parseInt(searchParams.get('limit') || '100')
+    const skip = (page - 1) * limit
+
+    const whereClause = {
+      companyId,
+      isActive: true
+    }
+
+    // Optimize: Run count and fetch in parallel
+    const [leads, total] = await Promise.all([
+      db.lead.findMany({
+        where: whereClause,
+        select: {
+          id: true,
+          leadNumber: true,
+          firstName: true,
+          lastName: true,
+          email: true,
+          phone: true,
+          loanAmount: true,
+          status: true,
+          priority: true,
+          assignedToId: true,
+          assignedAt: true,
+          address: true,
+          creditScore: true,
+          source: true,
+          createdAt: true,
+          updatedAt: true,
+          notes: true,
+          assignedTo: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true
+            }
           }
-        }
-      },
-      orderBy: [
-        { priority: 'desc' },
-        { createdAt: 'desc' }
-      ]
-    })
+        },
+        orderBy: [
+          { priority: 'desc' },
+          { createdAt: 'desc' }
+        ],
+        skip,
+        take: limit
+      }),
+      db.lead.count({ where: whereClause })
+    ])
 
     // Transform the data to match the expected format
     const transformedLeads = leads.map(lead => ({
@@ -65,7 +78,15 @@ export async function GET(request: NextRequest) {
       notes: lead.notes || ''
     }))
 
-    return NextResponse.json(transformedLeads)
+    return NextResponse.json({
+      data: transformedLeads,
+      pagination: {
+        total,
+        page,
+        limit,
+        pages: Math.ceil(total / limit)
+      }
+    })
   } catch (error) {
     console.error('Error fetching leads:', error)
     return NextResponse.json(
@@ -190,12 +211,12 @@ export async function PUT(request: NextRequest) {
       )
     }
 
-    const createdLeads = []
+    const createdLeads: any[] = []
     let employeeIndex = 0
 
     // Create leads with round-robin assignment
     for (const leadData of leads) {
-      let assignedEmployeeId = null
+      let assignedEmployeeId: string | null = null
 
       if (autoAssign && activeEmployees.length > 0) {
         // Round-robin assignment

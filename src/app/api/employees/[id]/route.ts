@@ -95,10 +95,10 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
 }
 
 // Get a single employee
-export async function GET(request: NextRequest, { params }: { params: { id: string } }) {
+export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const userId = request.headers.get('x-user-id');
-    const id = params.id;
+    const { id } = await params;
 
     // Check permission to READ employees
     if (userId) {
@@ -117,7 +117,7 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
     };
     
     // Fetch employee
-    let employee = null;
+    let employee: any = null;
     
     if (userId) {
       const requestingUser = await db.employee.findUnique({

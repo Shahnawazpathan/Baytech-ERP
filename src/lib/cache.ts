@@ -1,65 +1,79 @@
-// Simple in-memory cache for API responses
-interface CacheEntry<T> {
-  data: T
-  timestamp: number
-  ttl: number
-}
+import { unstable_cache } from 'next/cache';
 
-class Cache {
-  private cache: Map<string, CacheEntry<any>> = new Map()
+// Enhanced cache implementation with LRU eviction
+class SimpleCache {
+  private cache = new Map<string, { value: any; expiry: number }>();
+  private maxSize = 100; // Max 100 items in cache
 
-  set<T>(key: string, data: T, ttl: number = 60000): void {
-    this.cache.set(key, {
-      data,
-      timestamp: Date.now(),
-      ttl,
-    })
-  }
-
-  get<T>(key: string): T | null {
-    const entry = this.cache.get(key)
-    if (!entry) return null
-
-    const isExpired = Date.now() - entry.timestamp > entry.ttl
-    if (isExpired) {
-      this.cache.delete(key)
-      return null
+  set(key: string, value: any, ttl: number = 30000) {
+    // LRU eviction - remove oldest if cache is full
+    if (this.cache.size >= this.maxSize) {
+      const firstKey = this.cache.keys().next().value;
+      this.cache.delete(firstKey);
     }
 
-    return entry.data as T
+    const expiry = Date.now() + ttl;
+    this.cache.set(key, { value, expiry });
   }
 
-  delete(key: string): void {
-    this.cache.delete(key)
+  get(key: string) {
+    const item = this.cache.get(key);
+    if (!item) return undefined;
+
+    // Check if expired
+    if (Date.now() > item.expiry) {
+      this.cache.delete(key);
+      return undefined;
+    }
+
+    return item.value;
   }
 
-  clear(): void {
-    this.cache.clear()
+  delete(key: string) {
+    return this.cache.delete(key);
   }
 
-  // Clean expired entries
-  cleanup(): void {
-    const now = Date.now()
-    for (const [key, entry] of this.cache.entries()) {
-      if (now - entry.timestamp > entry.ttl) {
-        this.cache.delete(key)
+  clear() {
+    this.cache.clear();
+  }
+
+  // Cleanup expired items periodically
+  cleanup() {
+    const now = Date.now();
+    for (const [key, item] of this.cache.entries()) {
+      if (now > item.expiry) {
+        this.cache.delete(key);
       }
     }
   }
 }
 
-export const cache = new Cache()
+export const cache = new SimpleCache();
 
-// Auto cleanup every 5 minutes
-if (typeof window === 'undefined') {
-  setInterval(() => cache.cleanup(), 5 * 60 * 1000)
+// Run cleanup every 5 minutes
+if (typeof setInterval !== 'undefined') {
+  setInterval(() => cache.cleanup(), 5 * 60 * 1000);
 }
 
-// Helper function to create cache key
-export function createCacheKey(prefix: string, params: Record<string, any>): string {
-  const sortedParams = Object.keys(params)
+export const createCacheKey = (endpoint: string, params: Record<string, any> = {}): string => {
+  const paramString = Object.keys(params)
     .sort()
     .map(key => `${key}=${params[key]}`)
-    .join('&')
-  return `${prefix}:${sortedParams}`
+    .join('&');
+
+  return `${endpoint}${paramString ? `?${paramString}` : ''}`;
+};
+
+// Helper to create Next.js cached functions with automatic revalidation
+export function createCachedQuery<T>(
+  fn: (...args: any[]) => Promise<T>,
+  options: {
+    tags: string[];
+    revalidate?: number;
+  }
+) {
+  return unstable_cache(fn, options.tags, {
+    revalidate: options.revalidate || 300, // 5 minutes default
+    tags: options.tags
+  });
 }
