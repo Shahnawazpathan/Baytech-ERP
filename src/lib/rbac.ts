@@ -51,7 +51,7 @@ export async function hasPermission(userId: string, resource: string, action: st
  * Check multiple permissions at once
  */
 export async function hasMultiplePermissions(userId: string, permissions: PermissionCheck[]): Promise<boolean[]> {
-  const results = [];
+  const results: boolean[] = [];
   for (const perm of permissions) {
     results.push(await hasPermission(userId, perm.resource, perm.action));
   }

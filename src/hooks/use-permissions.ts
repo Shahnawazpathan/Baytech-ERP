@@ -57,10 +57,13 @@ export function usePermissions() {
         if (data?.map) {
           setPermissions(data.map);
         } else if (Array.isArray(data?.permissions)) {
-          const map = data.permissions.reduce<Record<string, boolean>>((acc, perm) => {
-            acc[`${perm.resource}_${perm.action}`] = true;
-            return acc;
-          }, {});
+          const map = (data.permissions as Array<{ resource: string; action: string }>).reduce(
+            (acc, perm) => {
+              acc[`${perm.resource}_${perm.action}`] = true;
+              return acc;
+            },
+            {} as Record<string, boolean>
+          );
           setPermissions(map);
         }
       } else {

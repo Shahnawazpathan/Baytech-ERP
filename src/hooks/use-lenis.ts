@@ -11,12 +11,6 @@ export function useLenis() {
     const lenis = new Lenis({
       duration: 1.2,
       easing: (t) => Math.min(1, 1.001 - Math.pow(2, -10 * t)),
-      direction: 'vertical',
-      gestureDirection: 'vertical',
-      smooth: true,
-      smoothTouch: false,
-      touchMultiplier: 2,
-      infinite: false,
     })
 
     lenisRef.current = lenis
@@ -66,7 +60,7 @@ export function useLenis() {
   const scrollToElement = (selector: string, options?: any) => {
     if (lenisRef.current) {
       const element = document.querySelector(selector)
-      if (element) {
+      if (element instanceof HTMLElement) {
         lenisRef.current.scrollTo(element, { 
           offset: -100,
           duration: 1.2,

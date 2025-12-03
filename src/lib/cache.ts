@@ -9,7 +9,9 @@ class SimpleCache {
     // LRU eviction - remove oldest if cache is full
     if (this.cache.size >= this.maxSize) {
       const firstKey = this.cache.keys().next().value;
-      this.cache.delete(firstKey);
+      if (firstKey !== undefined) {
+        this.cache.delete(firstKey);
+      }
     }
 
     const expiry = Date.now() + ttl;
