@@ -66,6 +66,48 @@ export const createCacheKey = (endpoint: string, params: Record<string, any> = {
   return `${endpoint}${paramString ? `?${paramString}` : ''}`;
 };
 
+/**
+ * Invalidate cache for a specific resource type
+ * This is useful when data is created, updated, or deleted
+ */
+export const invalidateCache = (resource: string, companyId?: string) => {
+  // Clear all cache entries that start with the resource name
+  const cacheInstance = cache as any;
+  const cacheMap = cacheInstance.cache as Map<string, any>;
+
+  const keysToDelete: string[] = [];
+  for (const [key] of cacheMap.entries()) {
+    if (key.startsWith(resource)) {
+      // If companyId is provided, only invalidate for that company
+      if (companyId && !key.includes(`companyId=${companyId}`)) {
+        continue;
+      }
+      keysToDelete.push(key);
+    }
+  }
+
+  keysToDelete.forEach(key => cache.delete(key));
+  return keysToDelete.length;
+};
+
+/**
+ * Invalidate all caches for a company
+ */
+export const invalidateCompanyCache = (companyId: string) => {
+  const cacheInstance = cache as any;
+  const cacheMap = cacheInstance.cache as Map<string, any>;
+
+  const keysToDelete: string[] = [];
+  for (const [key] of cacheMap.entries()) {
+    if (key.includes(`companyId=${companyId}`)) {
+      keysToDelete.push(key);
+    }
+  }
+
+  keysToDelete.forEach(key => cache.delete(key));
+  return keysToDelete.length;
+};
+
 // Helper to create Next.js cached functions with automatic revalidation
 export function createCachedQuery<T>(
   fn: (...args: any[]) => Promise<T>,

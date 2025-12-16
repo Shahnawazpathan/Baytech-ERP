@@ -10,16 +10,17 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
 import { useDebounce } from '@/hooks/use-debounce';
-import { 
-  Search, 
-  Download, 
+import {
+  Search,
+  Download,
   UserPlus,
   Upload,
   X,
   TrendingUp,
   Phone,
   DollarSign,
-  Users 
+  Users,
+  Trash2
 } from 'lucide-react';
 
 interface LeadManagementProps {
@@ -51,6 +52,8 @@ export function LeadManagement({
   const { toast } = useToast();
   const [showAddLeadModal, setShowAddLeadModal] = useState(false);
   const [editingLead, setEditingLead] = useState<any>(null);
+  const [selectedLeads, setSelectedLeads] = useState<string[]>([]);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [newLead, setNewLead] = useState({
     firstName: '',
     lastName: '',
@@ -179,7 +182,7 @@ export function LeadManagement({
   };
 
   const handleUpdateLead = async () => {
-    if (editingLead && newLead.firstName && newLead.lastName && newLead.email && newLead.phone) {
+    if (editingLead && newLead.firstName && newLead.phone) {
       try {
         const response = await fetch(`/api/leads/${editingLead.id}`, {
           method: 'PUT',
@@ -278,7 +281,7 @@ export function LeadManagement({
   };
 
   const handleAddLead = async () => {
-    if (newLead.firstName && newLead.lastName && newLead.email && newLead.phone) {
+    if (newLead.firstName && newLead.phone) {
       try {
         const response = await fetch('/api/leads', {
           method: 'POST',
@@ -338,7 +341,7 @@ export function LeadManagement({
     } else {
       toast({
         title: "Validation Error",
-        description: "Please fill in all required fields (First Name, Last Name, Email, Phone)",
+        description: "Please fill in all required fields (First Name, Phone)",
         variant: "destructive",
       })
     }
@@ -359,6 +362,64 @@ export function LeadManagement({
     setShowBulkImportModal(true)
   }
 
+  // Check if user has delete permissions (Admin or Manager)
+  const canDeleteLeads = user?.role === 'Administrator' || user?.role === 'Manager';
+
+  // Handle selecting individual leads
+  const handleSelectLead = (leadId: string) => {
+    setSelectedLeads(prev => {
+      if (prev.includes(leadId)) {
+        return prev.filter(id => id !== leadId);
+      } else {
+        return [...prev, leadId];
+      }
+    });
+  };
+
+  // Handle select all leads on current page
+  const handleSelectAll = () => {
+    if (selectedLeads.length === paginatedLeads.length) {
+      setSelectedLeads([]);
+    } else {
+      setSelectedLeads(paginatedLeads.map(lead => lead.id));
+    }
+  };
+
+  // Handle delete selected leads
+  const handleDeleteSelected = async () => {
+    if (selectedLeads.length === 0) return;
+
+    try {
+      const response = await fetch('/api/leads', {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-user-id': user?.id,
+          'x-company-id': user?.companyId
+        },
+        body: JSON.stringify({ leadIds: selectedLeads })
+      });
+
+      if (response.ok) {
+        toast({
+          title: "Success",
+          description: `${selectedLeads.length} lead(s) deleted successfully`,
+        });
+        setSelectedLeads([]);
+        setShowDeleteConfirm(false);
+        refreshData();
+      } else {
+        throw new Error('Failed to delete leads');
+      }
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to delete leads",
+        variant: "destructive",
+      });
+    }
+  };
+
   return (
     <div className="space-y-6">
       {/* Lead Management Header */}
@@ -368,6 +429,15 @@ export function LeadManagement({
           <p className="text-sm text-gray-500">Track and manage mortgage leads</p>
         </div>
         <div className="flex gap-2">
+          {canDeleteLeads && selectedLeads.length > 0 && (
+            <Button
+              variant="destructive"
+              onClick={() => setShowDeleteConfirm(true)}
+            >
+              <Trash2 className="h-4 w-4 mr-2" />
+              Delete Selected ({selectedLeads.length})
+            </Button>
+          )}
           <Button
             variant="outline"
             onClick={handleExportLeads}
@@ -520,10 +590,20 @@ export function LeadManagement({
               ))}
             </div>
           ) : (
-            <div className="overflow-x-auto">
+            <div className="overflow-x-auto max-h-[600px] overflow-y-auto">
               <table className="w-full">
                 <thead>
                   <tr className="border-b">
+                    {canDeleteLeads && (
+                      <th className="text-left p-3 w-12">
+                        <input
+                          type="checkbox"
+                          checked={paginatedLeads.length > 0 && selectedLeads.length === paginatedLeads.length}
+                          onChange={handleSelectAll}
+                          className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500"
+                        />
+                      </th>
+                    )}
                     <th className="text-left p-3">Lead</th>
                     <th className="text-left p-3">Contact</th>
                     <th className="text-left p-3">Loan Amount</th>
@@ -543,6 +623,16 @@ export function LeadManagement({
 
                     return (
                       <tr key={lead.id} className={`border-b hover:bg-gray-50 transition-colors ${isOverdue ? 'bg-red-50' : ''}`}>
+                        {canDeleteLeads && (
+                          <td className="p-3">
+                            <input
+                              type="checkbox"
+                              checked={selectedLeads.includes(lead.id)}
+                              onChange={() => handleSelectLead(lead.id)}
+                              className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500"
+                            />
+                          </td>
+                        )}
                         <td className="p-3">
                           <div className="flex items-center gap-3">
                             <Avatar>
@@ -605,7 +695,7 @@ export function LeadManagement({
                   })}
                   {filteredLeads.length === 0 && (
                     <tr>
-                      <td colSpan={9} className="p-3 text-center text-gray-500">
+                      <td colSpan={canDeleteLeads ? 10 : 9} className="p-3 text-center text-gray-500">
                         No leads found
                       </td>
                     </tr>
@@ -700,12 +790,12 @@ export function LeadManagement({
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="lastName">Last Name *</Label>
+                  <Label htmlFor="lastName">Last Name</Label>
                   <Input
                     id="lastName"
                     value={newLead.lastName}
                     onChange={(e) => handleLeadInputChange('lastName', e.target.value)}
-                    placeholder="Enter last name"
+                    placeholder="Enter last name (optional)"
                   />
                 </div>
                 <div className="space-y-2">
@@ -842,6 +932,45 @@ export function LeadManagement({
                 </Button>
                 <Button onClick={editingLead ? handleUpdateLead : handleAddLead} className="bg-blue-600 hover:bg-blue-700 text-white">
                   {editingLead ? 'Update Lead' : 'Add Lead'}
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {showDeleteConfirm && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-md w-full">
+            <div className="p-6">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="bg-red-100 rounded-full p-3">
+                  <Trash2 className="h-6 w-6 text-red-600" />
+                </div>
+                <div>
+                  <h3 className="text-xl font-semibold text-gray-900">Delete Leads</h3>
+                  <p className="text-sm text-gray-500">This action cannot be undone</p>
+                </div>
+              </div>
+
+              <p className="text-gray-700 mb-6">
+                Are you sure you want to delete {selectedLeads.length} lead{selectedLeads.length !== 1 ? 's' : ''}?
+                This will permanently remove {selectedLeads.length !== 1 ? 'them' : 'it'} from the system.
+              </p>
+
+              <div className="flex justify-end gap-2">
+                <Button
+                  variant="outline"
+                  onClick={() => setShowDeleteConfirm(false)}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  variant="destructive"
+                  onClick={handleDeleteSelected}
+                >
+                  Delete {selectedLeads.length} Lead{selectedLeads.length !== 1 ? 's' : ''}
                 </Button>
               </div>
             </div>

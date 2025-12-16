@@ -14,10 +14,10 @@ export async function GET(request: NextRequest) {
 
     const permissions = await getUserPermissions(userId);
 
-    const map = permissions.reduce<Record<string, boolean>>((acc, perm) => {
+    const map = permissions.reduce((acc, perm) => {
       acc[`${perm.resource}_${perm.action}`] = true;
       return acc;
-    }, {});
+    }, {} as Record<string, boolean>);
 
     return NextResponse.json({
       permissions,

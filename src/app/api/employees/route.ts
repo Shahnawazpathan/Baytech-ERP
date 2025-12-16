@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { hasPermission } from '@/lib/rbac'
+import { cache, createCacheKey } from '@/lib/cache'
 import bcrypt from 'bcrypt'
 
 export async function GET(request: NextRequest) {
@@ -13,6 +14,13 @@ export async function GET(request: NextRequest) {
     const page = parseInt(searchParams.get('page') || '1')
     const limit = parseInt(searchParams.get('limit') || '100')
     const skip = (page - 1) * limit
+
+    // Check cache first (include userId for role-based filtering)
+    const cacheKey = createCacheKey('employees', { companyId, userId: userId || 'anon', page, limit })
+    const cached = cache.get(cacheKey)
+    if (cached) {
+      return NextResponse.json(cached)
+    }
 
     // Check permission to READ employees
     if (userId) {
@@ -109,7 +117,7 @@ export async function GET(request: NextRequest) {
       roleId: emp.roleId
     }))
 
-    return NextResponse.json({
+    const response = {
       data: transformedEmployees,
       pagination: {
         total,
@@ -117,7 +125,12 @@ export async function GET(request: NextRequest) {
         limit,
         pages: Math.ceil(total / limit)
       }
-    })
+    }
+
+    // Cache for 60 seconds
+    cache.set(cacheKey, response, 60000)
+
+    return NextResponse.json(response)
   } catch (error) {
     console.error('Error fetching employees:', error)
     return NextResponse.json(

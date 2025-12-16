@@ -60,34 +60,22 @@ const nextConfig: NextConfig = {
   },
   webpack: (config, { dev, isServer }) => {
     if (dev) {
-      // Disable webpack hot module replacement in dev
+      // Optimize webpack watch for better HMR performance
       config.watchOptions = {
-        ignored: ['**/*'], // Ignore all file changes
+        ignored: ['**/node_modules/**', '**/.git/**', '**/.next/**'], // Only ignore specific directories
+        poll: false, // Use native file watching for better performance
+        aggregateTimeout: 300, // Delay rebuild after first change
       };
     }
 
-    // Add loaders for problematic file types
+    // Add loaders only for necessary file types
     config.module = config.module || {};
     config.module.rules = config.module.rules || [];
 
-    config.module.rules.push({
-      test: /\.(md|txt)$/,
-      use: 'raw-loader',
-    });
-
-    config.module.rules.push({
-      test: /LICENSE$/,
-      use: 'raw-loader',
-    });
-
+    // Only keep .node file loader for Prisma bindings
     config.module.rules.push({
       test: /\.node$/,
-      use: 'file-loader',
-    });
-
-    config.module.rules.push({
-      test: /\.d\.ts$/,
-      use: 'null-loader',
+      use: 'node-loader',
     });
 
     // Handle Prisma native bindings - exclude from webpack bundling

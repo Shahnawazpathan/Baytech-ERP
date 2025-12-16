@@ -1210,7 +1210,7 @@ export default function Home() {
 
   // Function to update a lead
   const handleUpdateLead = async () => {
-    if (editingLead && newLead.firstName && newLead.lastName && newLead.email && newLead.phone) {
+    if (editingLead && newLead.firstName && newLead.phone) {
       try {
         const response = await fetch(`/api/leads/${editingLead.id}`, {
           method: 'PUT',
@@ -1490,7 +1490,7 @@ export default function Home() {
 
   // Lead Form Functions
   const handleAddLead = async () => {
-    if (newLead.firstName && newLead.lastName && newLead.email && newLead.phone) {
+    if (newLead.firstName && newLead.phone) {
       try {
         const response = await fetch('/api/leads', {
           method: 'POST',
@@ -2209,10 +2209,11 @@ Average Credit Score: ${leadsList.length ? Math.round(leadsList.reduce((sum, lea
       <aside className={`
         ${sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
         ${sidebarOpen ? 'lg:w-64' : 'lg:w-16'}
-        fixed lg:relative
-        inset-y-0 left-0
+        fixed lg:sticky
+        inset-y-0 lg:top-0 left-0
         z-50 lg:z-auto
         w-64
+        lg:h-screen
         bg-white border-r border-gray-200 max-h-screen
         flex flex-col
         transition-all duration-300 ease-in-out
@@ -2366,9 +2367,9 @@ Average Credit Score: ${leadsList.length ? Math.round(leadsList.reduce((sum, lea
       </aside>
 
       {/* Main Content */}
-      <div className="flex-1 flex flex-col overflow-hidden min-w-0">
+      <div className="flex-1 flex flex-col min-w-0 h-screen overflow-hidden">
         {/* Header */}
-        <header className="bg-white border-b border-gray-200 px-4 sm:px-6 py-3 sm:py-4 sticky top-0 z-30">
+        <header className="bg-white border-b border-gray-200 px-4 sm:px-6 py-3 sm:py-4 flex-shrink-0 z-30">
           <div className="flex flex-wrap items-center justify-between gap-3 sm:gap-4">
             {/* Left Section - Mobile Menu + Title */}
             <div className="flex items-center gap-3 min-w-0 flex-1">

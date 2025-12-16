@@ -14,6 +14,15 @@ async function seed() {
   })
 
   try {
+    console.log('🧹 Clearing existing data (attendance, leads, tasks, notifications, employees)...')
+    await client.execute(`DELETE FROM attendance`);
+    await client.execute(`DELETE FROM lead_history`);
+    await client.execute(`DELETE FROM leads`);
+    await client.execute(`DELETE FROM tasks`);
+    await client.execute(`DELETE FROM notifications`);
+    await client.execute(`DELETE FROM audit_logs`);
+    await client.execute(`DELETE FROM employees`);
+
     // Create company
     const companyId = 'default-company'
     await client.execute({
@@ -148,82 +157,79 @@ async function seed() {
 
     // Create users
     const adminPassword = await bcrypt.hash('Admin@123', 10)
-    const managerPassword = await bcrypt.hash('Manager@123', 10)
     const employeePassword = await bcrypt.hash('Employee@123', 10)
 
-    await client.execute({
-      sql: `INSERT OR REPLACE INTO employees (id, employeeId, firstName, lastName, email, password, position, departmentId, roleId, hireDate, status, companyId, isActive, createdAt, updatedAt)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      args: [
-        'admin-user-001',
-        'ADMIN001',
-        'Admin',
-        'User',
-        'admin@baytech.com',
-        adminPassword,
-        'System Administrator',
-        adminDeptId,
-        adminRoleId,
-        new Date().toISOString(),
-        'ACTIVE',
-        companyId,
-        1,
-        new Date().toISOString(),
-        new Date().toISOString()
-      ]
-    })
+    const adminUsers = [
+      { id: 'admin-ehsan', employeeId: 'ADM001', firstName: 'Ehsan', lastName: 'Admin', email: 'ehsan@baytech-uae.com' },
+      { id: 'admin-main', employeeId: 'ADM002', firstName: 'System', lastName: 'Admin', email: 'admin@baytech-uae.com' },
+    ]
 
-    await client.execute({
-      sql: `INSERT OR REPLACE INTO employees (id, employeeId, firstName, lastName, email, password, position, departmentId, roleId, hireDate, status, companyId, isActive, createdAt, updatedAt)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      args: [
-        'manager-user-001',
-        'MGR001',
-        'Zohed',
-        'Siddique',
-        'zohed.siddique@baytech.com',
-        managerPassword,
-        'Manager',
-        managerDeptId,
-        managerRoleId,
-        new Date().toISOString(),
-        'ACTIVE',
-        companyId,
-        1,
-        new Date().toISOString(),
-        new Date().toISOString()
-      ]
-    })
+    const employeeUsers = [
+      { id: 'emp-zoheb', employeeId: 'EMP101', firstName: 'Zoheb', lastName: 'User', email: 'zoheb@baytech-uae.com' },
+      { id: 'emp-ragab', employeeId: 'EMP102', firstName: 'Ragab', lastName: 'User', email: 'ragab@baytech-uae.com' },
+      { id: 'emp-adem', employeeId: 'EMP103', firstName: 'Adem', lastName: 'User', email: 'adem@baytech-uae.com' },
+      { id: 'emp-gail', employeeId: 'EMP104', firstName: 'Gail', lastName: 'User', email: 'gail@baytech-uae.com' },
+    ]
 
-    await client.execute({
-      sql: `INSERT OR REPLACE INTO employees (id, employeeId, firstName, lastName, email, password, position, departmentId, roleId, hireDate, status, companyId, isActive, createdAt, updatedAt)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      args: [
-        'employee-user-001',
-        'EMP001',
-        'Regular',
-        'Employee',
-        'employee@baytech.com',
-        employeePassword,
-        'Staff Member',
-        employeeDeptId,
-        employeeRoleId,
-        new Date().toISOString(),
-        'ACTIVE',
-        companyId,
-        1,
-        new Date().toISOString(),
-        new Date().toISOString()
-      ]
-    })
+    for (const admin of adminUsers) {
+      await client.execute({
+        sql: `INSERT OR REPLACE INTO employees (id, employeeId, firstName, lastName, email, password, position, departmentId, roleId, hireDate, status, companyId, isActive, createdAt, updatedAt)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        args: [
+          admin.id,
+          admin.employeeId,
+          admin.firstName,
+          admin.lastName,
+          admin.email,
+          adminPassword,
+          'Administrator',
+          adminDeptId,
+          adminRoleId,
+          new Date().toISOString(),
+          'ACTIVE',
+          companyId,
+          1,
+          new Date().toISOString(),
+          new Date().toISOString()
+        ]
+      })
+    }
+
+    for (const emp of employeeUsers) {
+      await client.execute({
+        sql: `INSERT OR REPLACE INTO employees (id, employeeId, firstName, lastName, email, password, position, departmentId, roleId, hireDate, status, companyId, isActive, createdAt, updatedAt)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        args: [
+          emp.id,
+          emp.employeeId,
+          emp.firstName,
+          emp.lastName,
+          emp.email,
+          employeePassword,
+          'Employee',
+          employeeDeptId,
+          employeeRoleId,
+          new Date().toISOString(),
+          'ACTIVE',
+          companyId,
+          1,
+          new Date().toISOString(),
+          new Date().toISOString()
+        ]
+      })
+    }
 
     console.log('✅ Users created')
     console.log('\n📊 Seed Summary:')
     console.log('Company: Baytech Mortgage')
-    console.log('Users:')
-    console.log('  - admin@baytech.com (Password: Admin@123)')
-    console.log('  - zohed.siddique@baytech.com (Password: Manager@123)')
-    console.log('  - employee@baytech.com (Password: Employee@123)')
+    console.log('Admins:')
+    console.log('  - ehsan@baytech-uae.com (Password: Admin@123)')
+    console.log('  - admin@baytech-uae.com (Password: Admin@123)')
+    console.log('Employees:')
+    console.log('  - zoheb@baytech-uae.com (Password: Employee@123)')
+    console.log('  - ragab@baytech-uae.com (Password: Employee@123)')
+    console.log('  - adem@baytech-uae.com (Password: Employee@123)')
+    console.log('  - gail@baytech-uae.com (Password: Employee@123)')
     console.log('\n✅ Turso database seeded successfully!')
 
   } catch (error) {

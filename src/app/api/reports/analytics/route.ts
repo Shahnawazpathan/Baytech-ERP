@@ -1,11 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { cache, createCacheKey } from '@/lib/cache'
 
 export async function GET(request: NextRequest) {
   try {
     const companyId = request.headers.get('x-company-id') || 'default-company'
     const { searchParams } = new URL(request.url)
     const dateRange = searchParams.get('range') || '30' // days
+
+    // Check cache first
+    const cacheKey = createCacheKey('analytics', { companyId, dateRange })
+    const cached = cache.get(cacheKey)
+    if (cached) {
+      return NextResponse.json({ success: true, data: cached })
+    }
 
     const daysAgo = parseInt(dateRange)
     const startDate = new Date()
@@ -15,106 +23,113 @@ export async function GET(request: NextRequest) {
     const today = new Date()
     today.setHours(23, 59, 59, 999)
 
-    // Get all leads within date range
-    const leads = await db.lead.findMany({
-      where: {
-        companyId,
-        isActive: true,
-        createdAt: {
-          gte: startDate,
-          lte: today
-        }
-      },
-      include: {
-        assignedTo: {
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true,
-            department: {
-              select: {
-                name: true
-              }
+    // Fetch all leads once with optimized query
+    const [allLeads, statusCounts, priorityCounts, sourceCounts] = await Promise.all([
+      db.lead.findMany({
+        where: {
+          companyId,
+          isActive: true
+        },
+        select: {
+          id: true,
+          status: true,
+          priority: true,
+          source: true,
+          loanAmount: true,
+          createdAt: true,
+          assignedAt: true,
+          assignedToId: true,
+          assignedTo: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true
             }
           }
         }
-      }
+      }),
+      // Aggregate status distribution
+      db.lead.groupBy({
+        by: ['status'],
+        where: { companyId, isActive: true },
+        _count: true
+      }),
+      // Aggregate priority distribution
+      db.lead.groupBy({
+        by: ['priority'],
+        where: { companyId, isActive: true },
+        _count: true
+      }),
+      // Aggregate source distribution
+      db.lead.groupBy({
+        by: ['source'],
+        where: { companyId, isActive: true },
+        _count: true
+      })
+    ])
+
+    // Convert aggregated counts to distribution objects
+    const statusDistribution: Record<string, number> = {
+      NEW: 0,
+      CONTACTED: 0,
+      QUALIFIED: 0,
+      APPLICATION: 0,
+      APPROVED: 0,
+      REJECTED: 0,
+      CLOSED: 0,
+      JUNK: 0,
+      REAL: 0
+    }
+    statusCounts.forEach(item => {
+      statusDistribution[item.status] = item._count
     })
 
-    const allLeads = await db.lead.findMany({
-      where: {
-        companyId,
-        isActive: true
-      },
-      include: {
-        assignedTo: {
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true
-          }
-        }
-      }
+    const priorityDistribution: Record<string, number> = {
+      LOW: 0,
+      MEDIUM: 0,
+      HIGH: 0,
+      URGENT: 0
+    }
+    priorityCounts.forEach(item => {
+      priorityDistribution[item.priority] = item._count
     })
 
-    // Lead trends by day
-    const leadTrends: Array<{
-      date: string;
-      new: number;
-      contacted: number;
-      qualified: number;
-      converted: number;
-      total: number;
-    }> = []
+    const sources: Record<string, number> = {}
+    sourceCounts.forEach(item => {
+      sources[item.source || 'Unknown'] = item._count
+    })
+
+    // Lead trends by day (optimized - single loop)
+    const trendsMap = new Map<string, { new: number; contacted: number; qualified: number; converted: number; total: number }>()
+
     for (let i = daysAgo; i >= 0; i--) {
       const date = new Date()
       date.setDate(date.getDate() - i)
       date.setHours(0, 0, 0, 0)
-      const nextDate = new Date(date)
-      nextDate.setDate(nextDate.getDate() + 1)
+      const dateKey = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
 
-      const leadsOnDay = allLeads.filter(lead => {
-        const leadDate = new Date(lead.createdAt)
-        return leadDate >= date && leadDate < nextDate
-      })
-
-      leadTrends.push({
-        date: date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
-        new: leadsOnDay.filter(l => l.status === 'NEW').length,
-        contacted: leadsOnDay.filter(l => l.status === 'CONTACTED').length,
-        qualified: leadsOnDay.filter(l => l.status === 'QUALIFIED').length,
-        converted: leadsOnDay.filter(l => l.status === 'APPLICATION' || l.status === 'REAL').length,
-        total: leadsOnDay.length
-      })
+      trendsMap.set(dateKey, { new: 0, contacted: 0, qualified: 0, converted: 0, total: 0 })
     }
 
-    // Status distribution
-    const statusDistribution = {
-      NEW: allLeads.filter(l => l.status === 'NEW').length,
-      CONTACTED: allLeads.filter(l => l.status === 'CONTACTED').length,
-      QUALIFIED: allLeads.filter(l => l.status === 'QUALIFIED').length,
-      APPLICATION: allLeads.filter(l => l.status === 'APPLICATION').length,
-      APPROVED: allLeads.filter(l => l.status === 'APPROVED').length,
-      REJECTED: allLeads.filter(l => l.status === 'REJECTED').length,
-      CLOSED: allLeads.filter(l => l.status === 'CLOSED').length,
-      JUNK: allLeads.filter(l => l.status === 'JUNK').length,
-      REAL: allLeads.filter(l => l.status === 'REAL').length
-    }
+    // Single loop through leads to populate trends
+    allLeads.forEach(lead => {
+      const leadDate = new Date(lead.createdAt)
+      const dateKey = leadDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+      const dayData = trendsMap.get(dateKey)
 
-    // Priority distribution
-    const priorityDistribution = {
-      LOW: allLeads.filter(l => l.priority === 'LOW').length,
-      MEDIUM: allLeads.filter(l => l.priority === 'MEDIUM').length,
-      HIGH: allLeads.filter(l => l.priority === 'HIGH').length,
-      URGENT: allLeads.filter(l => l.priority === 'URGENT').length
-    }
+      if (dayData) {
+        dayData.total++
+        if (lead.status === 'NEW') dayData.new++
+        else if (lead.status === 'CONTACTED') dayData.contacted++
+        else if (lead.status === 'QUALIFIED') dayData.qualified++
+        else if (lead.status === 'APPLICATION' || lead.status === 'REAL') dayData.converted++
+      }
+    })
 
-    // Lead sources
-    const sources = allLeads.reduce((acc, lead) => {
-      const source = lead.source || 'Unknown'
-      acc[source] = (acc[source] || 0) + 1
-      return acc
-    }, {} as Record<string, number>)
+    const leadTrends = Array.from(trendsMap.entries()).map(([date, data]) => ({
+      date,
+      ...data
+    }))
 
     // Top performers (employees with most conversions)
     const employeePerformance = allLeads.reduce((acc, lead) => {
@@ -203,14 +218,15 @@ export async function GET(request: NextRequest) {
       }
     ]
 
-    // Department performance
+    // Department performance (optimized with _count aggregation)
     const departments = await db.department.findMany({
-      where: { companyId },
-      include: {
-        employees: {
-          where: { isActive: true },
-          include: {
-            leads: {
+      where: { companyId, isActive: true },
+      select: {
+        id: true,
+        name: true,
+        _count: {
+          select: {
+            employees: {
               where: { isActive: true }
             }
           }
@@ -218,45 +234,73 @@ export async function GET(request: NextRequest) {
       }
     })
 
-    const departmentStats = departments.map(dept => {
-      const totalLeads = dept.employees.reduce((sum, emp) => sum + emp.leads.length, 0)
-      const convertedLeads = dept.employees.reduce((sum, emp) =>
-        sum + emp.leads.filter(l => l.status === 'APPLICATION' || l.status === 'APPROVED' || l.status === 'REAL').length, 0
-      )
+    // Calculate department stats from allLeads data
+    const departmentStatsMap = new Map<string, { totalLeads: number; converted: number }>()
 
-      return {
-        name: dept.name,
-        employees: dept.employees.length,
-        totalLeads,
-        converted: convertedLeads,
-        conversionRate: totalLeads > 0 ? (convertedLeads / totalLeads) * 100 : 0
+    // Get employee-department mapping
+    const employees = await db.employee.findMany({
+      where: { companyId, isActive: true },
+      select: { id: true, departmentId: true }
+    })
+    const empDeptMap = new Map(employees.map(e => [e.id, e.departmentId]))
+
+    // Aggregate leads by department
+    allLeads.forEach(lead => {
+      if (lead.assignedToId) {
+        const deptId = empDeptMap.get(lead.assignedToId)
+        if (deptId) {
+          if (!departmentStatsMap.has(deptId)) {
+            departmentStatsMap.set(deptId, { totalLeads: 0, converted: 0 })
+          }
+          const stats = departmentStatsMap.get(deptId)!
+          stats.totalLeads++
+          if (lead.status === 'APPLICATION' || lead.status === 'APPROVED' || lead.status === 'REAL') {
+            stats.converted++
+          }
+        }
       }
     })
 
+    const departmentStats = departments.map(dept => {
+      const stats = departmentStatsMap.get(dept.id) || { totalLeads: 0, converted: 0 }
+      return {
+        name: dept.name,
+        employees: dept._count.employees,
+        totalLeads: stats.totalLeads,
+        converted: stats.converted,
+        conversionRate: stats.totalLeads > 0 ? (stats.converted / stats.totalLeads) * 100 : 0
+      }
+    })
+
+    const analyticsData = {
+      overview: {
+        totalLeads: allLeads.length,
+        activeLeads: allLeads.filter(l => ['NEW', 'CONTACTED', 'QUALIFIED'].includes(l.status) && l.status !== 'JUNK').length,
+        convertedLeads: statusDistribution.APPLICATION + statusDistribution.APPROVED + statusDistribution.REAL,
+        conversionRate: allLeads.length > 0
+          ? ((statusDistribution.APPLICATION + statusDistribution.APPROVED + statusDistribution.REAL) / allLeads.length) * 100
+          : 0,
+        totalRevenuePotential,
+        convertedRevenue,
+        pipelineRevenue,
+        avgResponseTime,
+        responseRate
+      },
+      trends: leadTrends,
+      statusDistribution,
+      priorityDistribution,
+      sources,
+      topPerformers,
+      funnel,
+      departmentStats
+    }
+
+    // Cache for 2 minutes
+    cache.set(cacheKey, analyticsData, 120000)
+
     return NextResponse.json({
       success: true,
-      data: {
-        overview: {
-          totalLeads: allLeads.length,
-          activeLeads: allLeads.filter(l => ['NEW', 'CONTACTED', 'QUALIFIED'].includes(l.status) && l.status !== 'JUNK').length,
-          convertedLeads: statusDistribution.APPLICATION + statusDistribution.APPROVED + statusDistribution.REAL,
-          conversionRate: allLeads.length > 0
-            ? ((statusDistribution.APPLICATION + statusDistribution.APPROVED + statusDistribution.REAL) / allLeads.length) * 100
-            : 0,
-          totalRevenuePotential,
-          convertedRevenue,
-          pipelineRevenue,
-          avgResponseTime,
-          responseRate
-        },
-        trends: leadTrends,
-        statusDistribution,
-        priorityDistribution,
-        sources,
-        topPerformers,
-        funnel,
-        departmentStats
-      }
+      data: analyticsData
     })
   } catch (error) {
     console.error('Error fetching analytics:', error)

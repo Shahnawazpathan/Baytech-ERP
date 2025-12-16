@@ -275,9 +275,28 @@ export async function PUT(request: NextRequest) {
       assignments[employees[0].id] = leadIds
     }
 
-    // Process all assignments
-    const updatedLeads: any[] = []
+    // Process all assignments using batch operations (transaction)
     const employeeNotifications: { [key: string]: number } = {}
+    const now = new Date()
+
+    // Prepare all history records
+    const historyRecords: Array<{
+      leadId: string;
+      employeeId: string;
+      action: string;
+      oldValue: string;
+      newValue: string;
+      notes: string;
+    }> = []
+    const notificationRecords: Array<{
+      title: string;
+      message: string;
+      type: string;
+      category: string;
+      companyId: string;
+      employeeId: string;
+      metadata: string;
+    }> = []
 
     for (const employee of employees) {
       const employeeLeadIds = assignments[employee.id]
@@ -285,55 +304,74 @@ export async function PUT(request: NextRequest) {
 
       employeeNotifications[employee.id] = employeeLeadIds.length
 
+      // Prepare history records for this batch
       for (const leadId of employeeLeadIds) {
         const lead = leads.find(l => l.id === leadId)
         if (!lead) continue
 
-        const updatedLead = await db.lead.update({
-          where: { id: leadId },
-          data: {
-            assignedToId: employee.id,
-            assignedAt: new Date()
-          }
-        })
-
-        // Create lead history
-        await db.leadHistory.create({
-          data: {
-            leadId,
-            employeeId: employee.id,
-            action: 'BULK_ASSIGNED',
-            oldValue: JSON.stringify({ assignedToId: lead.assignedToId }),
-            newValue: JSON.stringify({ assignedToId: employee.id }),
-            notes: `Bulk assigned to ${employee.firstName} ${employee.lastName} using ${strategy} strategy`
-          }
-        })
-
-        updatedLeads.push(updatedLead)
-      }
-    }
-
-    // Create notifications for each employee
-    for (const employee of employees) {
-      const count = employeeNotifications[employee.id] || 0
-      if (count === 0) continue
-
-      await db.notification.create({
-        data: {
-          title: 'Bulk Lead Assignment',
-          message: `${count} lead${count > 1 ? 's have' : ' has'} been assigned to you`,
-          type: 'INFO',
-          category: 'LEAD',
-          companyId: employee.companyId,
+        historyRecords.push({
+          leadId,
           employeeId: employee.id,
-          metadata: JSON.stringify({
-            leadIds: assignments[employee.id],
-            count,
-            strategy
-          })
-        }
+          action: 'BULK_ASSIGNED',
+          oldValue: JSON.stringify({ assignedToId: lead.assignedToId }),
+          newValue: JSON.stringify({ assignedToId: employee.id }),
+          notes: `Bulk assigned to ${employee.firstName} ${employee.lastName} using ${strategy} strategy`
+        })
+      }
+
+      // Prepare notification for this employee
+      notificationRecords.push({
+        title: 'Bulk Lead Assignment',
+        message: `${employeeLeadIds.length} lead${employeeLeadIds.length > 1 ? 's have' : ' has'} been assigned to you`,
+        type: 'INFO',
+        category: 'LEAD',
+        companyId: employee.companyId,
+        employeeId: employee.id,
+        metadata: JSON.stringify({
+          leadIds: employeeLeadIds,
+          count: employeeLeadIds.length,
+          strategy
+        })
       })
     }
+
+    // Execute all updates in a single transaction
+    await db.$transaction([
+      // Update all leads in batches per employee
+      ...employees.flatMap(employee => {
+        const employeeLeadIds = assignments[employee.id]
+        if (employeeLeadIds.length === 0) return []
+
+        return [
+          db.lead.updateMany({
+            where: { id: { in: employeeLeadIds } },
+            data: {
+              assignedToId: employee.id,
+              assignedAt: now
+            }
+          })
+        ]
+      }),
+      // Create all history records at once
+      db.leadHistory.createMany({
+        data: historyRecords
+      }),
+      // Create all notifications at once
+      db.notification.createMany({
+        data: notificationRecords
+      })
+    ])
+
+    // Get updated leads for response
+    const updatedLeads = await db.lead.findMany({
+      where: { id: { in: leadIds } },
+      select: {
+        id: true,
+        leadNumber: true,
+        assignedToId: true,
+        assignedAt: true
+      }
+    })
 
     return NextResponse.json({
       success: true,

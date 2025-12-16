@@ -1,6 +1,3 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -10,149 +7,140 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// Multi-tenant Company Model
 model Company {
-  id          String   @id @default(cuid())
-  name        String   @unique
-  description String?
-  address     String?
-  phone       String?
-  email       String?
-  website     String?
-  logo        String?
-  isActive    Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  // Relations
-  employees    Employee[]
-  departments  Department[]
-  roles        Role[]
-  permissions  Permission[]
-  leads        Lead[]
-  attendance   Attendance[]
-  auditLogs    AuditLog[]
-  notifications Notification[]
+  id                String             @id @default(cuid())
+  name              String             @unique
+  description       String?
+  address           String?
+  phone             String?
+  email             String?
+  website           String?
+  logo              String?
+  isActive          Boolean            @default(true)
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+  attendance        Attendance[]
+  auditLogs         AuditLog[]
+  automationRules   AutomationRule[]
+  departments       Department[]
+  emailSequences    EmailSequence[]
+  employees         Employee[]
+  followUpReminders FollowUpReminder[]
   geofenceLocations GeofenceLocation[]
-  tasks        Task[]
+  leads             Lead[]
+  notifications     Notification[]
+  permissions       Permission[]
+  roles             Role[]
+  slaViolations     SLAViolation[]
+  slas              SLA[]
+  tasks             Task[]
 
   @@map("companies")
 }
 
-// Department Model
 model Department {
-  id          String   @id @default(cuid())
+  id          String     @id @default(cuid())
   name        String
   description String?
   companyId   String
-  managerId   String?
-  isActive    Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  managerId   String?    @unique
+  isActive    Boolean    @default(true)
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+  manager     Employee?  @relation("DepartmentManager", fields: [managerId], references: [id])
+  company     Company    @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  employees   Employee[]
 
-  // Relations
-  company  Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  manager  Employee? @relation("DepartmentManager", fields: [managerId], references: [id])
-  employees Employee[]
-  
   @@unique([companyId, name])
-  @@unique([managerId])
   @@map("departments")
 }
 
-// Role Model
 model Role {
-  id          String   @id @default(cuid())
+  id          String           @id @default(cuid())
   name        String
   description String?
   companyId   String
-  isActive    Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  // Relations
-  company     Company       @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  permissions RolePermission[]
+  isActive    Boolean          @default(true)
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
   employees   Employee[]
-  
+  permissions RolePermission[]
+  company     Company          @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
   @@unique([companyId, name])
   @@map("roles")
 }
 
-// Permission Model
 model Permission {
-  id          String   @id @default(cuid())
+  id          String           @id @default(cuid())
   name        String
   description String?
   resource    String
-  action      String   // CREATE, READ, UPDATE, DELETE, etc.
+  action      String
   companyId   String
-  isActive    Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  // Relations
-  company     Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  isActive    Boolean          @default(true)
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+  company     Company          @relation(fields: [companyId], references: [id], onDelete: Cascade)
   roles       RolePermission[]
-  
+
   @@unique([companyId, resource, action])
   @@map("permissions")
 }
 
-// Role-Permission Junction Table
 model RolePermission {
-  id           String @id @default(cuid())
+  id           String     @id @default(cuid())
   roleId       String
   permissionId String
-  createdAt    DateTime @default(now())
+  createdAt    DateTime   @default(now())
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+  role         Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
 
-  // Relations
-  role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
-  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
-  
   @@unique([roleId, permissionId])
   @@map("role_permissions")
 }
 
-// Employee Model
 model Employee {
-  id            String   @id @default(cuid())
-  employeeId    String   @unique // Unique employee identifier
-  firstName     String
-  lastName      String
-  email         String   @unique
-  phone         String?
-  address       String?
-  dateOfBirth   DateTime?
-  hireDate      DateTime
-  terminationDate DateTime?
-  position      String
-  departmentId  String
-  roleId        String
-  managerId     String? // For hierarchical structure
-  salary        Float?
-  status        String   @default("ACTIVE") // ACTIVE, INACTIVE, TERMINATED, ON_LEAVE
-  profileImage  String?
-  password      String?  // Hashed password for authentication
-  companyId     String
-  isActive      Boolean  @default(true)
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
-
-  // Relations
-  company     Company      @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  department  Department   @relation(fields: [departmentId], references: [id])
-  role        Role         @relation(fields: [roleId], references: [id])
-  manager     Employee?    @relation("EmployeeManager", fields: [managerId], references: [id])
-  subordinates Employee[]  @relation("EmployeeManager")
-  departmentManager Department? @relation("DepartmentManager")
-  leads       Lead[]
-  attendance  Attendance[]
-  auditLogs   AuditLog[]
-  notifications Notification[]
-  leadHistory LeadHistory[]
-  tasksAssigned Task[]     @relation("TaskAssignee")
-  tasksCreated  Task[]     @relation("TaskCreator")
+  id                     String                @id @default(cuid())
+  employeeId             String                @unique
+  firstName              String
+  lastName               String
+  email                  String                @unique
+  phone                  String?
+  address                String?
+  dateOfBirth            DateTime?
+  hireDate               DateTime
+  terminationDate        DateTime?
+  position               String
+  departmentId           String
+  roleId                 String
+  managerId              String?
+  salary                 Float?
+  status                 String                @default("ACTIVE")
+  profileImage           String?
+  companyId              String
+  isActive               Boolean               @default(true)
+  createdAt              DateTime              @default(now())
+  updatedAt              DateTime              @updatedAt
+  password               String?
+  attendance             Attendance[]
+  auditLogs              AuditLog[]
+  automationExecutions   AutomationExecution[]
+  automationRulesCreated AutomationRule[]
+  departmentManager      Department?           @relation("DepartmentManager")
+  emailSequencesCreated  EmailSequence[]
+  manager                Employee?             @relation("EmployeeManager", fields: [managerId], references: [id])
+  subordinates           Employee[]            @relation("EmployeeManager")
+  role                   Role                  @relation(fields: [roleId], references: [id])
+  department             Department            @relation(fields: [departmentId], references: [id])
+  company                Company               @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  followUpReminders      FollowUpReminder[]
+  leadHistory            LeadHistory[]
+  leads                  Lead[]
+  notifications          Notification[]
+  slaViolations          SLAViolation[]
+  tasksCreated           Task[]                @relation("TaskCreator")
+  tasksAssigned          Task[]                @relation("TaskAssignee")
 
   @@index([companyId])
   @@index([status])
@@ -164,42 +152,43 @@ model Employee {
   @@index([email])
   @@index([companyId, departmentId, status])
   @@index([managerId])
-
   @@map("employees")
 }
 
-// Lead Model
 model Lead {
-  id              String   @id @default(cuid())
-  leadNumber      String   @unique // Unique lead identifier
-  firstName       String
-  lastName        String
-  email           String?
-  phone           String
-  address         String?
-  loanAmount      Float?
-  propertyType    String?
-  propertyValue   Float?
-  creditScore     Int?
-  income          Float?
-  source          String   // Website, Referral, Campaign, etc.
-  status          String   @default("NEW") // NEW, CONTACTED, QUALIFIED, APPLICATION, APPROVED, REJECTED, CLOSED
-  priority        String   @default("MEDIUM") // LOW, MEDIUM, HIGH, URGENT
-  assignedToId    String?
-  companyId       String
-  notes           String?
-  tags            String?  // JSON array of tags
-  metadata        String?  // JSON for additional fields
-  assignedAt      DateTime?
-  contactedAt     DateTime?
-  isActive        Boolean  @default(true)
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-
-  // Relations
-  company   Company    @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  assignedTo Employee?  @relation(fields: [assignedToId], references: [id])
-  history   LeadHistory[]
+  id                       String                    @id @default(cuid())
+  leadNumber               String                    @unique
+  firstName                String
+  lastName                 String?
+  email                    String?
+  phone                    String
+  address                  String?
+  loanAmount               Float?
+  propertyType             String?
+  propertyValue            Float?
+  creditScore              Int?
+  income                   Float?
+  source                   String
+  status                   String                    @default("NEW")
+  priority                 String                    @default("MEDIUM")
+  assignedToId             String?
+  companyId                String
+  notes                    String?
+  tags                     String?
+  metadata                 String?
+  assignedAt               DateTime?
+  contactedAt              DateTime?
+  isActive                 Boolean                   @default(true)
+  createdAt                DateTime                  @default(now())
+  updatedAt                DateTime                  @updatedAt
+  automationExecutions     AutomationExecution[]
+  emailSequenceEnrollments EmailSequenceEnrollment[]
+  followUpReminders        FollowUpReminder[]
+  history                  LeadHistory[]
+  company                  Company                   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  assignedTo               Employee?                 @relation(fields: [assignedToId], references: [id])
+  sentEmails               SentEmail[]
+  slaViolations            SLAViolation[]
 
   @@index([assignedToId])
   @@index([status])
@@ -212,77 +201,69 @@ model Lead {
   @@index([companyId, createdAt])
   @@index([assignedToId, contactedAt])
   @@index([status, assignedAt])
-
+  @@index([status, assignedAt, createdAt])
+  @@index([companyId, assignedToId, status])
+  @@index([isActive, status, priority])
   @@map("leads")
 }
 
-// Lead History Model for tracking lead lifecycle
 model LeadHistory {
-  id          String   @id @default(cuid())
-  leadId      String
-  employeeId  String?
-  action      String   // CREATED, ASSIGNED, STATUS_CHANGED, NOTE_ADDED, etc.
-  oldValue    String?  // JSON for previous state
-  newValue    String?  // JSON for new state
-  notes       String?
-  createdAt   DateTime @default(now())
-
-  // Relations
-  lead     Lead     @relation(fields: [leadId], references: [id], onDelete: Cascade)
-  employee Employee? @relation(fields: [employeeId], references: [id])
+  id         String    @id @default(cuid())
+  leadId     String
+  employeeId String?
+  action     String
+  oldValue   String?
+  newValue   String?
+  notes      String?
+  createdAt  DateTime  @default(now())
+  employee   Employee? @relation(fields: [employeeId], references: [id])
+  lead       Lead      @relation(fields: [leadId], references: [id], onDelete: Cascade)
 
   @@index([leadId, createdAt])
   @@index([employeeId])
-
   @@map("lead_history")
 }
 
-// Geofence Location Model
 model GeofenceLocation {
-  id          String   @id @default(cuid())
-  name        String
-  address     String
-  latitude    Float
-  longitude   Float
-  radius      Int      @default(100) // in meters
-  companyId   String
-  isActive    Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  // Relations
-  company  Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  id        String   @id @default(cuid())
+  name      String
+  address   String
+  latitude  Float
+  longitude Float
+  radius    Int      @default(100)
+  companyId String
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  company   Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
   @@map("geofence_locations")
 }
 
-// Attendance Model
 model Attendance {
-  id            String   @id @default(cuid())
-  employeeId    String
-  companyId     String
-  checkInTime   DateTime
-  checkOutTime  DateTime?
-  checkInLat    Float?   // GPS coordinates
-  checkInLng    Float?
-  checkOutLat   Float?
-  checkOutLng   Float?
-  checkInAddress String?
+  id              String    @id @default(cuid())
+  employeeId      String
+  companyId       String
+  checkInTime     DateTime
+  checkOutTime    DateTime?
+  checkInLat      Float?
+  checkInLng      Float?
+  checkOutLat     Float?
+  checkOutLng     Float?
+  checkInAddress  String?
   checkOutAddress String?
-  breakStartTime DateTime?
-  breakEndTime  DateTime?
-  totalHours    Float?
-  status        String   @default("PRESENT") // PRESENT, ABSENT, LATE, HALF_DAY
-  notes         String?
-  isVerified    Boolean  @default(false)
-  locationId    String?  // Reference to geofence location
-  locationName  String?  // Name of the location for reference
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
-
-  // Relations
-  company  Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  employee Employee @relation(fields: [employeeId], references: [id])
+  breakStartTime  DateTime?
+  breakEndTime    DateTime?
+  totalHours      Float?
+  status          String    @default("PRESENT")
+  notes           String?
+  isVerified      Boolean   @default(false)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  locationId      String?
+  locationName    String?
+  employee        Employee  @relation(fields: [employeeId], references: [id])
+  company         Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
   @@index([employeeId])
   @@index([companyId])
@@ -292,94 +273,284 @@ model Attendance {
   @@index([status])
   @@index([companyId, status])
   @@index([companyId, employeeId, checkInTime])
-
+  @@index([employeeId, status])
+  @@index([companyId, status, checkInTime])
   @@map("attendance")
 }
 
-// Task Model
 model Task {
-  id            String   @id @default(cuid())
+  id            String         @id @default(cuid())
   title         String
   description   String?
-  status        String   @default("TODO") // TODO, IN_PROGRESS, DONE, CANCELLED
-  priority      String   @default("MEDIUM") // LOW, MEDIUM, HIGH, URGENT
+  status        String         @default("TODO")
+  priority      String         @default("MEDIUM")
   category      String?
-  tags          String?  // JSON array of tags
+  tags          String?
   dueDate       DateTime?
   completedAt   DateTime?
   assignedToId  String
   assignedById  String
   companyId     String
-  isActive      Boolean  @default(true)
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
-
-  // Relations
-  company    Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  assignedTo Employee @relation("TaskAssignee", fields: [assignedToId], references: [id])
-  assignedBy Employee @relation("TaskCreator", fields: [assignedById], references: [id])
+  isActive      Boolean        @default(true)
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  slaViolations SLAViolation[]
+  assignedBy    Employee       @relation("TaskCreator", fields: [assignedById], references: [id])
+  assignedTo    Employee       @relation("TaskAssignee", fields: [assignedToId], references: [id])
+  company       Company        @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
   @@index([assignedToId, status])
   @@index([companyId, status])
   @@index([dueDate])
-
+  @@index([companyId, assignedToId, status])
+  @@index([status, dueDate])
+  @@index([companyId, dueDate])
   @@map("tasks")
 }
 
-// Notification Model
 model Notification {
-  id        String   @id @default(cuid())
-  title     String
-  message   String
-  type      String   // INFO, WARNING, ERROR, SUCCESS
-  category  String   // LEAD, ATTENDANCE, SYSTEM, etc.
-  companyId String
+  id         String    @id @default(cuid())
+  title      String
+  message    String
+  type       String
+  category   String
+  companyId  String
   employeeId String?
-  isRead    Boolean  @default(false)
-  metadata  String?  // JSON for additional data
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  // Relations
-  company  Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  employee Employee? @relation(fields: [employeeId], references: [id])
+  isRead     Boolean   @default(false)
+  metadata   String?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  employee   Employee? @relation(fields: [employeeId], references: [id])
+  company    Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
   @@index([employeeId, isRead])
   @@index([companyId, createdAt])
   @@index([employeeId, createdAt])
-
   @@map("notifications")
 }
 
-// Audit Log Model for tracking all critical operations
 model AuditLog {
-  id          String   @id @default(cuid())
-  action      String   // CREATE, UPDATE, DELETE, LOGIN, etc.
-  entity      String   // Employee, Lead, Attendance, etc.
-  entityId    String
-  employeeId  String?
-  companyId   String
-  oldValues   String?  // JSON for previous state
-  newValues   String?  // JSON for new state
-  ipAddress   String?
-  userAgent   String?
-  createdAt   DateTime @default(now())
-
-  // Relations
-  company  Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  employee Employee? @relation(fields: [employeeId], references: [id])
+  id         String    @id @default(cuid())
+  action     String
+  entity     String
+  entityId   String
+  employeeId String?
+  companyId  String
+  oldValues  String?
+  newValues  String?
+  ipAddress  String?
+  userAgent  String?
+  createdAt  DateTime  @default(now())
+  employee   Employee? @relation(fields: [employeeId], references: [id])
+  company    Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
   @@map("audit_logs")
 }
 
-// Password Reset Token Model
 model PasswordResetToken {
-  id         String   @id @default(cuid())
-  email      String   // Store email instead of employeeId to allow reset even if account is deleted
-  token      String   @unique
-  expiresAt  DateTime
-  usedAt     DateTime?
-  createdAt  DateTime @default(now())
+  id        String    @id @default(cuid())
+  email     String
+  token     String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
 
   @@map("password_reset_tokens")
+}
+
+model AutomationRule {
+  id          String                @id @default(cuid())
+  name        String
+  description String?
+  companyId   String
+  trigger     String
+  conditions  String
+  actions     String
+  isActive    Boolean               @default(true)
+  priority    Int                   @default(0)
+  createdById String
+  createdAt   DateTime              @default(now())
+  updatedAt   DateTime              @updatedAt
+  executions  AutomationExecution[]
+  company     Company               @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  createdBy   Employee              @relation(fields: [createdById], references: [id])
+
+  @@index([companyId, isActive])
+  @@index([trigger, isActive])
+  @@map("automation_rules")
+}
+
+model AutomationExecution {
+  id         String         @id @default(cuid())
+  ruleId     String
+  leadId     String?
+  employeeId String?
+  status     String
+  result     String?
+  error      String?
+  executedAt DateTime       @default(now())
+  rule       AutomationRule @relation(fields: [ruleId], references: [id], onDelete: Cascade)
+  lead       Lead?          @relation(fields: [leadId], references: [id])
+  employee   Employee?      @relation(fields: [employeeId], references: [id])
+
+  @@index([ruleId, executedAt])
+  @@index([leadId, executedAt])
+  @@index([status, executedAt])
+  @@map("automation_executions")
+}
+
+model SLA {
+  id          String         @id @default(cuid())
+  name        String
+  description String?
+  companyId   String
+  entityType  String
+  conditions  String
+  targetTime  Int
+  warningTime Int?
+  isActive    Boolean        @default(true)
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+  violations  SLAViolation[]
+  company     Company        @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([companyId, isActive])
+  @@index([entityType, isActive])
+  @@map("slas")
+}
+
+model SLAViolation {
+  id         String    @id @default(cuid())
+  slaId      String
+  leadId     String?
+  taskId     String?
+  employeeId String?
+  companyId  String
+  startTime  DateTime
+  dueTime    DateTime
+  resolvedAt DateTime?
+  violatedAt DateTime?
+  isViolated Boolean   @default(false)
+  metadata   String?
+  createdAt  DateTime  @default(now())
+  sla        SLA       @relation(fields: [slaId], references: [id], onDelete: Cascade)
+  lead       Lead?     @relation(fields: [leadId], references: [id])
+  task       Task?     @relation(fields: [taskId], references: [id])
+  employee   Employee? @relation(fields: [employeeId], references: [id])
+  company    Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([slaId, isViolated])
+  @@index([leadId, isViolated])
+  @@index([companyId, dueTime])
+  @@index([isViolated, dueTime])
+  @@map("sla_violations")
+}
+
+model EmailSequence {
+  id          String                    @id @default(cuid())
+  name        String
+  description String?
+  companyId   String
+  trigger     String
+  conditions  String?
+  isActive    Boolean                   @default(true)
+  createdById String
+  createdAt   DateTime                  @default(now())
+  updatedAt   DateTime                  @updatedAt
+  enrollments EmailSequenceEnrollment[]
+  steps       EmailSequenceStep[]
+  company     Company                   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  createdBy   Employee                  @relation(fields: [createdById], references: [id])
+
+  @@index([companyId, isActive])
+  @@index([trigger, isActive])
+  @@map("email_sequences")
+}
+
+model EmailSequenceStep {
+  id         String        @id @default(cuid())
+  sequenceId String
+  stepNumber Int
+  subject    String
+  bodyText   String
+  bodyHtml   String?
+  delayDays  Int           @default(0)
+  delayHours Int           @default(0)
+  isActive   Boolean       @default(true)
+  createdAt  DateTime      @default(now())
+  updatedAt  DateTime      @updatedAt
+  sequence   EmailSequence @relation(fields: [sequenceId], references: [id], onDelete: Cascade)
+  sentEmails SentEmail[]
+
+  @@unique([sequenceId, stepNumber])
+  @@index([sequenceId, stepNumber])
+  @@map("email_sequence_steps")
+}
+
+model EmailSequenceEnrollment {
+  id          String        @id @default(cuid())
+  sequenceId  String
+  leadId      String
+  currentStep Int           @default(0)
+  status      String        @default("ACTIVE")
+  enrolledAt  DateTime      @default(now())
+  completedAt DateTime?
+  pausedAt    DateTime?
+  sequence    EmailSequence @relation(fields: [sequenceId], references: [id], onDelete: Cascade)
+  lead        Lead          @relation(fields: [leadId], references: [id], onDelete: Cascade)
+
+  @@unique([sequenceId, leadId])
+  @@index([sequenceId, status])
+  @@index([leadId, status])
+  @@index([status, enrolledAt])
+  @@map("email_sequence_enrollments")
+}
+
+model SentEmail {
+  id        String            @id @default(cuid())
+  stepId    String
+  leadId    String
+  toEmail   String
+  subject   String
+  bodyHtml  String?
+  bodyText  String
+  status    String
+  sentAt    DateTime          @default(now())
+  openedAt  DateTime?
+  clickedAt DateTime?
+  error     String?
+  step      EmailSequenceStep @relation(fields: [stepId], references: [id], onDelete: Cascade)
+  lead      Lead              @relation(fields: [leadId], references: [id], onDelete: Cascade)
+
+  @@index([stepId, sentAt])
+  @@index([leadId, sentAt])
+  @@index([status, sentAt])
+  @@index([toEmail])
+  @@map("sent_emails")
+}
+
+model FollowUpReminder {
+  id          String    @id @default(cuid())
+  leadId      String
+  employeeId  String
+  companyId   String
+  subject     String
+  notes       String?
+  dueDate     DateTime
+  status      String    @default("PENDING")
+  priority    String    @default("MEDIUM")
+  isAutomatic Boolean   @default(false)
+  completedAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  lead        Lead      @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  employee    Employee  @relation(fields: [employeeId], references: [id])
+  company     Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([leadId, status])
+  @@index([employeeId, status, dueDate])
+  @@index([companyId, dueDate])
+  @@index([status, dueDate])
+  @@index([dueDate, status])
+  @@map("follow_up_reminders")
 }

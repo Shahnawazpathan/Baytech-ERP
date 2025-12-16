@@ -24,7 +24,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
       where: { id },
       data: {
         firstName: body.firstName,
-        lastName: body.lastName,
+        lastName: body.lastName || null,
         email: body.email,
         phone: body.phone,
         loanAmount: body.loanAmount,
@@ -45,7 +45,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
     // Transform the updated lead to match expected format
     const transformedLead = {
       id: updatedLead.id,
-      name: `${updatedLead.firstName || ''} ${updatedLead.lastName || ''}`.trim(),
+      name: updatedLead.lastName ? `${updatedLead.firstName || ''} ${updatedLead.lastName}`.trim() : updatedLead.firstName,
       email: updatedLead.email,
       phone: updatedLead.phone,
       loanAmount: updatedLead.loanAmount,
@@ -60,7 +60,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
       createdAt: updatedLead.createdAt,
       updatedAt: updatedLead.updatedAt,
       firstName: updatedLead.firstName,
-      lastName: updatedLead.lastName,
+      lastName: updatedLead.lastName || '',
       notes: updatedLead.notes
     }
 
@@ -96,7 +96,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     // Transform the lead to match expected format
     const transformedLead = {
       id: lead.id,
-      name: `${lead.firstName || ''} ${lead.lastName || ''}`.trim(),
+      name: lead.lastName ? `${lead.firstName || ''} ${lead.lastName}`.trim() : lead.firstName,
       email: lead.email,
       phone: lead.phone,
       loanAmount: lead.loanAmount,
@@ -111,7 +111,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       createdAt: lead.createdAt,
       updatedAt: lead.updatedAt,
       firstName: lead.firstName,
-      lastName: lead.lastName,
+      lastName: lead.lastName || '',
       notes: lead.notes
     }
 

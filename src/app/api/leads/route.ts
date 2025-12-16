@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { cache, createCacheKey } from '@/lib/cache'
 
 export async function GET(request: NextRequest) {
   try {
@@ -10,6 +11,13 @@ export async function GET(request: NextRequest) {
     const page = parseInt(searchParams.get('page') || '1')
     const limit = parseInt(searchParams.get('limit') || '100')
     const skip = (page - 1) * limit
+
+    // Check cache first
+    const cacheKey = createCacheKey('leads', { companyId, page, limit })
+    const cached = cache.get(cacheKey)
+    if (cached) {
+      return NextResponse.json(cached)
+    }
 
     const whereClause = {
       companyId,
@@ -59,7 +67,7 @@ export async function GET(request: NextRequest) {
     // Transform the data to match the expected format
     const transformedLeads = leads.map(lead => ({
       id: lead.id,
-      name: `${lead.firstName || ''} ${lead.lastName || ''}`.trim(),
+      name: lead.lastName ? `${lead.firstName || ''} ${lead.lastName}`.trim() : lead.firstName,
       email: lead.email,
       phone: lead.phone,
       loanAmount: lead.loanAmount,
@@ -74,11 +82,11 @@ export async function GET(request: NextRequest) {
       createdAt: lead.createdAt,
       updatedAt: lead.updatedAt,
       firstName: lead.firstName,
-      lastName: lead.lastName,
+      lastName: lead.lastName || '',
       notes: lead.notes || ''
     }))
 
-    return NextResponse.json({
+    const response = {
       data: transformedLeads,
       pagination: {
         total,
@@ -86,7 +94,12 @@ export async function GET(request: NextRequest) {
         limit,
         pages: Math.ceil(total / limit)
       }
-    })
+    }
+
+    // Cache for 30 seconds
+    cache.set(cacheKey, response, 30000)
+
+    return NextResponse.json(response)
   } catch (error) {
     console.error('Error fetching leads:', error)
     return NextResponse.json(
@@ -104,20 +117,20 @@ export async function POST(request: NextRequest) {
     const lead = await db.lead.create({
       data: {
         leadNumber: `LEAD${Date.now()}`, // Generate lead number
-        firstName: body.firstName,
-        lastName: body.lastName,
-        email: body.email,
-        phone: body.phone,
-        loanAmount: body.loanAmount,
-        status: body.status,
-        priority: body.priority,
-        assignedToId: body.assignedToId,
+        firstName: body.firstName?.trim() || 'Unknown',
+        lastName: body.lastName?.trim() || null,
+        email: body.email?.trim() || null,
+        phone: body.phone?.trim() || 'N/A',
+        loanAmount: body.loanAmount || null,
+        status: body.status || 'NEW',
+        priority: body.priority || 'MEDIUM',
+        assignedToId: body.assignedToId || null,
         assignedAt: body.assignedToId ? new Date() : null,
         companyId: body.companyId,
-        address: body.propertyAddress,
-        creditScore: body.creditScore,
-        source: body.source,
-        notes: body.notes,
+        address: body.propertyAddress?.trim() || null,
+        creditScore: body.creditScore || null,
+        source: body.source?.trim() || 'Website',
+        notes: body.notes?.trim() || null,
         isActive: true
       },
       include: {
@@ -128,7 +141,7 @@ export async function POST(request: NextRequest) {
     // Transform the created lead to match expected format
     const transformedLead = {
       id: lead.id,
-      name: `${lead.firstName || ''} ${lead.lastName || ''}`.trim(),
+      name: lead.lastName ? `${lead.firstName || ''} ${lead.lastName}`.trim() : lead.firstName,
       email: lead.email,
       phone: lead.phone,
       loanAmount: lead.loanAmount,
@@ -143,7 +156,7 @@ export async function POST(request: NextRequest) {
       createdAt: lead.createdAt,
       updatedAt: lead.updatedAt,
       firstName: lead.firstName,
-      lastName: lead.lastName,
+      lastName: lead.lastName || '',
       notes: lead.notes || ''
     }
 
@@ -227,20 +240,20 @@ export async function PUT(request: NextRequest) {
       const lead = await db.lead.create({
         data: {
           leadNumber: `LEAD${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-          firstName: leadData.firstName,
-          lastName: leadData.lastName,
-          email: leadData.email || null,
-          phone: leadData.phone,
+          firstName: leadData.firstName?.trim() || 'Unknown',
+          lastName: leadData.lastName?.trim() || '',
+          email: leadData.email?.trim() || null,
+          phone: leadData.phone?.trim() || 'N/A',
           loanAmount: leadData.loanAmount ? parseFloat(leadData.loanAmount.toString()) : null,
           status: leadData.status || 'NEW',
           priority: leadData.priority || 'MEDIUM',
           assignedToId: assignedEmployeeId,
           assignedAt: assignedEmployeeId ? new Date() : null,
           companyId,
-          address: leadData.propertyAddress || null,
+          address: leadData.propertyAddress?.trim() || null,
           creditScore: leadData.creditScore ? parseInt(leadData.creditScore.toString()) : null,
-          source: leadData.source || 'Import',
-          notes: leadData.notes || null,
+          source: leadData.source?.trim() || 'Import',
+          notes: leadData.notes?.trim() || null,
           isActive: true
         },
         include: {
@@ -269,7 +282,7 @@ export async function PUT(request: NextRequest) {
         await db.notification.create({
           data: {
             title: 'New Lead Assigned',
-            message: `${lead.firstName} ${lead.lastName} has been assigned to you via import`,
+            message: `${lead.lastName ? `${lead.firstName} ${lead.lastName}` : lead.firstName} has been assigned to you via import`,
             type: 'INFO',
             category: 'LEAD',
             companyId,
@@ -285,7 +298,7 @@ export async function PUT(request: NextRequest) {
 
       createdLeads.push({
         id: lead.id,
-        name: `${lead.firstName || ''} ${lead.lastName || ''}`.trim(),
+        name: lead.lastName ? `${lead.firstName || ''} ${lead.lastName}`.trim() : lead.firstName,
         email: lead.email,
         phone: lead.phone,
         loanAmount: lead.loanAmount,
@@ -300,7 +313,7 @@ export async function PUT(request: NextRequest) {
         createdAt: lead.createdAt,
         updatedAt: lead.updatedAt,
         firstName: lead.firstName,
-        lastName: lead.lastName,
+        lastName: lead.lastName || '',
         notes: lead.notes || ''
       })
     }
@@ -315,6 +328,48 @@ export async function PUT(request: NextRequest) {
     console.error('Error bulk importing leads:', error)
     return NextResponse.json(
       { error: 'Failed to bulk import leads' },
+      { status: 500 }
+    )
+  }
+}
+
+// Bulk delete endpoint
+export async function DELETE(request: NextRequest) {
+  try {
+    const body = await request.json()
+    const { leadIds } = body
+
+    if (!leadIds || !Array.isArray(leadIds) || leadIds.length === 0) {
+      return NextResponse.json(
+        { error: 'No lead IDs provided' },
+        { status: 400 }
+      )
+    }
+
+    // Delete the leads (soft delete by setting isActive to false)
+    const result = await db.lead.updateMany({
+      where: {
+        id: {
+          in: leadIds
+        }
+      },
+      data: {
+        isActive: false,
+        updatedAt: new Date()
+      }
+    })
+
+    // Clear cache
+    cache.clear()
+
+    return NextResponse.json({
+      success: true,
+      deleted: result.count
+    })
+  } catch (error) {
+    console.error('Error deleting leads:', error)
+    return NextResponse.json(
+      { error: 'Failed to delete leads' },
       { status: 500 }
     )
   }

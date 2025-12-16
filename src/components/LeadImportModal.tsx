@@ -38,16 +38,9 @@ export function LeadImportModal({ open, onOpenChange, onImportComplete }: LeadIm
   const [errors, setErrors] = useState<string[]>([])
 
   const standardFields = [
-    { key: 'firstName', label: 'First Name', required: true, type: 'text' as const },
-    { key: 'lastName', label: 'Last Name', required: true, type: 'text' as const },
-    { key: 'email', label: 'Email', required: false, type: 'email' as const },
-    { key: 'phone', label: 'Phone', required: true, type: 'phone' as const },
-    { key: 'loanAmount', label: 'Loan Amount', required: false, type: 'number' as const },
-    { key: 'propertyAddress', label: 'Property Address', required: false, type: 'text' as const },
-    { key: 'creditScore', label: 'Credit Score', required: false, type: 'number' as const },
-    { key: 'source', label: 'Lead Source', required: false, type: 'text' as const },
-    { key: 'priority', label: 'Priority', required: false, type: 'text' as const },
-    { key: 'notes', label: 'Notes', required: false, type: 'text' as const },
+    { key: 'firstName', label: 'Name', required: true, type: 'text' as const },
+    { key: 'phone', label: 'Mobile Number', required: true, type: 'phone' as const },
+    { key: 'propertyAddress', label: 'Property Location', required: false, type: 'text' as const },
   ]
 
   const detectFieldType = (value: string): 'text' | 'number' | 'email' | 'phone' | 'date' => {
@@ -70,77 +63,41 @@ export function LeadImportModal({ open, onOpenChange, onImportComplete }: LeadIm
 
   const smartFieldMapping = (headerName: string): string | null => {
     const normalized = headerName.toLowerCase().trim()
-    
+
     const mappings: Record<string, string> = {
       // Name variations
+      'name': 'firstName',
       'first_name': 'firstName',
       'firstname': 'firstName',
       'first name': 'firstName',
       'fname': 'firstName',
-      'last_name': 'lastName',
-      'lastname': 'lastName',
-      'last name': 'lastName',
-      'lname': 'lastName',
-      'name': 'firstName',
-      'full_name': 'firstName',
-      'fullname': 'firstName',
-      
-      // Contact variations
-      'email': 'email',
-      'email_address': 'email',
-      'e-mail': 'email',
-      'mail': 'email',
+      'customer_name': 'firstName',
+      'client_name': 'firstName',
+
+      // Mobile variations
       'phone': 'phone',
       'phone_number': 'phone',
       'telephone': 'phone',
       'mobile': 'phone',
+      'mobile_number': 'phone',
       'cell': 'phone',
       'contact': 'phone',
-      
-      // Loan variations
-      'loan_amount': 'loanAmount',
-      'loanamount': 'loanAmount',
-      'loan amount': 'loanAmount',
-      'amount': 'loanAmount',
-      'mortgage_amount': 'loanAmount',
-      'loan_value': 'loanAmount',
-      
-      // Address variations
-      'address': 'propertyAddress',
+      'contact_number': 'phone',
+      'mobile_no': 'phone',
+      'phone_no': 'phone',
+
+      // Property Location variations
+      'property_location': 'propertyAddress',
+      'property location': 'propertyAddress',
+      'location': 'propertyAddress',
       'property_address': 'propertyAddress',
       'property address': 'propertyAddress',
-      'location': 'propertyAddress',
-      'street': 'propertyAddress',
-      
-      // Credit variations
-      'credit_score': 'creditScore',
-      'creditscore': 'creditScore',
-      'credit score': 'creditScore',
-      'credit': 'creditScore',
-      'score': 'creditScore',
-      
-      // Source variations
-      'source': 'source',
-      'lead_source': 'source',
-      'lead source': 'source',
-      'origin': 'source',
-      'referral': 'source',
-      'campaign': 'source',
-      
-      // Priority variations
-      'priority': 'priority',
-      'importance': 'priority',
-      'urgency': 'priority',
-      'level': 'priority',
-      
-      // Notes variations
-      'notes': 'notes',
-      'comments': 'notes',
-      'description': 'notes',
-      'remarks': 'notes',
-      'details': 'notes',
+      'address': 'propertyAddress',
+      'property': 'propertyAddress',
+      'property_info': 'propertyAddress',
+      'property details': 'propertyAddress',
     }
-    
+
     return mappings[normalized] || null
   }
 
@@ -180,8 +137,8 @@ export function LeadImportModal({ open, onOpenChange, onImportComplete }: LeadIm
       
       const detectedType = detectFieldType(sampleValue)
       const mappedName = smartFieldMapping(header) || ''
-      const isRequired = ['firstName', 'lastName', 'phone'].includes(mappedName)
-      
+      const isRequired = ['firstName', 'phone'].includes(mappedName)
+
       return {
         originalName: header,
         mappedName,
@@ -240,23 +197,23 @@ export function LeadImportModal({ open, onOpenChange, onImportComplete }: LeadIm
   const validateMapping = (): string[] => {
     const validationErrors: string[] = []
     const mappedFields = detectedFields.filter(f => f.mappedName)
-    
+
     // Check required fields
-    const requiredFields = ['firstName', 'lastName', 'phone']
+    const requiredFields = ['firstName', 'phone']
     requiredFields.forEach(field => {
       if (!mappedFields.find(f => f.mappedName === field && f.mappedName !== 'unmapped')) {
         const fieldLabel = standardFields.find(sf => sf.key === field)?.label || field
         validationErrors.push(`${fieldLabel} is required but not mapped`)
       }
     })
-    
+
     // Check for duplicate mappings (excluding 'unmapped')
     const mappings = mappedFields.map(f => f.mappedName).filter(name => name !== 'unmapped')
     const duplicates = mappings.filter((item, index) => mappings.indexOf(item) !== index)
     if (duplicates.length > 0) {
       validationErrors.push(`Duplicate mappings found: ${duplicates.join(', ')}`)
     }
-    
+
     return validationErrors
   }
 
@@ -270,50 +227,35 @@ export function LeadImportModal({ open, onOpenChange, onImportComplete }: LeadIm
     // Process the data
     const processedLeads: any[] = []
     const dataRows = csvData.slice(1)
-    
+
     dataRows.forEach((row, rowIndex) => {
       const lead: any = {
         id: Date.now() + rowIndex,
         status: "NEW",
         assignedTo: "Unassigned",
       }
-      
+
       detectedFields.forEach((field, fieldIndex) => {
         if (field.mappedName && field.mappedName !== 'unmapped' && row[fieldIndex]) {
           let value: any = row[fieldIndex].trim()
-          
+
           // Type conversion
           if (field.type === 'number') {
             value = parseFloat(value) || 0
           } else if (field.type === 'email') {
             value = value.toLowerCase()
-          } else if (field.mappedName === 'priority' && value) {
-            value = value.toUpperCase()
-            if (!['LOW', 'MEDIUM', 'HIGH', 'URGENT'].includes(value)) {
-              value = 'MEDIUM'
-            }
           }
-          
+
           lead[field.mappedName] = value
         }
       })
-      
-      // Generate full name if only firstName is provided
-      if (lead.firstName && !lead.lastName) {
-        const nameParts = lead.firstName.split(' ')
-        if (nameParts.length > 1) {
-          lead.firstName = nameParts[0]
-          lead.lastName = nameParts.slice(1).join(' ')
-        }
-      }
-      
+
       // Set defaults
-      if (!lead.priority) lead.priority = 'MEDIUM'
       if (!lead.source) lead.source = 'Import'
-      
+
       processedLeads.push(lead)
     })
-    
+
     setMappedLeads(processedLeads)
     setStep('preview')
     setErrors([])
@@ -358,16 +300,17 @@ export function LeadImportModal({ open, onOpenChange, onImportComplete }: LeadIm
   }
 
   const downloadTemplate = () => {
-    const templateHeaders = ['first_name', 'last_name', 'email', 'phone', 'loan_amount', 'property_address', 'credit_score', 'source', 'priority', 'notes']
+    const templateHeaders = ['name', 'mobile_number', 'property_location']
     const sampleData = [
-      ['John', 'Smith', 'john.smith@email.com', '555-0123', '450000', '123 Main St, City, State', '750', 'Website', 'HIGH', 'Qualified prospect'],
-      ['Jane', 'Doe', 'jane.doe@email.com', '555-0456', '320000', '456 Oak Ave, City, State', '680', 'Referral', 'MEDIUM', 'Needs follow-up']
+      ['John Smith', '555-0123', '123 Main St, City, State'],
+      ['Jane Doe', '555-0456', '456 Oak Ave, City, State'],
+      ['Michael Johnson', '555-0789', '789 Pine St, City, State']
     ]
-    
+
     const csvContent = [templateHeaders, ...sampleData]
       .map(row => row.map(field => `"${field}"`).join(','))
       .join('\n')
-    
+
     const blob = new Blob([csvContent], { type: 'text/csv' })
     const url = window.URL.createObjectURL(blob)
     const a = document.createElement('a')
@@ -432,7 +375,7 @@ export function LeadImportModal({ open, onOpenChange, onImportComplete }: LeadIm
                   <CardTitle className="text-lg">Supported Fields</CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                     {standardFields.map(field => (
                       <Badge key={field.key} variant={field.required ? "default" : "outline"}>
                         {field.label} {field.required && "*"}
@@ -523,26 +466,16 @@ export function LeadImportModal({ open, onOpenChange, onImportComplete }: LeadIm
                       <thead>
                         <tr className="border-b">
                           <th className="text-left p-2">Name</th>
-                          <th className="text-left p-2">Email</th>
-                          <th className="text-left p-2">Phone</th>
-                          <th className="text-left p-2">Loan Amount</th>
-                          <th className="text-left p-2">Priority</th>
+                          <th className="text-left p-2">Mobile Number</th>
+                          <th className="text-left p-2">Property Location</th>
                         </tr>
                       </thead>
                       <tbody>
                         {mappedLeads.slice(0, 10).map((lead, index) => (
                           <tr key={index} className="border-b">
-                            <td className="p-2">
-                              {lead.firstName} {lead.lastName}
-                            </td>
-                            <td className="p-2">{lead.email || 'N/A'}</td>
-                            <td className="p-2">{lead.phone}</td>
-                            <td className="p-2">
-                              {lead.loanAmount ? `$${lead.loanAmount.toLocaleString()}` : 'N/A'}
-                            </td>
-                            <td className="p-2">
-                              <Badge variant="outline">{lead.priority}</Badge>
-                            </td>
+                            <td className="p-2">{lead.firstName || 'N/A'}</td>
+                            <td className="p-2">{lead.phone || 'N/A'}</td>
+                            <td className="p-2">{lead.propertyAddress || 'N/A'}</td>
                           </tr>
                         ))}
                       </tbody>

@@ -99,7 +99,7 @@ CREATE TABLE IF NOT EXISTS "leads" (
     "id" TEXT NOT NULL PRIMARY KEY,
     "leadNumber" TEXT NOT NULL,
     "firstName" TEXT NOT NULL,
-    "lastName" TEXT NOT NULL,
+    "lastName" TEXT,
     "email" TEXT,
     "phone" TEXT NOT NULL,
     "address" TEXT,

@@ -7,6 +7,9 @@ export async function GET(request: NextRequest) {
     const companyId = request.headers.get('x-company-id') || 'default-company'
     const { searchParams } = new URL(request.url)
     const filter = searchParams.get('filter') || 'all' // all, unassigned, available
+    const page = parseInt(searchParams.get('page') || '1')
+    const limit = parseInt(searchParams.get('limit') || '50')
+    const skip = (page - 1) * limit
 
     let whereClause: any = {
       companyId,
@@ -21,23 +24,45 @@ export async function GET(request: NextRequest) {
       whereClause.status = { in: ['NEW', 'CONTACTED'] }
     }
 
-    const leads = await db.lead.findMany({
-      where: whereClause,
-      include: {
-        assignedTo: {
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true,
-            email: true
+    // Execute queries in parallel
+    const [leads, total] = await Promise.all([
+      db.lead.findMany({
+        where: whereClause,
+        select: {
+          id: true,
+          leadNumber: true,
+          firstName: true,
+          lastName: true,
+          email: true,
+          phone: true,
+          loanAmount: true,
+          status: true,
+          priority: true,
+          source: true,
+          creditScore: true,
+          address: true,
+          assignedToId: true,
+          assignedAt: true,
+          createdAt: true,
+          notes: true,
+          assignedTo: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              email: true
+            }
           }
-        }
-      },
-      orderBy: [
-        { priority: 'desc' },
-        { createdAt: 'desc' }
-      ]
-    })
+        },
+        orderBy: [
+          { priority: 'desc' },
+          { createdAt: 'desc' }
+        ],
+        take: limit,
+        skip: skip
+      }),
+      db.lead.count({ where: whereClause })
+    ])
 
     // Transform the data
     const transformedLeads = leads.map(lead => ({
@@ -66,7 +91,14 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      data: transformedLeads
+      data: transformedLeads,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit),
+        hasMore: page * limit < total
+      }
     })
   } catch (error) {
     console.error('Error fetching leads pool:', error)
