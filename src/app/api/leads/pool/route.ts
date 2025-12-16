@@ -22,47 +22,129 @@ export async function GET(request: NextRequest) {
     } else if (filter === 'available') {
       // Show leads that are NEW or CONTACTED (can be taken)
       whereClause.status = { in: ['NEW', 'CONTACTED'] }
+    } else if (filter === 'reassigned') {
+      // Show only leads that were actually auto-reassigned due to no contact
+      // These are leads that have a history record of AUTO_REASSIGNED action
+      whereClause = {
+        companyId,
+        isActive: true,
+        history: {
+          some: {
+            action: 'AUTO_REASSIGNED'
+          }
+        }
+      }
     }
 
     // Execute queries in parallel
-    const [leads, total] = await Promise.all([
-      db.lead.findMany({
-        where: whereClause,
-        select: {
-          id: true,
-          leadNumber: true,
-          firstName: true,
-          lastName: true,
-          email: true,
-          phone: true,
-          loanAmount: true,
-          status: true,
-          priority: true,
-          source: true,
-          creditScore: true,
-          address: true,
-          assignedToId: true,
-          assignedAt: true,
-          createdAt: true,
-          notes: true,
-          assignedTo: {
-            select: {
-              id: true,
-              firstName: true,
-              lastName: true,
-              email: true
-            }
+    let leads, total;
+
+    if (filter === 'reassigned') {
+      // For 'reassigned' filter, we need to query leads with AUTO_REASSIGNED history
+      // This requires a different approach since we need to join with lead history
+      const leadIds = await db.leadHistory.findMany({
+        where: {
+          action: 'AUTO_REASSIGNED',
+          createdAt: {
+            gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) // Within last 30 days to optimize
+          },
+          lead: {
+            companyId,
+            isActive: true
           }
         },
-        orderBy: [
-          { priority: 'desc' },
-          { createdAt: 'desc' }
-        ],
-        take: limit,
-        skip: skip
-      }),
-      db.lead.count({ where: whereClause })
-    ])
+        select: {
+          leadId: true
+        },
+        distinct: ['leadId'] // Get unique lead IDs
+      });
+
+      const leadIdsArray = leadIds.map(l => l.leadId);
+
+      [leads, total] = await Promise.all([
+        db.lead.findMany({
+          where: {
+            id: { in: leadIdsArray }
+          },
+          select: {
+            id: true,
+            leadNumber: true,
+            firstName: true,
+            lastName: true,
+            email: true,
+            phone: true,
+            loanAmount: true,
+            status: true,
+            priority: true,
+            source: true,
+            creditScore: true,
+            address: true,
+            assignedToId: true,
+            assignedAt: true,
+            createdAt: true,
+            notes: true,
+            assignedTo: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                email: true
+              }
+            }
+          },
+          orderBy: [
+            { priority: 'desc' },
+            { createdAt: 'desc' }
+          ],
+          take: limit,
+          skip: skip
+        }),
+        db.lead.count({
+          where: {
+            id: { in: leadIdsArray }
+          }
+        })
+      ]);
+    } else {
+      [leads, total] = await Promise.all([
+        db.lead.findMany({
+          where: whereClause,
+          select: {
+            id: true,
+            leadNumber: true,
+            firstName: true,
+            lastName: true,
+            email: true,
+            phone: true,
+            loanAmount: true,
+            status: true,
+            priority: true,
+            source: true,
+            creditScore: true,
+            address: true,
+            assignedToId: true,
+            assignedAt: true,
+            createdAt: true,
+            notes: true,
+            assignedTo: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                email: true
+              }
+            }
+          },
+          orderBy: [
+            { priority: 'desc' },
+            { createdAt: 'desc' }
+          ],
+          take: limit,
+          skip: skip
+        }),
+        db.lead.count({ where: whereClause })
+      ]);
+    }
 
     // Transform the data
     const transformedLeads = leads.map(lead => ({

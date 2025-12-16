@@ -321,3 +321,85 @@ export async function PUT(request: NextRequest) {
     );
   }
 }
+
+export async function DELETE(request: NextRequest) {
+  try {
+    const userId = request.headers.get('x-user-id');
+    const url = new URL(request.url);
+    const id = url.pathname.split('/').pop(); // Get the ID from the URL path
+
+    if (!id) {
+      return NextResponse.json(
+        { error: 'Employee ID is required' },
+        { status: 400 }
+      );
+    }
+
+    // Check if the requesting user has permission to DELETE employees
+    if (!userId || !(await hasPermission(userId, 'employee', 'DELETE'))) {
+      return NextResponse.json(
+        { error: 'Insufficient permissions to delete employees' },
+        { status: 403 }
+      );
+    }
+
+    // Check if employee exists and get their info
+    const existingEmployee = await db.employee.findUnique({
+      where: { id },
+      include: { role: true }
+    });
+
+    if (!existingEmployee) {
+      return NextResponse.json(
+        { error: 'Employee not found' },
+        { status: 404 }
+      );
+    }
+
+    // Prevent non-admin users from deleting admin employees
+    if (existingEmployee.role?.name === 'Administrator' &&
+        userId !== id) { // Allow admin to delete themselves, but check permissions
+      const requestingUser = await db.employee.findUnique({
+        where: { id: userId },
+        include: { role: true }
+      });
+
+      if (!requestingUser || requestingUser.role?.name !== 'Administrator') {
+        return NextResponse.json(
+          { error: 'Only administrators can delete other administrators' },
+          { status: 403 }
+        );
+      }
+    }
+
+    // Perform a soft delete by setting isActive to false
+    // This preserves the data while removing the employee from active lists
+    const employee = await db.employee.update({
+      where: { id },
+      data: {
+        isActive: false,
+        status: 'TERMINATED'  // Update status to terminated
+      }
+    });
+
+    return NextResponse.json({
+      id: employee.id,
+      message: 'Employee deleted successfully'
+    });
+  } catch (error) {
+    console.error('Error deleting employee:', error);
+
+    // Check if it's a Prisma error for record not found
+    if (error instanceof Error && 'code' in error && (error as any).code === 'P2025') {
+      return NextResponse.json(
+        { error: 'Employee not found' },
+        { status: 404 }
+      );
+    }
+
+    return NextResponse.json(
+      { error: 'Failed to delete employee' },
+      { status: 500 }
+    );
+  }
+}

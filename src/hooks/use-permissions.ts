@@ -53,19 +53,35 @@ export function usePermissions() {
       });
 
       if (response.ok) {
-        const data = await response.json();
+        let data = await response.json();
+        let map: Record<string, boolean> = {};
+
         if (data?.map) {
-          setPermissions(data.map);
+          map = data.map;
         } else if (Array.isArray(data?.permissions)) {
-          const map = (data.permissions as Array<{ resource: string; action: string }>).reduce(
+          map = (data.permissions as Array<{ resource: string; action: string }>).reduce(
             (acc, perm) => {
               acc[`${perm.resource}_${perm.action}`] = true;
               return acc;
             },
             {} as Record<string, boolean>
           );
-          setPermissions(map);
         }
+
+        // For regular employees (not admin or manager), restrict permissions to leads and attendance only
+        const userRole = user.role?.toLowerCase() || '';
+        if (!userRole.includes('admin') && !userRole.includes('manager')) {
+          // Only allow lead and attendance permissions for regular employees
+          const filteredMap: Record<string, boolean> = {};
+          Object.keys(map).forEach(key => {
+            if (key.startsWith('lead_') || key.startsWith('attendance_')) {
+              filteredMap[key] = map[key];
+            }
+          });
+          map = filteredMap;
+        }
+
+        setPermissions(map);
       } else {
         // Fall back to optimistic if API fails
         setPermissions(prev => Object.keys(prev).length ? prev : optimistic);

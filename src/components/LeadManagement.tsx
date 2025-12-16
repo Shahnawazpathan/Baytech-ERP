@@ -99,7 +99,7 @@ export function LeadManagement({
       let roleMatches = true;
       if (user?.role !== 'Administrator' && user?.role !== 'Manager') {
         // Employee can only see leads assigned to them
-        roleMatches = lead.assignedToId === user?.id || !lead.assignedToId; // Can see unassigned leads too
+        roleMatches = lead.assignedToId === user?.id;
       }
 
       return (debouncedLeadSearch === '' || matchesSearch) && matchesStatus && matchesPriority && roleMatches
@@ -429,7 +429,7 @@ export function LeadManagement({
           <p className="text-sm text-gray-500">Track and manage mortgage leads</p>
         </div>
         <div className="flex gap-2">
-          {canDeleteLeads && selectedLeads.length > 0 && (
+          {(user?.role === 'Administrator' || user?.role === 'Manager') && selectedLeads.length > 0 && (
             <Button
               variant="destructive"
               onClick={() => setShowDeleteConfirm(true)}
@@ -454,7 +454,7 @@ export function LeadManagement({
               Import
             </Button>
           )}
-          {canCreateLeads && (
+          {(user?.role === 'Administrator' || user?.role === 'Manager') && (
             <Button
               onClick={handleAddLeadClick}
               className="bg-blue-600 hover:bg-blue-700 text-white"

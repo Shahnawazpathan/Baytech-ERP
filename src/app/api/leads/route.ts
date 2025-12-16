@@ -190,12 +190,19 @@ export async function PUT(request: NextRequest) {
       )
     }
 
-    // Get all active employees for this company
+    // Get all active employees for this company (excluding admins)
     const activeEmployees = await db.employee.findMany({
       where: {
         companyId,
         status: 'ACTIVE',
-        isActive: true
+        isActive: true,
+        role: {
+          name: {
+            not: {
+              contains: 'Administrator'
+            }
+          }
+        }
       },
       include: {
         _count: {
@@ -240,20 +247,20 @@ export async function PUT(request: NextRequest) {
       const lead = await db.lead.create({
         data: {
           leadNumber: `LEAD${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-          firstName: leadData.firstName?.trim() || 'Unknown',
-          lastName: leadData.lastName?.trim() || '',
-          email: leadData.email?.trim() || null,
-          phone: leadData.phone?.trim() || 'N/A',
+          firstName: leadData.firstName ? (typeof leadData.firstName === 'string' ? leadData.firstName.trim() : String(leadData.firstName).trim()) : 'Unknown',
+          lastName: leadData.lastName ? (typeof leadData.lastName === 'string' ? leadData.lastName.trim() : String(leadData.lastName).trim()) : '',
+          email: leadData.email ? (typeof leadData.email === 'string' ? leadData.email.trim() : String(leadData.email).trim()) : null,
+          phone: leadData.phone ? (typeof leadData.phone === 'string' ? leadData.phone.trim() : String(leadData.phone).trim()) : 'N/A',
           loanAmount: leadData.loanAmount ? parseFloat(leadData.loanAmount.toString()) : null,
           status: leadData.status || 'NEW',
           priority: leadData.priority || 'MEDIUM',
           assignedToId: assignedEmployeeId,
           assignedAt: assignedEmployeeId ? new Date() : null,
           companyId,
-          address: leadData.propertyAddress?.trim() || null,
+          address: leadData.propertyAddress ? (typeof leadData.propertyAddress === 'string' ? leadData.propertyAddress.trim() : String(leadData.propertyAddress).trim()) : null,
           creditScore: leadData.creditScore ? parseInt(leadData.creditScore.toString()) : null,
-          source: leadData.source?.trim() || 'Import',
-          notes: leadData.notes?.trim() || null,
+          source: leadData.source ? (typeof leadData.source === 'string' ? leadData.source.trim() : String(leadData.source).trim()) : 'Import',
+          notes: leadData.notes ? (typeof leadData.notes === 'string' ? leadData.notes.trim() : String(leadData.notes).trim()) : null,
           isActive: true
         },
         include: {

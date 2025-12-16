@@ -45,6 +45,8 @@ export function EmployeeManagement({
   const { toast } = useToast();
   const [showAddEmployeeModal, setShowAddEmployeeModal] = useState(false);
   const [editingEmployee, setEditingEmployee] = useState<any>(null);
+  const [employeeToDelete, setEmployeeToDelete] = useState<any>(null);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [newEmployee, setNewEmployee] = useState({
     firstName: '',
     lastName: '',
@@ -389,6 +391,44 @@ export function EmployeeManagement({
     setShowAddEmployeeModal(true)
   }
 
+  // Check if user has delete permissions (Admin only)
+  const canDeleteEmployees = user?.role === 'Administrator' || user?.email === 'admin@baytech.com';
+
+  // Handle delete employee
+  const handleDeleteEmployee = async () => {
+    if (!employeeToDelete) return;
+
+    try {
+      const response = await fetch(`/api/employees/${employeeToDelete.id}`, {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-user-id': user?.id,
+          'x-company-id': user?.companyId
+        }
+      });
+
+      if (response.ok) {
+        toast({
+          title: "Success",
+          description: "Employee deleted successfully",
+        });
+        setEmployeeToDelete(null);
+        setShowDeleteConfirm(false);
+        await refreshData(); // Refresh the employee list
+      } else {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to delete employee');
+      }
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to delete employee",
+        variant: "destructive",
+      });
+    }
+  };
+
   return (
     <div className="space-y-6">
       {/* Employee Management Header */}
@@ -585,6 +625,19 @@ export function EmployeeManagement({
                           >
                             Edit
                           </Button>
+                          {canDeleteEmployees && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => {
+                                setEmployeeToDelete(employee);
+                                setShowDeleteConfirm(true);
+                              }}
+                              className="text-red-600 border-red-600 hover:bg-red-50"
+                            >
+                              Delete
+                            </Button>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -866,6 +919,50 @@ export function EmployeeManagement({
                   className="bg-blue-600 hover:bg-blue-700 text-white"
                 >
                   {editingEmployee ? 'Update Employee' : 'Create Employee'}
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {showDeleteConfirm && employeeToDelete && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-md w-full">
+            <div className="p-6">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="bg-red-100 rounded-full p-3">
+                  <svg className="w-6 h-6 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                  </svg>
+                </div>
+                <div>
+                  <h3 className="text-xl font-semibold text-gray-900">Delete Employee</h3>
+                  <p className="text-sm text-gray-500">This action cannot be undone</p>
+                </div>
+              </div>
+
+              <p className="text-gray-700 mb-6">
+                Are you sure you want to delete <span className="font-semibold">{employeeToDelete.name}</span>?
+                This will permanently remove the employee from the system.
+              </p>
+
+              <div className="flex justify-end gap-2">
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setShowDeleteConfirm(false);
+                    setEmployeeToDelete(null);
+                  }}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  variant="destructive"
+                  onClick={handleDeleteEmployee}
+                >
+                  Delete Employee
                 </Button>
               </div>
             </div>

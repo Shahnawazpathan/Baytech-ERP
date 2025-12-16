@@ -46,7 +46,16 @@ export async function POST(request: NextRequest) {
         }
       }),
       db.employee.findUnique({
-        where: { id: employeeId },
+        where: {
+          id: employeeId,
+          role: {
+            name: {
+              not: {
+                contains: 'Administrator'
+              }
+            }
+          }
+        },
         select: {
           id: true,
           firstName: true,
@@ -194,12 +203,19 @@ export async function PUT(request: NextRequest) {
       );
     }
 
-    // Get all employees to assign to
+    // Get all employees to assign to (excluding admins)
     const employees = await db.employee.findMany({
       where: {
         id: { in: targetEmployeeIds },
         status: 'ACTIVE',
-        isActive: true
+        isActive: true,
+        role: {
+          name: {
+            not: {
+              contains: 'Administrator'
+            }
+          }
+        }
       },
       select: {
         id: true,

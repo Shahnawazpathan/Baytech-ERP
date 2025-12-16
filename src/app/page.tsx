@@ -2301,25 +2301,29 @@ Average Credit Score: ${leadsList.length ? Math.round(leadsList.reduce((sum, lea
               </Button>
             )}
 
-            <Button
-              variant={activeTab === 'tasks' ? 'secondary' : 'ghost'}
-              className={`w-full gap-2 transition-all duration-200 ${!sidebarOpen ? 'justify-center px-2 lg:px-2' : 'justify-start'} hover:scale-105`}
-              onClick={() => handleNavigation('tasks')}
-            >
-              <CheckSquare className="h-4 w-4 flex-shrink-0" />
-              {sidebarOpen && <span className="truncate">Tasks</span>}
-            </Button>
+            {isAdmin() && (
+              <Button
+                variant={activeTab === 'tasks' ? 'secondary' : 'ghost'}
+                className={`w-full gap-2 transition-all duration-200 ${!sidebarOpen ? 'justify-center px-2 lg:px-2' : 'justify-start'} hover:scale-105`}
+                onClick={() => handleNavigation('tasks')}
+              >
+                <CheckSquare className="h-4 w-4 flex-shrink-0" />
+                {sidebarOpen && <span className="truncate">Tasks</span>}
+              </Button>
+            )}
 
 
 
-            <Button
-              variant={activeTab === 'analytics' ? 'secondary' : 'ghost'}
-              className={`w-full gap-2 transition-all duration-200 ${!sidebarOpen ? 'justify-center px-2 lg:px-2' : 'justify-start'} hover:scale-105`}
-              onClick={() => handleNavigation('analytics')}
-            >
-              <BarChart3 className="h-4 w-4 flex-shrink-0" />
-              {sidebarOpen && <span className="truncate">Analytics</span>}
-            </Button>
+            {isAdmin() && (
+              <Button
+                variant={activeTab === 'analytics' ? 'secondary' : 'ghost'}
+                className={`w-full gap-2 transition-all duration-200 ${!sidebarOpen ? 'justify-center px-2 lg:px-2' : 'justify-start'} hover:scale-105`}
+                onClick={() => handleNavigation('analytics')}
+              >
+                <BarChart3 className="h-4 w-4 flex-shrink-0" />
+                {sidebarOpen && <span className="truncate">Analytics</span>}
+              </Button>
+            )}
           </div>
         </nav>
         
@@ -2516,231 +2520,257 @@ Average Credit Score: ${leadsList.length ? Math.round(leadsList.reduce((sum, lea
           <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-5 sm:space-y-6">
             <TabsList className="w-full sm:w-auto">
               <TabsTrigger value="overview">Overview</TabsTrigger>
-              <TabsTrigger value="employees">Employees</TabsTrigger>
-              <TabsTrigger value="leads">Leads</TabsTrigger>
-              <TabsTrigger value="leads-pool">Leads Pool</TabsTrigger>
-              <TabsTrigger value="attendance">Attendance</TabsTrigger>
-              <TabsTrigger value="tasks">Tasks</TabsTrigger>
-              <TabsTrigger value="analytics">Analytics</TabsTrigger>
+              {(user?.role?.toLowerCase().includes('admin') || user?.role?.toLowerCase().includes('manager') || canViewEmployees) && (
+                <TabsTrigger value="employees">Employees</TabsTrigger>
+              )}
+              {canViewLeads && (
+                <TabsTrigger value="leads">Leads</TabsTrigger>
+              )}
+              {canViewLeads && (
+                <TabsTrigger value="leads-pool">Leads Pool</TabsTrigger>
+              )}
+              {canViewAttendance && (
+                <TabsTrigger value="attendance">Attendance</TabsTrigger>
+              )}
+              {(user?.role?.toLowerCase().includes('admin') || user?.role?.toLowerCase().includes('manager')) && (
+                <TabsTrigger value="tasks">Tasks</TabsTrigger>
+              )}
+              {(user?.role?.toLowerCase().includes('admin') || user?.role?.toLowerCase().includes('manager') || canViewReports) && (
+                <TabsTrigger value="analytics">Analytics</TabsTrigger>
+              )}
             </TabsList>
 
             <TabsContent value="overview" className="space-y-6">
-              {/* Mobile-first quick actions for field teams */}
+              {/* Mobile-first quick actions for field teams - only show if user has the appropriate permissions */}
               <div className="grid grid-cols-2 gap-3 sm:hidden">
-                <Button
-                  variant="secondary"
-                  className="w-full"
-                  onClick={handleCheckIn}
-                >
-                  <MapPin className="h-4 w-4 mr-2" />
-                  Check In
-                </Button>
-                <Button
-                  variant="outline"
-                  className="w-full"
-                  onClick={handleCheckOut}
-                >
-                  <Clock className="h-4 w-4 mr-2" />
-                  Check Out
-                </Button>
-                <Button
-                  className="w-full"
-                  onClick={() => setShowAddLeadModal(true)}
-                >
-                  <UserPlus className="h-4 w-4 mr-2" />
-                  New Lead
-                </Button>
-                <Button
-                  variant="outline"
-                  className="w-full"
-                  onClick={() => handleNavigation('attendance')}
-                >
-                  <Calendar className="h-4 w-4 mr-2" />
-                  Attendance
-                </Button>
+                {canViewAttendance && (
+                  <Button
+                    variant="secondary"
+                    className="w-full"
+                    onClick={handleCheckIn}
+                  >
+                    <MapPin className="h-4 w-4 mr-2" />
+                    Check In
+                  </Button>
+                )}
+                {canViewAttendance && (
+                  <Button
+                    variant="outline"
+                    className="w-full"
+                    onClick={handleCheckOut}
+                  >
+                    <Clock className="h-4 w-4 mr-2" />
+                    Check Out
+                  </Button>
+                )}
+                {canViewLeads && (
+                  <Button
+                    className="w-full"
+                    onClick={() => setShowAddLeadModal(true)}
+                  >
+                    <UserPlus className="h-4 w-4 mr-2" />
+                    New Lead
+                  </Button>
+                )}
+                {canViewAttendance && (
+                  <Button
+                    variant="outline"
+                    className="w-full"
+                    onClick={() => handleNavigation('attendance')}
+                  >
+                    <Calendar className="h-4 w-4 mr-2" />
+                    Attendance
+                  </Button>
+                )}
               </div>
 
-              {/* KPI Cards */}
+              {/* KPI Cards - show only if user has permission for the relevant resource */}
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                <Card className={loading.stats ? "opacity-70 animate-pulse" : ""}>
-                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                    <CardTitle className="text-sm font-medium">Total Leads</CardTitle>
-                    <Phone className="h-4 w-4 text-muted-foreground" />
-                  </CardHeader>
-                  <CardContent>
-                    <div className="text-2xl font-bold">{stats.totalLeads}</div>
-                    <p className="text-xs text-muted-foreground">
-                      +12% from last month
-                    </p>
-                  </CardContent>
-                </Card>
+                {canViewLeads && (
+                  <Card className={loading.stats ? "opacity-70 animate-pulse" : ""}>
+                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                      <CardTitle className="text-sm font-medium">My Leads</CardTitle>
+                      <Phone className="h-4 w-4 text-muted-foreground" />
+                    </CardHeader>
+                    <CardContent>
+                      <div className="text-2xl font-bold">{filteredLeads.length}</div>
+                      <p className="text-xs text-muted-foreground">
+                        {filteredLeads.filter(l => new Date(l.createdAt) >= new Date(new Date().setDate(new Date().getDate() - 30))).length} this month
+                      </p>
+                    </CardContent>
+                  </Card>
+                )}
 
-                <Card className={loading.stats ? "opacity-70 animate-pulse" : ""}>
-                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                    <CardTitle className="text-sm font-medium">Active Leads</CardTitle>
-                    <TrendingUp className="h-4 w-4 text-muted-foreground" />
-                  </CardHeader>
-                  <CardContent>
-                    <div className="text-2xl font-bold">{stats.activeLeads}</div>
-                    <p className="text-xs text-muted-foreground">
-                      +8% from last week
-                    </p>
-                  </CardContent>
-                </Card>
+                {canViewLeads && (
+                  <Card className={loading.stats ? "opacity-70 animate-pulse" : ""}>
+                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                      <CardTitle className="text-sm font-medium">Active Leads</CardTitle>
+                      <TrendingUp className="h-4 w-4 text-muted-foreground" />
+                    </CardHeader>
+                    <CardContent>
+                      <div className="text-2xl font-bold">{filteredLeads.filter(lead => !['APPLICATION', 'REJECTED', 'CLOSED', 'JUNK'].includes(lead.status)).length}</div>
+                      <p className="text-xs text-muted-foreground">
+                        of {filteredLeads.length} total
+                      </p>
+                    </CardContent>
+                  </Card>
+                )}
 
-                <Card className={loading.stats ? "opacity-70 animate-pulse" : ""}>
-                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                    <CardTitle className="text-sm font-medium">Conversion Rate</CardTitle>
-                    <DollarSign className="h-4 w-4 text-muted-foreground" />
-                  </CardHeader>
-                  <CardContent>
-                    <div className="text-2xl font-bold">{stats.conversionRate}%</div>
-                    <p className="text-xs text-muted-foreground">
-                      +2.1% from last month
-                    </p>
-                  </CardContent>
-                </Card>
+                {canViewLeads && (
+                  <Card className={loading.stats ? "opacity-70 animate-pulse" : ""}>
+                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                      <CardTitle className="text-sm font-medium">Converted Leads</CardTitle>
+                      <DollarSign className="h-4 w-4 text-muted-foreground" />
+                    </CardHeader>
+                    <CardContent>
+                      <div className="text-2xl font-bold">{filteredLeads.filter(lead => ['APPLICATION', 'APPROVED', 'REAL'].includes(lead.status)).length}</div>
+                      <p className="text-xs text-muted-foreground">
+                        {filteredLeads.length ? Math.round((filteredLeads.filter(lead => ['APPLICATION', 'APPROVED', 'REAL'].includes(lead.status)).length / filteredLeads.length) * 100) : 0}% conversion
+                      </p>
+                    </CardContent>
+                  </Card>
+                )}
 
-                <Card className={loading.stats ? "opacity-70 animate-pulse" : ""}>
-                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                    <CardTitle className="text-sm font-medium">Employees Present</CardTitle>
-                    <Users className="h-4 w-4 text-muted-foreground" />
-                  </CardHeader>
-                  <CardContent>
-                    <div className="text-2xl font-bold">{stats.presentToday}/{stats.totalEmployees}</div>
-                    <p className="text-xs text-muted-foreground">
-                      {stats.totalEmployees ? Math.round((stats.presentToday / stats.totalEmployees) * 100) : 0}% attendance rate
-                    </p>
-                  </CardContent>
-                </Card>
+                {canViewAttendance && (
+                  <Card className={loading.stats ? "opacity-70 animate-pulse" : ""}>
+                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                      <CardTitle className="text-sm font-medium">My Attendance</CardTitle>
+                      <Users className="h-4 w-4 text-muted-foreground" />
+                    </CardHeader>
+                    <CardContent>
+                      <div className="text-2xl font-bold">{filteredAttendance.length}</div>
+                      <p className="text-xs text-muted-foreground">
+                        {filteredAttendance.filter(a => a.status === 'PRESENT').length} present
+                      </p>
+                    </CardContent>
+                  </Card>
+                )}
               </div>
 
-              {/* Recent Activity */}
+              {/* Recent Activity - show only if user has permission for the resource */}
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <Card className={loading.leads ? "opacity-70 animate-pulse" : ""}>
-                  <CardHeader>
-                    <CardTitle>Recent Leads</CardTitle>
-                    <CardDescription>Latest lead assignments and updates</CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <ScrollArea className="h-64">
-                      <div className="space-y-4">
-                        {loading.leads ? (
-                          <div className="space-y-3">
-                            {[...Array(4)].map((_, i) => (
-                              <div key={`loading-lead-${i}`} className="flex items-center justify-between p-3 border rounded-lg animate-pulse">
+                {canViewLeads && (
+                  <Card className={loading.leads ? "opacity-70 animate-pulse" : ""}>
+                    <CardHeader>
+                      <CardTitle>My Recent Leads</CardTitle>
+                      <CardDescription>Your assigned leads and updates</CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      <ScrollArea className="h-64">
+                        <div className="space-y-4">
+                          {loading.leads ? (
+                            <div className="space-y-3">
+                              {[...Array(4)].map((_, i) => (
+                                <div key={`loading-lead-${i}`} className="flex items-center justify-between p-3 border rounded-lg animate-pulse">
+                                  <div className="flex items-center gap-3">
+                                    <div className="bg-gray-200 rounded-full h-10 w-10" />
+                                    <div className="space-y-2">
+                                      <div className="h-4 bg-gray-200 rounded w-24" />
+                                      <div className="h-4 bg-gray-200 rounded w-16" />
+                                    </div>
+                                  </div>
+                                  <div className="flex items-center gap-2">
+                                    <div className="h-6 bg-gray-200 rounded w-16" />
+                                    <div className="h-6 bg-gray-200 rounded w-12" />
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          ) : filteredLeads.length === 0 ? (
+                            <div className="text-center py-8 text-gray-500">
+                              No assigned leads
+                            </div>
+                          ) : (
+                            filteredLeads.slice(0, 4).map((lead) => (
+                              <div
+                                key={lead.id}
+                                className="flex items-center justify-between p-3 border rounded-lg cursor-pointer hover:bg-gray-50 transition-colors"
+                                onClick={() => handleLeadClick(lead)}
+                              >
                                 <div className="flex items-center gap-3">
-                                  <div className="bg-gray-200 rounded-full h-10 w-10" />
-                                  <div className="space-y-2">
-                                    <div className="h-4 bg-gray-200 rounded w-24" />
-                                    <div className="h-3 bg-gray-200 rounded w-16" />
+                                  <Avatar>
+                                    <AvatarFallback>{(lead.name || 'U').split(' ').map(n => n[0]).join('')}</AvatarFallback>
+                                  </Avatar>
+                                  <div>
+                                    <p className="font-medium">{lead.name}</p>
+                                    <p className="text-sm text-gray-500">${lead.loanAmount?.toLocaleString() || 0}</p>
                                   </div>
                                 </div>
                                 <div className="flex items-center gap-2">
-                                  <div className="h-6 bg-gray-200 rounded w-16" />
-                                  <div className="h-6 bg-gray-200 rounded w-12" />
+                                  <Badge className={getStatusColor(lead.status)}>
+                                    {lead.status}
+                                  </Badge>
+                                  <Badge className={getPriorityColor(lead.priority)}>
+                                    {lead.priority}
+                                  </Badge>
                                 </div>
                               </div>
-                            ))}
-                          </div>
-                        ) : recentLeads.length === 0 ? (
-                          <div className="text-center py-8 text-gray-500">
-                            No recent leads
-                          </div>
-                        ) : (
-                          recentLeads.map((lead) => (
-                            <div 
-                              key={lead.id} 
-                              className="flex items-center justify-between p-3 border rounded-lg cursor-pointer hover:bg-gray-50 transition-colors"
-                              onClick={() => handleLeadClick(lead)}
-                            >
-                              <div className="flex items-center gap-3">
-                                <Avatar>
-                                  <AvatarFallback>{(lead.name || 'U').split(' ').map(n => n[0]).join('')}</AvatarFallback>
-                                </Avatar>
-                                <div>
-                                  <p className="font-medium">{lead.name}</p>
-                                  <p className="text-sm text-gray-500">${lead.amount?.toLocaleString() || 0}</p>
-                                </div>
-                              </div>
-                              <div className="flex items-center gap-2">
-                                <Badge className={getStatusColor(lead.status)}>
-                                  {lead.status}
-                                </Badge>
-                                <Badge className={getPriorityColor(lead.priority)}>
-                                  {lead.priority}
-                                </Badge>
-                              </div>
-                            </div>
-                          ))
-                        )}
-                      </div>
-                    </ScrollArea>
-                  </CardContent>
-                </Card>
+                            ))
+                          )}
+                        </div>
+                      </ScrollArea>
+                    </CardContent>
+                  </Card>
+                )}
 
-                <Card className={loading.attendance ? "opacity-70 animate-pulse" : ""}>
-                  <CardHeader>
-                    <CardTitle>Today's Attendance</CardTitle>
-                    <CardDescription>Employee check-in status</CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <ScrollArea className="h-64">
-                      <div className="space-y-4">
-                        {loading.attendance ? (
-                          <div className="space-y-3">
-                            {[...Array(4)].map((_, i) => (
-                              <div key={`loading-attendance-${i}`} className="flex items-center justify-between p-3 border rounded-lg animate-pulse">
+                {canViewAttendance && (
+                  <Card className={loading.attendance ? "opacity-70 animate-pulse" : ""}>
+                    <CardHeader>
+                      <CardTitle>My Attendance</CardTitle>
+                      <CardDescription>Your check-in and check-out status</CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      <ScrollArea className="h-64">
+                        <div className="space-y-4">
+                          {loading.attendance ? (
+                            <div className="space-y-3">
+                              {[...Array(4)].map((_, i) => (
+                                <div key={`loading-attendance-${i}`} className="flex items-center justify-between p-3 border rounded-lg animate-pulse">
+                                  <div className="flex items-center gap-3">
+                                    <div className="bg-gray-200 rounded-full h-10 w-10" />
+                                    <div className="space-y-2">
+                                      <div className="h-4 bg-gray-200 rounded w-24" />
+                                      <div className="h-4 bg-gray-200 rounded w-16" />
+                                    </div>
+                                  </div>
+                                  <div className="flex items-center gap-2">
+                                    <div className="h-6 bg-gray-200 rounded w-16" />
+                                    <div className="h-6 bg-gray-200 rounded w-20" />
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          ) : filteredAttendance.length === 0 ? (
+                            <div className="text-center py-8 text-gray-500">
+                              No attendance records for today
+                            </div>
+                          ) : (
+                            filteredAttendance.slice(0, 5).map((record) => (
+                              <div key={record.id} className="flex items-center justify-between p-3 border rounded-lg">
                                 <div className="flex items-center gap-3">
-                                  <div className="bg-gray-200 rounded-full h-10 w-10" />
-                                  <div className="space-y-2">
-                                    <div className="h-4 bg-gray-200 rounded w-24" />
-                                    <div className="h-3 bg-gray-200 rounded w-16" />
+                                  <Avatar>
+                                    <AvatarFallback>{user?.name?.split(' ').map(n => n[0]).join('') || 'U'}</AvatarFallback>
+                                  </Avatar>
+                                  <div>
+                                    <p className="font-medium">Check In</p>
+                                    <p className="text-sm text-gray-500">
+                                      {record.checkInTime ? new Date(record.checkInTime).toLocaleTimeString() : 'Pending'}
+                                    </p>
                                   </div>
                                 </div>
                                 <div className="flex items-center gap-2">
-                                  <div className="h-6 bg-gray-200 rounded w-16" />
-                                  <div className="h-6 bg-gray-200 rounded w-20" />
+                                  <Badge className={getStatusColor(record.status)}>
+                                    {record.status}
+                                  </Badge>
                                 </div>
                               </div>
-                            ))}
-                          </div>
-                        ) : recentAttendance.length === 0 ? (
-                          <div className="text-center py-8 text-gray-500">
-                            No attendance records for today
-                          </div>
-                        ) : (
-                          recentAttendance.map((employee) => (
-                            <div 
-                              key={employee.id} 
-                              className="flex items-center justify-between p-3 border rounded-lg cursor-pointer hover:bg-gray-50 transition-colors"
-                              onClick={() => handleAttendanceClick(employee)}
-                            >
-                              <div className="flex items-center gap-3">
-                                <Avatar>
-                                  <AvatarFallback>{employee.name.split(' ').map(n => n[0]).join('')}</AvatarFallback>
-                                </Avatar>
-                                <div>
-                                  <p className="font-medium">{employee.name}</p>
-                                  <p className="text-sm text-gray-500">{employee.checkIn}</p>
-                                </div>
-                              </div>
-                              <div className="flex items-center gap-2">
-                                <Badge className={getStatusColor(employee.status)}>
-                                  {employee.status}
-                                </Badge>
-                                <Badge variant="outline">
-                                  <MapPin className="h-3 w-3 mr-1" />
-                                  {employee.location}
-                                </Badge>
-                              </div>
-                            </div>
-                          ))
-                        )}
-                      </div>
-                    </ScrollArea>
-                  </CardContent>
-                </Card>
+                            ))
+                          )}
+                        </div>
+                      </ScrollArea>
+                    </CardContent>
+                  </Card>
+                )}
               </div>
 
               {/* Notifications */}

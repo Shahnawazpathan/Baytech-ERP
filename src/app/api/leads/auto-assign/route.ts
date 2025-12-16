@@ -4,13 +4,13 @@ import { db } from '@/lib/db';
 // Background job to reassign leads not contacted within 2 hours
 export async function POST(request: NextRequest) {
   try {
-    // Find leads that were assigned more than 2 hours ago but not contacted
-    const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000); // 2 hours ago
+    // Find leads that were assigned more than 8 hours ago but not contacted
+    const eightHoursAgo = new Date(Date.now() - 8 * 60 * 60 * 1000); // 8 hours ago
 
     const uncontactedLeads = await db.lead.findMany({
       where: {
         assignedToId: { not: null }, // Leads that are assigned
-        assignedAt: { not: null, lte: twoHoursAgo }, // Leads that have an assignment time and are older than 2 hours
+        assignedAt: { not: null, lte: eightHoursAgo }, // Leads that have an assignment time and are older than 8 hours
         contactedAt: null, // Leads that haven't been contacted yet
         status: { in: ['NEW', 'CONTACTED'] } // Only reassign active leads
       },
@@ -41,12 +41,19 @@ export async function POST(request: NextRequest) {
     }> = [];
     for (const lead of uncontactedLeads) {
       try {
-        // Find available employees in the same department with the least assigned leads
+        // Find available employees in the same department with the least assigned leads (excluding admins)
         const availableEmployees = await db.employee.findMany({
           where: {
             departmentId: lead.assignedTo?.departmentId,
             status: 'ACTIVE',
-            isActive: true
+            isActive: true,
+            role: {
+              name: {
+                not: {
+                  contains: 'Administrator'
+                }
+              }
+            }
           }
         });
 
