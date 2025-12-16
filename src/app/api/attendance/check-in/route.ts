@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { getDubaiTime, getDubaiTodayRange, isLateCheckIn } from '@/lib/timezone'
 
 export async function POST(request: NextRequest) {
   try {
@@ -26,19 +27,16 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Check for existing attendance record for today
-    const today = new Date()
-    today.setHours(0, 0, 0, 0)
-    const tomorrow = new Date(today)
-    tomorrow.setDate(tomorrow.getDate() + 1)
+    // Check for existing attendance record for today (Dubai time)
+    const { start: todayStart, end: todayEnd } = getDubaiTodayRange()
 
     const existingAttendance = await db.attendance.findFirst({
       where: {
         employeeId,
         companyId,
         checkInTime: {
-          gte: today,
-          lt: tomorrow
+          gte: todayStart,
+          lt: todayEnd
         }
       }
     })
@@ -50,8 +48,8 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Get current time
-    const checkInTime = new Date()
+    // Get current time in Dubai timezone
+    const checkInTime = getDubaiTime()
 
     // Validate location if provided
     let locationVerified = false
@@ -206,16 +204,9 @@ async function getAddressFromCoordinates(lat: number, lng: number): Promise<stri
 }
 
 function calculateAttendanceStatus(checkInTime: Date, employee: any): string {
-  // Get company settings or use default (9:00 AM start time)
-  const officeStartTime = new Date(checkInTime)
-  officeStartTime.setHours(9, 0, 0, 0) // 9:00 AM
-  
-  const gracePeriod = 15 // 15 minutes grace period
-  const lateThreshold = new Date(officeStartTime.getTime() + gracePeriod * 60000)
+  // Check if employee is late based on Dubai timezone
+  // Default office start time: 9:00 AM with 15 minutes grace period
+  const late = isLateCheckIn(checkInTime, 9, 0, 15)
 
-  if (checkInTime <= lateThreshold) {
-    return 'PRESENT'
-  } else {
-    return 'LATE'
-  }
+  return late ? 'LATE' : 'PRESENT'
 }

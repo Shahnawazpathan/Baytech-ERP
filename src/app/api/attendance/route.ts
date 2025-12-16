@@ -1,22 +1,20 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { getDubaiTime, getDubaiTodayRange, formatDubaiTime } from '@/lib/timezone'
 
 export async function GET(request: NextRequest) {
   try {
     const companyId = request.headers.get('x-company-id') || 'default-company'
-    
-    // Get today's date for filtering attendance records
-    const today = new Date()
-    today.setHours(0, 0, 0, 0)
-    const tomorrow = new Date(today)
-    tomorrow.setDate(tomorrow.getDate() + 1)
+
+    // Get today's date range in Dubai timezone for filtering attendance records
+    const { start: todayStart, end: todayEnd } = getDubaiTodayRange()
 
     const attendanceRecords = await db.attendance.findMany({
       where: {
         companyId,
         checkInTime: {
-          gte: today,
-          lt: tomorrow
+          gte: todayStart,
+          lt: todayEnd
         }
       },
       include: {
@@ -29,14 +27,14 @@ export async function GET(request: NextRequest) {
       }
     })
 
-    // Transform the data to match the expected format
+    // Transform the data to match the expected format with Dubai timezone
     const transformedRecords = attendanceRecords.map(record => ({
       id: record.id,
       employeeId: record.employeeId,
       name: `${record.employee.firstName} ${record.employee.lastName}`,
       department: record.employee.department?.name || 'Unknown',
-      checkIn: record.checkInTime ? new Date(record.checkInTime).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }) : '-',
-      checkOut: record.checkOutTime ? new Date(record.checkOutTime).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }) : '-',
+      checkIn: record.checkInTime ? formatDubaiTime(record.checkInTime, 'hh:mm a') : '-',
+      checkOut: record.checkOutTime ? formatDubaiTime(record.checkOutTime, 'hh:mm a') : '-',
       status: record.status,
       location: record.checkInAddress || 'Unknown',
       coordinates: record.checkInLat && record.checkInLng ? { lat: record.checkInLat, lng: record.checkInLng } : null,
@@ -59,20 +57,18 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    
+
     // This route handles check-in/check-out based on whether checkOutTime exists in the body
-    const today = new Date()
-    today.setHours(0, 0, 0, 0)
-    const tomorrow = new Date(today)
-    tomorrow.setDate(tomorrow.getDate() + 1)
-    
+    // Get today's date range in Dubai timezone
+    const { start: todayStart, end: todayEnd } = getDubaiTodayRange()
+
     // Check if there's already a check-in record for today for this employee
     const existingAttendance = await db.attendance.findFirst({
       where: {
         employeeId: body.employeeId,
         checkInTime: {
-          gte: today,
-          lt: tomorrow
+          gte: todayStart,
+          lt: todayEnd
         }
       }
     })
@@ -112,14 +108,14 @@ export async function POST(request: NextRequest) {
         }
       })
 
-      // Transform the updated record to match expected format
+      // Transform the updated record to match expected format with Dubai timezone
       const transformedRecord = {
         id: updatedAttendance.id,
         employeeId: updatedAttendance.employeeId,
         name: `${updatedAttendance.employee.firstName} ${updatedAttendance.employee.lastName}`,
         department: updatedAttendance.employee.department?.name || 'Unknown',
-        checkIn: updatedAttendance.checkInTime ? new Date(updatedAttendance.checkInTime).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }) : '-',
-        checkOut: updatedAttendance.checkOutTime ? new Date(updatedAttendance.checkOutTime).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }) : '-',
+        checkIn: updatedAttendance.checkInTime ? formatDubaiTime(updatedAttendance.checkInTime, 'hh:mm a') : '-',
+        checkOut: updatedAttendance.checkOutTime ? formatDubaiTime(updatedAttendance.checkOutTime, 'hh:mm a') : '-',
         status: updatedAttendance.status,
         location: updatedAttendance.checkOutAddress || 'Unknown',
         coordinates: updatedAttendance.checkOutLat && updatedAttendance.checkOutLng ? { lat: updatedAttendance.checkOutLat, lng: updatedAttendance.checkOutLng } : null,
@@ -139,12 +135,12 @@ export async function POST(request: NextRequest) {
         )
       }
 
-      // Create a new attendance record with check-in time
+      // Create a new attendance record with check-in time (Dubai timezone)
       const attendance = await db.attendance.create({
         data: {
           employeeId: body.employeeId,
           companyId: body.companyId,
-          checkInTime: new Date(),
+          checkInTime: getDubaiTime(),
           checkInLat: body.latitude,
           checkInLng: body.longitude,
           checkInAddress: body.address,
@@ -160,13 +156,13 @@ export async function POST(request: NextRequest) {
         }
       })
 
-      // Transform the created record to match expected format
+      // Transform the created record to match expected format with Dubai timezone
       const transformedRecord = {
         id: attendance.id,
         employeeId: attendance.employeeId,
         name: `${attendance.employee.firstName} ${attendance.employee.lastName}`,
         department: attendance.employee.department?.name || 'Unknown',
-        checkIn: attendance.checkInTime ? new Date(attendance.checkInTime).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }) : '-',
+        checkIn: attendance.checkInTime ? formatDubaiTime(attendance.checkInTime, 'hh:mm a') : '-',
         checkOut: '-',
         status: attendance.status,
         location: attendance.checkInAddress || 'Unknown',

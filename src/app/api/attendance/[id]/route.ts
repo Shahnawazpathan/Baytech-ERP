@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { getDubaiTime, formatDubaiTime } from '@/lib/timezone'
 
 // Update an attendance record
 export async function PUT(request: NextRequest, context: any) {
@@ -36,7 +37,7 @@ export async function PUT(request: NextRequest, context: any) {
         status: body.status,
         notes: body.notes,
         isVerified: body.isVerified !== undefined ? body.isVerified : existingAttendance.isVerified,
-        updatedAt: new Date()
+        updatedAt: getDubaiTime()
       },
       include: {
         employee: {
@@ -48,14 +49,14 @@ export async function PUT(request: NextRequest, context: any) {
       }
     })
 
-    // Transform the updated attendance to match expected format
+    // Transform the updated attendance to match expected format with Dubai timezone
     const transformedRecord = {
       id: updatedAttendance.id,
       name: `${updatedAttendance.employee.firstName} ${updatedAttendance.employee.lastName}`,
       employeeId: updatedAttendance.employeeId,
       department: updatedAttendance.employee.department?.name || 'Unknown',
-      checkIn: updatedAttendance.checkInTime ? new Date(updatedAttendance.checkInTime).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }) : '-',
-      checkOut: updatedAttendance.checkOutTime ? new Date(updatedAttendance.checkOutTime).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }) : '-',
+      checkIn: updatedAttendance.checkInTime ? formatDubaiTime(updatedAttendance.checkInTime, 'hh:mm a') : '-',
+      checkOut: updatedAttendance.checkOutTime ? formatDubaiTime(updatedAttendance.checkOutTime, 'hh:mm a') : '-',
       status: updatedAttendance.status,
       location: updatedAttendance.checkInAddress || 'Unknown',
       coordinates: updatedAttendance.checkInLat && updatedAttendance.checkInLng ? { lat: updatedAttendance.checkInLat, lng: updatedAttendance.checkInLng } : null,
@@ -99,14 +100,14 @@ export async function GET(request: NextRequest, context: any) {
       )
     }
 
-    // Transform the attendance to match expected format
+    // Transform the attendance to match expected format with Dubai timezone
     const transformedRecord = {
       id: attendance.id,
       name: `${attendance.employee.firstName} ${attendance.employee.lastName}`,
       employeeId: attendance.employeeId,
       department: attendance.employee.department?.name || 'Unknown',
-      checkIn: attendance.checkInTime ? new Date(attendance.checkInTime).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }) : '-',
-      checkOut: attendance.checkOutTime ? new Date(attendance.checkOutTime).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }) : '-',
+      checkIn: attendance.checkInTime ? formatDubaiTime(attendance.checkInTime, 'hh:mm a') : '-',
+      checkOut: attendance.checkOutTime ? formatDubaiTime(attendance.checkOutTime, 'hh:mm a') : '-',
       status: attendance.status,
       location: attendance.checkInAddress || 'Unknown',
       coordinates: attendance.checkInLat && attendance.checkInLng ? { lat: attendance.checkInLat, lng: attendance.checkInLng } : null,

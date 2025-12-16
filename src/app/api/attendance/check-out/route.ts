@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { getDubaiTime, getDubaiTodayRange } from '@/lib/timezone'
 
 export async function POST(request: NextRequest) {
   try {
@@ -26,19 +27,16 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Find today's attendance record
-    const today = new Date()
-    today.setHours(0, 0, 0, 0)
-    const tomorrow = new Date(today)
-    tomorrow.setDate(tomorrow.getDate() + 1)
+    // Find today's attendance record (Dubai time)
+    const { start: todayStart, end: todayEnd } = getDubaiTodayRange()
 
     const existingAttendance = await db.attendance.findFirst({
       where: {
         employeeId,
         companyId,
         checkInTime: {
-          gte: today,
-          lt: tomorrow
+          gte: todayStart,
+          lt: todayEnd
         }
       }
     })
@@ -57,8 +55,8 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Get current time
-    const checkOutTime = new Date()
+    // Get current time in Dubai timezone
+    const checkOutTime = getDubaiTime()
 
     // Validate location if provided
     let locationVerified = false
