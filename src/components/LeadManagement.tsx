@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useCallback, useMemo } from 'react';
+import React, { useState, useMemo } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -16,44 +16,36 @@ import {
   UserPlus,
   Upload,
   X,
-  TrendingUp,
-  Phone,
-  DollarSign,
-  Users,
   Trash2
 } from 'lucide-react';
 
 interface LeadManagementProps {
   user: any;
   leads: any[];
-  employees: any[];
   canViewLeads: boolean;
   canCreateLeads: boolean;
   loading: boolean;
   onRefresh: () => void;
-  refreshData: () => void;
-  showBulkImportModal: boolean;
   setShowBulkImportModal: (show: boolean) => void;
-  handleBulkImportComplete: (importedLeads: any[]) => void;
 }
 
 export function LeadManagement({
   user,
   leads,
-  employees,
   canViewLeads,
   canCreateLeads,
   loading,
-  refreshData,
-  showBulkImportModal,
-  setShowBulkImportModal,
-  handleBulkImportComplete
+  onRefresh,
+  setShowBulkImportModal
 }: LeadManagementProps) {
   const { toast } = useToast();
   const [showAddLeadModal, setShowAddLeadModal] = useState(false);
   const [editingLead, setEditingLead] = useState<any>(null);
   const [selectedLeads, setSelectedLeads] = useState<string[]>([]);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [showNotesModal, setShowNotesModal] = useState(false);
+  const [notesLead, setNotesLead] = useState<any>(null);
+  const [notesValue, setNotesValue] = useState('');
   const [newLead, setNewLead] = useState({
     firstName: '',
     lastName: '',
@@ -147,10 +139,10 @@ export function LeadManagement({
 
   const handleExportLeads = () => {
     const csvContent = [
-      ['Name', 'Email', 'Phone', 'Loan Amount', 'Status', 'Priority', 'Assigned To', 'Property Address', 'Credit Score'],
+      ['Name', 'Email', 'Phone', 'Property Location', 'Status', 'Priority', 'Assigned To', 'Credit Score'],
       ...filteredLeads.map(lead => [
-        lead.name, lead.email, lead.phone, lead.loanAmount, lead.status, lead.priority,
-        lead.assignedTo, lead.propertyAddress, lead.creditScore
+        lead.name, lead.email, lead.phone, lead.propertyAddress, lead.status, lead.priority,
+        lead.assignedTo, lead.creditScore
       ])
     ].map(row => row.join(',')).join('\n')
 
@@ -209,7 +201,7 @@ export function LeadManagement({
         })
 
         if (response.ok) {
-          const updatedLead = await response.json()
+          await response.json()
           setEditingLead(null);
           setNewLead({
             firstName: '',
@@ -225,6 +217,7 @@ export function LeadManagement({
             notes: ''
           });
           setShowAddLeadModal(false);
+          await onRefresh();
 
           toast({
             title: "Success",
@@ -240,6 +233,51 @@ export function LeadManagement({
           variant: "destructive",
         });
       }
+    }
+  };
+
+  const handleNotesClick = (lead: any) => {
+    setNotesLead(lead);
+    setNotesValue(lead.notes || '');
+    setShowNotesModal(true);
+  };
+
+  const handleUpdateNotes = async () => {
+    if (!notesLead) return;
+
+    try {
+      const response = await fetch(`/api/leads/${notesLead.id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-user-id': user?.id,
+          'x-company-id': user?.companyId
+        },
+        body: JSON.stringify({
+          notes: notesValue,
+          companyId: user?.companyId
+        })
+      })
+
+      if (response.ok) {
+        setShowNotesModal(false);
+        setNotesLead(null);
+        setNotesValue('');
+        await onRefresh();
+
+        toast({
+          title: "Success",
+          description: "Notes updated successfully",
+        });
+      } else {
+        throw new Error('Failed to update notes');
+      }
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to update notes",
+        variant: "destructive",
+      });
     }
   };
 
@@ -262,7 +300,7 @@ export function LeadManagement({
       });
 
       if (response.ok) {
-        await refreshData();
+        await onRefresh();
 
         toast({
           title: "Success",
@@ -307,7 +345,7 @@ export function LeadManagement({
         })
 
         if (response.ok) {
-          const createdLead = await response.json()
+          await response.json()
           setNewLead({
             firstName: '',
             lastName: '',
@@ -322,7 +360,7 @@ export function LeadManagement({
             notes: ''
           })
           setShowAddLeadModal(false)
-          refreshData() // Refresh data
+          await onRefresh() // Refresh lead data
 
           toast({
             title: "Success",
@@ -407,7 +445,7 @@ export function LeadManagement({
         });
         setSelectedLeads([]);
         setShowDeleteConfirm(false);
-        refreshData();
+        await onRefresh();
       } else {
         throw new Error('Failed to delete leads');
       }
@@ -606,12 +644,13 @@ export function LeadManagement({
                     )}
                     <th className="text-left p-3">Lead</th>
                     <th className="text-left p-3">Contact</th>
-                    <th className="text-left p-3">Loan Amount</th>
+                    <th className="text-left p-3">Property Location</th>
                     <th className="text-left p-3">Status</th>
                     <th className="text-left p-3">Priority</th>
                     <th className="text-left p-3">Assigned To</th>
                     <th className="text-left p-3">Assigned At</th>
                     <th className="text-left p-3">Contact Required By</th>
+                    <th className="text-left p-3">Notes</th>
                     <th className="text-left p-3">Actions</th>
                   </tr>
                 </thead>
@@ -645,7 +684,11 @@ export function LeadManagement({
                           </div>
                         </td>
                         <td className="p-3">{lead.email}</td>
-                        <td className="p-3">${lead.loanAmount?.toLocaleString() || 0}</td>
+                        <td className="p-3">
+                          <span className="block max-w-[220px] truncate" title={lead.propertyAddress || ''}>
+                            {lead.propertyAddress || '-'}
+                          </span>
+                        </td>
                         <td className="p-3">
                           <Badge className={getStatusColor(lead.status)}>
                             {lead.status}
@@ -672,6 +715,11 @@ export function LeadManagement({
                             </div>
                           ) : '-'}
                         </td>
+                        <td className="p-3 max-w-[220px]">
+                          <span className="block truncate" title={lead.notes || ''}>
+                            {lead.notes || '-'}
+                          </span>
+                        </td>
                         <td className="p-3">
                           <div className="flex gap-2">
                             <Button
@@ -680,6 +728,13 @@ export function LeadManagement({
                               onClick={() => toggleLeadStatus(lead.id, lead.status)}
                             >
                               Next Status
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handleNotesClick(lead)}
+                            >
+                              Notes
                             </Button>
                             <Button
                               variant="ghost"
@@ -695,7 +750,7 @@ export function LeadManagement({
                   })}
                   {filteredLeads.length === 0 && (
                     <tr>
-                      <td colSpan={canDeleteLeads ? 10 : 9} className="p-3 text-center text-gray-500">
+                      <td colSpan={canDeleteLeads ? 11 : 10} className="p-3 text-center text-gray-500">
                         No leads found
                       </td>
                     </tr>
@@ -971,6 +1026,56 @@ export function LeadManagement({
                   onClick={handleDeleteSelected}
                 >
                   Delete {selectedLeads.length} Lead{selectedLeads.length !== 1 ? 's' : ''}
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Notes Modal */}
+      {showNotesModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-md w-full">
+            <div className="p-6">
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="text-xl font-semibold text-gray-900">Lead Notes</h3>
+                <Button
+                  variant="ghost"
+                  onClick={() => {
+                    setShowNotesModal(false);
+                    setNotesLead(null);
+                    setNotesValue('');
+                  }}
+                >
+                  Close
+                </Button>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="lead-notes">Notes</Label>
+                <textarea
+                  id="lead-notes"
+                  value={notesValue}
+                  onChange={(e) => setNotesValue(e.target.value)}
+                  className="w-full min-h-[120px] p-2 border border-gray-300 rounded-md resize-none"
+                  placeholder="Add notes for this lead..."
+                />
+              </div>
+
+              <div className="flex justify-end gap-2 mt-4">
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setShowNotesModal(false);
+                    setNotesLead(null);
+                    setNotesValue('');
+                  }}
+                >
+                  Cancel
+                </Button>
+                <Button onClick={handleUpdateNotes} className="bg-blue-600 hover:bg-blue-700 text-white">
+                  Save Notes
                 </Button>
               </div>
             </div>

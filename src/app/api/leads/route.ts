@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { cache, createCacheKey } from '@/lib/cache'
+import type { PrismaPromise } from '@prisma/client'
+import { cache, createCacheKey, invalidateCache } from '@/lib/cache'
 
 export async function GET(request: NextRequest) {
   try {
@@ -40,6 +41,7 @@ export async function GET(request: NextRequest) {
           priority: true,
           assignedToId: true,
           assignedAt: true,
+          contactedAt: true,
           address: true,
           creditScore: true,
           source: true,
@@ -76,6 +78,7 @@ export async function GET(request: NextRequest) {
       assignedTo: lead.assignedTo ? `${lead.assignedTo.firstName} ${lead.assignedTo.lastName}` : 'Unassigned',
       assignedToId: lead.assignedToId,
       assignedAt: lead.assignedAt,
+      contactedAt: lead.contactedAt,
       propertyAddress: lead.address,
       creditScore: lead.creditScore,
       source: lead.source,
@@ -114,6 +117,7 @@ export async function POST(request: NextRequest) {
     const body = await request.json()
 
     // Create a new lead
+    const normalizedStatus = body.status || 'NEW'
     const lead = await db.lead.create({
       data: {
         leadNumber: `LEAD${Date.now()}`, // Generate lead number
@@ -122,7 +126,7 @@ export async function POST(request: NextRequest) {
         email: body.email?.trim() || null,
         phone: body.phone?.trim() || 'N/A',
         loanAmount: body.loanAmount || null,
-        status: body.status || 'NEW',
+        status: normalizedStatus,
         priority: body.priority || 'MEDIUM',
         assignedToId: body.assignedToId || null,
         assignedAt: body.assignedToId ? new Date() : null,
@@ -131,6 +135,7 @@ export async function POST(request: NextRequest) {
         creditScore: body.creditScore || null,
         source: body.source?.trim() || 'Website',
         notes: body.notes?.trim() || null,
+        contactedAt: normalizedStatus === 'CONTACTED' ? new Date() : null,
         isActive: true
       },
       include: {
@@ -150,6 +155,7 @@ export async function POST(request: NextRequest) {
       assignedTo: lead.assignedTo ? `${lead.assignedTo.firstName} ${lead.assignedTo.lastName}` : 'Unassigned',
       assignedToId: lead.assignedToId,
       assignedAt: lead.assignedAt,
+      contactedAt: lead.contactedAt,
       propertyAddress: lead.address,
       creditScore: lead.creditScore,
       source: lead.source,
@@ -159,6 +165,8 @@ export async function POST(request: NextRequest) {
       lastName: lead.lastName || '',
       notes: lead.notes || ''
     }
+
+    invalidateCache('leads', lead.companyId)
 
     return NextResponse.json(transformedLead)
   } catch (error) {
@@ -191,7 +199,7 @@ export async function PUT(request: NextRequest) {
     }
 
     // Get all active employees for this company (excluding admins)
-    const activeEmployees = await db.employee.findMany({
+    const activeEmployees = autoAssign ? await db.employee.findMany({
       where: {
         companyId,
         status: 'ACTIVE',
@@ -222,7 +230,7 @@ export async function PUT(request: NextRequest) {
           _count: 'asc'
         }
       }
-    })
+    }) : []
 
     if (autoAssign && activeEmployees.length === 0) {
       return NextResponse.json(
@@ -231,79 +239,123 @@ export async function PUT(request: NextRequest) {
       )
     }
 
-    const createdLeads: any[] = []
+    const createdAt = new Date()
+    const leadNumberPrefix = Date.now()
     let employeeIndex = 0
 
-    // Create leads with round-robin assignment
-    for (const leadData of leads) {
+    const leadsToCreate = leads.map((leadData, index) => {
       let assignedEmployeeId: string | null = null
 
       if (autoAssign && activeEmployees.length > 0) {
-        // Round-robin assignment
         assignedEmployeeId = activeEmployees[employeeIndex].id
         employeeIndex = (employeeIndex + 1) % activeEmployees.length
       }
 
-      const lead = await db.lead.create({
-        data: {
-          leadNumber: `LEAD${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-          firstName: leadData.firstName ? (typeof leadData.firstName === 'string' ? leadData.firstName.trim() : String(leadData.firstName).trim()) : 'Unknown',
-          lastName: leadData.lastName ? (typeof leadData.lastName === 'string' ? leadData.lastName.trim() : String(leadData.lastName).trim()) : '',
-          email: leadData.email ? (typeof leadData.email === 'string' ? leadData.email.trim() : String(leadData.email).trim()) : null,
-          phone: leadData.phone ? (typeof leadData.phone === 'string' ? leadData.phone.trim() : String(leadData.phone).trim()) : 'N/A',
-          loanAmount: leadData.loanAmount ? parseFloat(leadData.loanAmount.toString()) : null,
-          status: leadData.status || 'NEW',
-          priority: leadData.priority || 'MEDIUM',
-          assignedToId: assignedEmployeeId,
-          assignedAt: assignedEmployeeId ? new Date() : null,
-          companyId,
-          address: leadData.propertyAddress ? (typeof leadData.propertyAddress === 'string' ? leadData.propertyAddress.trim() : String(leadData.propertyAddress).trim()) : null,
-          creditScore: leadData.creditScore ? parseInt(leadData.creditScore.toString()) : null,
-          source: leadData.source ? (typeof leadData.source === 'string' ? leadData.source.trim() : String(leadData.source).trim()) : 'Import',
-          notes: leadData.notes ? (typeof leadData.notes === 'string' ? leadData.notes.trim() : String(leadData.notes).trim()) : null,
-          isActive: true
-        },
-        include: {
-          assignedTo: true
-        }
-      })
+      const normalizedStatus = leadData.status || 'NEW'
+      const leadNumber = `LEAD${leadNumberPrefix}-${index}-${Math.random().toString(36).slice(2, 9)}`
 
-      // Create lead history for import
-      await db.leadHistory.create({
-        data: {
-          leadId: lead.id,
-          employeeId: assignedEmployeeId,
-          action: 'IMPORTED',
-          newValue: JSON.stringify({
-            assignedToId: assignedEmployeeId,
-            status: lead.status
-          }),
-          notes: assignedEmployeeId
-            ? `Imported and auto-assigned to ${lead.assignedTo?.firstName} ${lead.assignedTo?.lastName}`
-            : 'Imported without assignment'
-        }
-      })
-
-      // Create notification for assigned employee
-      if (assignedEmployeeId && lead.assignedTo) {
-        await db.notification.create({
-          data: {
-            title: 'New Lead Assigned',
-            message: `${lead.lastName ? `${lead.firstName} ${lead.lastName}` : lead.firstName} has been assigned to you via import`,
-            type: 'INFO',
-            category: 'LEAD',
-            companyId,
-            employeeId: assignedEmployeeId,
-            metadata: JSON.stringify({
-              leadId: lead.id,
-              leadNumber: lead.leadNumber,
-              source: 'bulk_import'
-            })
-          }
-        })
+      return {
+        leadNumber,
+        firstName: leadData.firstName ? (typeof leadData.firstName === 'string' ? leadData.firstName.trim() : String(leadData.firstName).trim()) : 'Unknown',
+        lastName: leadData.lastName ? (typeof leadData.lastName === 'string' ? leadData.lastName.trim() : String(leadData.lastName).trim()) : '',
+        email: leadData.email ? (typeof leadData.email === 'string' ? leadData.email.trim() : String(leadData.email).trim()) : null,
+        phone: leadData.phone ? (typeof leadData.phone === 'string' ? leadData.phone.trim() : String(leadData.phone).trim()) : 'N/A',
+        loanAmount: leadData.loanAmount ? parseFloat(leadData.loanAmount.toString()) : null,
+        status: normalizedStatus,
+        priority: leadData.priority || 'MEDIUM',
+        assignedToId: assignedEmployeeId,
+        assignedAt: assignedEmployeeId ? createdAt : null,
+        companyId,
+        address: leadData.propertyAddress ? (typeof leadData.propertyAddress === 'string' ? leadData.propertyAddress.trim() : String(leadData.propertyAddress).trim()) : null,
+        creditScore: leadData.creditScore ? parseInt(leadData.creditScore.toString()) : null,
+        source: leadData.source ? (typeof leadData.source === 'string' ? leadData.source.trim() : String(leadData.source).trim()) : 'Import',
+        notes: leadData.notes ? (typeof leadData.notes === 'string' ? leadData.notes.trim() : String(leadData.notes).trim()) : null,
+        contactedAt: normalizedStatus === 'CONTACTED' ? createdAt : null,
+        isActive: true
       }
+    })
 
-      createdLeads.push({
+    await db.lead.createMany({
+      data: leadsToCreate
+    })
+
+    const leadNumbers = leadsToCreate.map(lead => lead.leadNumber)
+    const createdLeadRecords = await db.lead.findMany({
+      where: {
+        companyId,
+        leadNumber: { in: leadNumbers }
+      },
+      select: {
+        id: true,
+        leadNumber: true,
+        firstName: true,
+        lastName: true,
+        email: true,
+        phone: true,
+        loanAmount: true,
+        status: true,
+        priority: true,
+        assignedToId: true,
+        assignedAt: true,
+        contactedAt: true,
+        address: true,
+        creditScore: true,
+        source: true,
+        createdAt: true,
+        updatedAt: true,
+        notes: true
+      }
+    })
+
+    const employeeById = new Map(activeEmployees.map(emp => [emp.id, emp]))
+    const historyRecords = createdLeadRecords.map(lead => {
+      const employee = lead.assignedToId ? employeeById.get(lead.assignedToId) : null
+      return {
+        leadId: lead.id,
+        employeeId: lead.assignedToId,
+        action: 'IMPORTED',
+        newValue: JSON.stringify({
+          assignedToId: lead.assignedToId,
+          status: lead.status
+        }),
+        notes: lead.assignedToId && employee
+          ? `Imported and auto-assigned to ${employee.firstName} ${employee.lastName}`
+          : 'Imported without assignment'
+      }
+    })
+
+    const notificationRecords = createdLeadRecords
+      .filter(lead => lead.assignedToId && employeeById.has(lead.assignedToId))
+      .map(lead => {
+        return {
+          title: 'New Lead Assigned',
+          message: `${lead.lastName ? `${lead.firstName} ${lead.lastName}` : lead.firstName} has been assigned to you via import`,
+          type: 'INFO',
+          category: 'LEAD',
+          companyId,
+          employeeId: lead.assignedToId as string,
+          metadata: JSON.stringify({
+            leadId: lead.id,
+            leadNumber: lead.leadNumber,
+            source: 'bulk_import'
+          })
+        }
+      })
+
+    const transactionOps: PrismaPromise<unknown>[] = []
+    if (historyRecords.length > 0) {
+      transactionOps.push(db.leadHistory.createMany({ data: historyRecords }))
+    }
+    if (notificationRecords.length > 0) {
+      transactionOps.push(db.notification.createMany({ data: notificationRecords }))
+    }
+    if (transactionOps.length > 0) {
+      await db.$transaction(transactionOps)
+    }
+
+    const createdLeads = createdLeadRecords.map(lead => {
+      const employee = lead.assignedToId ? employeeById.get(lead.assignedToId) : null
+      return {
         id: lead.id,
         name: lead.lastName ? `${lead.firstName || ''} ${lead.lastName}`.trim() : lead.firstName,
         email: lead.email,
@@ -311,9 +363,10 @@ export async function PUT(request: NextRequest) {
         loanAmount: lead.loanAmount,
         status: lead.status,
         priority: lead.priority,
-        assignedTo: lead.assignedTo ? `${lead.assignedTo.firstName} ${lead.assignedTo.lastName}` : 'Unassigned',
+        assignedTo: employee ? `${employee.firstName} ${employee.lastName}` : 'Unassigned',
         assignedToId: lead.assignedToId,
         assignedAt: lead.assignedAt,
+        contactedAt: lead.contactedAt,
         propertyAddress: lead.address,
         creditScore: lead.creditScore,
         source: lead.source,
@@ -322,8 +375,10 @@ export async function PUT(request: NextRequest) {
         firstName: lead.firstName,
         lastName: lead.lastName || '',
         notes: lead.notes || ''
-      })
-    }
+      }
+    })
+
+    invalidateCache('leads', companyId)
 
     return NextResponse.json({
       success: true,
@@ -343,6 +398,7 @@ export async function PUT(request: NextRequest) {
 // Bulk delete endpoint
 export async function DELETE(request: NextRequest) {
   try {
+    const companyId = request.headers.get('x-company-id') || 'default-company'
     const body = await request.json()
     const { leadIds } = body
 
@@ -366,8 +422,7 @@ export async function DELETE(request: NextRequest) {
       }
     })
 
-    // Clear cache
-    cache.clear()
+    invalidateCache('leads', companyId)
 
     return NextResponse.json({
       success: true,

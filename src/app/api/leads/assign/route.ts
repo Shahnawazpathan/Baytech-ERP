@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { invalidateCache } from '@/lib/cache'
 import { hasPermission } from '@/lib/rbac'
 
 export async function POST(request: NextRequest) {
@@ -145,6 +146,8 @@ export async function POST(request: NextRequest) {
         }
       })
     }
+
+    invalidateCache('leads', employee.companyId)
 
     return NextResponse.json({
       success: true,
@@ -377,6 +380,8 @@ export async function PUT(request: NextRequest) {
         data: notificationRecords
       })
     ])
+
+    invalidateCache('leads', employees[0].companyId)
 
     // Get updated leads for response
     const updatedLeads = await db.lead.findMany({

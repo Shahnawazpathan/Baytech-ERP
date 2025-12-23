@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { invalidateCache } from '@/lib/cache'
 
 // Get leads pool
 export async function GET(request: NextRequest) {
@@ -13,21 +14,25 @@ export async function GET(request: NextRequest) {
 
     let whereClause: any = {
       companyId,
-      isActive: true
+      isActive: true,
+      status: 'NEW',
+      contactedAt: null
     }
 
     // Filter based on type
     if (filter === 'unassigned') {
       whereClause.assignedToId = null
     } else if (filter === 'available') {
-      // Show leads that are NEW or CONTACTED (can be taken)
-      whereClause.status = { in: ['NEW', 'CONTACTED'] }
+      // Base filter already limits to NEW, keep for clarity
+      whereClause.status = 'NEW'
     } else if (filter === 'reassigned') {
       // Show only leads that were actually auto-reassigned due to no contact
       // These are leads that have a history record of AUTO_REASSIGNED action
       whereClause = {
         companyId,
         isActive: true,
+        status: 'NEW',
+        contactedAt: null,
         history: {
           some: {
             action: 'AUTO_REASSIGNED'
@@ -40,7 +45,7 @@ export async function GET(request: NextRequest) {
     let leads, total;
 
     if (filter === 'reassigned') {
-      // For 'reassigned' filter, we need to query leads with AUTO_REASSIGNED history
+      // For 'reassigned' filter, we need to query leads with AUTO_REASSIGNED history that are still not contacted
       // This requires a different approach since we need to join with lead history
       const leadIds = await db.leadHistory.findMany({
         where: {
@@ -50,7 +55,9 @@ export async function GET(request: NextRequest) {
           },
           lead: {
             companyId,
-            isActive: true
+            isActive: true,
+            contactedAt: null, // Not contacted yet
+            status: 'NEW' // Still active
           }
         },
         select: {
@@ -64,7 +71,9 @@ export async function GET(request: NextRequest) {
       [leads, total] = await Promise.all([
         db.lead.findMany({
           where: {
-            id: { in: leadIdsArray }
+            id: { in: leadIdsArray },
+            contactedAt: null, // Ensure they're still not contacted
+            status: 'NEW' // Still active
           },
           select: {
             id: true,
@@ -101,7 +110,9 @@ export async function GET(request: NextRequest) {
         }),
         db.lead.count({
           where: {
-            id: { in: leadIdsArray }
+            id: { in: leadIdsArray },
+            contactedAt: null, // Ensure they're still not contacted
+            status: 'NEW' // Still active
           }
         })
       ]);
@@ -168,7 +179,7 @@ export async function GET(request: NextRequest) {
       assignedAt: lead.assignedAt,
       createdAt: lead.createdAt,
       notes: lead.notes,
-      canBeTaken: lead.status === 'NEW' || lead.status === 'CONTACTED' // Only these statuses can be taken
+      canBeTaken: lead.status === 'NEW' // Only NEW leads can be taken
     }))
 
     return NextResponse.json({
@@ -235,11 +246,11 @@ export async function POST(request: NextRequest) {
     }
 
     // Check if lead can be taken
-    if (!force && lead.status !== 'NEW' && lead.status !== 'CONTACTED') {
+    if (!force && lead.status !== 'NEW') {
       return NextResponse.json(
         {
           success: false,
-          error: `Lead cannot be taken. Current status: ${lead.status}. Only NEW or CONTACTED leads can be claimed.`
+          error: `Lead cannot be taken. Current status: ${lead.status}. Only NEW leads can be claimed.`
         },
         { status: 400 }
       )
@@ -353,6 +364,8 @@ export async function POST(request: NextRequest) {
         }
       })
     }
+
+    invalidateCache('leads', employee.companyId)
 
     return NextResponse.json({
       success: true,
@@ -469,6 +482,8 @@ export async function DELETE(request: NextRequest) {
         })
       }
     })
+
+    invalidateCache('leads', lead.companyId)
 
     return NextResponse.json({
       success: true,

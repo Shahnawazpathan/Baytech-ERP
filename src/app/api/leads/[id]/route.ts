@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { invalidateCache } from '@/lib/cache'
 
 // Update a lead
 export async function PUT(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -23,24 +24,26 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
     const updatedLead = await db.lead.update({
       where: { id },
       data: {
-        firstName: body.firstName,
-        lastName: body.lastName || null,
-        email: body.email,
-        phone: body.phone,
-        loanAmount: body.loanAmount,
-        status: body.status,
-        priority: body.priority,
-        assignedToId: body.assignedToId,
-        address: body.propertyAddress,
-        creditScore: body.creditScore,
-        source: body.source,
-        notes: body.notes,
+        firstName: body.firstName ?? existingLead.firstName,
+        lastName: body.lastName !== undefined ? (body.lastName === '' ? null : body.lastName) : existingLead.lastName,
+        email: body.email !== undefined ? (body.email === '' ? null : body.email) : existingLead.email,
+        phone: body.phone !== undefined ? body.phone : existingLead.phone,
+        loanAmount: body.loanAmount !== undefined ? body.loanAmount : existingLead.loanAmount,
+        status: body.status !== undefined ? body.status : existingLead.status,
+        priority: body.priority !== undefined ? body.priority : existingLead.priority,
+        assignedToId: body.assignedToId !== undefined ? body.assignedToId : existingLead.assignedToId,
+        address: body.propertyAddress !== undefined ? (body.propertyAddress === '' ? null : body.propertyAddress) : existingLead.address,
+        creditScore: body.creditScore !== undefined ? body.creditScore : existingLead.creditScore,
+        source: body.source !== undefined ? body.source : existingLead.source,
+        notes: body.notes !== undefined ? (body.notes === '' ? null : body.notes) : existingLead.notes,
         updatedAt: new Date()
       },
       include: {
         assignedTo: true
       }
     })
+
+    invalidateCache('leads', existingLead.companyId)
 
     // Transform the updated lead to match expected format
     const transformedLead = {
@@ -54,6 +57,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
       assignedTo: updatedLead.assignedTo ? `${updatedLead.assignedTo.firstName} ${updatedLead.assignedTo.lastName}` : 'Unassigned',
       assignedToId: updatedLead.assignedToId,
       assignedAt: updatedLead.assignedAt,
+      contactedAt: updatedLead.contactedAt,
       propertyAddress: updatedLead.address,
       creditScore: updatedLead.creditScore,
       source: updatedLead.source,

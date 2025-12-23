@@ -120,6 +120,9 @@ export default function Home() {
     if (value && Array.isArray(value.data)) return value.data
     return []
   }, [])
+  const roleLower = user?.role?.toLowerCase() || ''
+  const isAdminOnly = roleLower.includes('admin') || user?.email === 'admin@baytech.com'
+  const isManager = roleLower.includes('manager')
 
   // Helper function to check if user is admin or manager (can set passwords)
   const isAdmin = useCallback(() => {
@@ -244,6 +247,8 @@ export default function Home() {
     status: 'ALL',
     priority: 'ALL'
   })
+
+  const [selectedAgentId, setSelectedAgentId] = useState('all')
 
   const [attendanceFilter, setAttendanceFilter] = useState({
     search: '',
@@ -438,6 +443,39 @@ export default function Home() {
       }));
     }
   }, [safeUserId, safeCompanyId, canViewEmployees, canViewLeads, canViewAttendance, canViewReports, toast, normalizeList, permissionsLoading])
+
+  const refreshLeads = useCallback(async () => {
+    if (!canViewLeads || permissionsLoading) return
+    try {
+      setLoading(prev => ({
+        ...prev,
+        leads: true
+      }))
+
+      const leadsRes = await fetch('/api/leads', {
+        headers: {
+          'x-user-id': safeUserId,
+          'x-company-id': safeCompanyId
+        }
+      })
+
+      if (leadsRes.ok) {
+        const leadsData = await leadsRes.json()
+        setLeads(normalizeList(leadsData))
+      }
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to refresh leads. Please try again.",
+        variant: "destructive",
+      })
+    } finally {
+      setLoading(prev => ({
+        ...prev,
+        leads: false
+      }))
+    }
+  }, [canViewLeads, permissionsLoading, safeUserId, safeCompanyId, normalizeList, toast])
 
   const refreshData = useCallback(async () => {
     setIsRefreshing(true)
@@ -670,6 +708,38 @@ export default function Home() {
   const employeesList = useMemo(() => normalizeList(employees), [employees, normalizeList])
   const leadsList = useMemo(() => normalizeList(leads), [leads, normalizeList])
   const attendanceList = useMemo(() => normalizeList(attendanceRecords), [attendanceRecords, normalizeList])
+
+  const dashboardLeads = useMemo(() => {
+    let baseLeads = leadsList
+
+    if (!isAdminOnly && !isManager) {
+      baseLeads = baseLeads.filter(lead => lead.assignedToId === user?.id || !lead.assignedToId)
+    }
+
+    if (isAdminOnly && selectedAgentId !== 'all') {
+      baseLeads = baseLeads.filter(lead =>
+        lead.assignedToId === selectedAgentId &&
+        (lead.contactedAt || lead.status === 'CONTACTED')
+      )
+    }
+
+    return baseLeads
+  }, [leadsList, isAdminOnly, isManager, selectedAgentId, user?.id])
+
+  const agentLeadSummary = useMemo(() => {
+    return employeesList
+      .map(employee => {
+        const assignedLeads = leadsList.filter(lead => lead.assignedToId === employee.id)
+        const contactedLeads = assignedLeads.filter(lead => lead.contactedAt || lead.status === 'CONTACTED')
+        return {
+          id: employee.id,
+          name: employee.name,
+          assignedCount: assignedLeads.length,
+          contactedCount: contactedLeads.length
+        }
+      })
+      .sort((a, b) => b.assignedCount - a.assignedCount)
+  }, [employeesList, leadsList])
 
   const filteredEmployees = useMemo(() => {
     return employeesList.filter(employee => {
@@ -1131,10 +1201,10 @@ export default function Home() {
   // Lead Management Functions
   const handleExportLeads = () => {
     const csvContent = [
-      ['Name', 'Email', 'Phone', 'Loan Amount', 'Status', 'Priority', 'Assigned To', 'Property Address', 'Credit Score'],
+      ['Name', 'Email', 'Phone', 'Property Location', 'Status', 'Priority', 'Assigned To', 'Credit Score'],
       ...filteredLeads.map(lead => [
-        lead.name, lead.email, lead.phone, lead.loanAmount, lead.status, lead.priority, 
-        lead.assignedTo, lead.propertyAddress, lead.creditScore
+        lead.name, lead.email, lead.phone, lead.propertyAddress, lead.status, lead.priority,
+        lead.assignedTo, lead.creditScore
       ])
     ].map(row => row.join(',')).join('\n')
 
@@ -1171,8 +1241,8 @@ export default function Home() {
 
       const result = await response.json();
 
-      // Refresh data from backend to get all leads
-      await fetchData();
+      // Refresh leads list from backend
+      await refreshLeads();
 
       toast({
         title: "Bulk Import Successful",
@@ -2145,7 +2215,7 @@ Average Credit Score: ${leadsList.length ? Math.round(leadsList.reduce((sum, lea
   const handleViewLeadDetails = (lead: any) => {
     toast({
       title: "Edit Lead",
-      description: `${lead.name} - Amount: $${lead.loanAmount?.toLocaleString() || 0}, Status: ${lead.status}`,
+      description: `${lead.name} - Property: ${lead.propertyAddress || 'N/A'}, Status: ${lead.status}`,
       duration: 4000,
     })
   }
@@ -2153,7 +2223,7 @@ Average Credit Score: ${leadsList.length ? Math.round(leadsList.reduce((sum, lea
   const handleViewLeadClick = (lead: any) => {
     toast({
       title: "Lead Details",
-      description: `Name: ${lead.name}, Amount: $${lead.loanAmount?.toLocaleString() || 0}, Status: ${lead.status}, Priority: ${lead.priority}, Assigned to: ${lead.assignedTo}`,
+      description: `Name: ${lead.name}, Property: ${lead.propertyAddress || 'N/A'}, Status: ${lead.status}, Priority: ${lead.priority}, Assigned to: ${lead.assignedTo}`,
       duration: 6000,
     })
   }
@@ -2593,9 +2663,9 @@ Average Credit Score: ${leadsList.length ? Math.round(leadsList.reduce((sum, lea
                       <Phone className="h-4 w-4 text-muted-foreground" />
                     </CardHeader>
                     <CardContent>
-                      <div className="text-2xl font-bold">{filteredLeads.length}</div>
+                      <div className="text-2xl font-bold">{dashboardLeads.length}</div>
                       <p className="text-xs text-muted-foreground">
-                        {filteredLeads.filter(l => new Date(l.createdAt) >= new Date(new Date().setDate(new Date().getDate() - 30))).length} this month
+                        {dashboardLeads.filter(l => new Date(l.createdAt) >= new Date(new Date().setDate(new Date().getDate() - 30))).length} this month
                       </p>
                     </CardContent>
                   </Card>
@@ -2608,9 +2678,9 @@ Average Credit Score: ${leadsList.length ? Math.round(leadsList.reduce((sum, lea
                       <TrendingUp className="h-4 w-4 text-muted-foreground" />
                     </CardHeader>
                     <CardContent>
-                      <div className="text-2xl font-bold">{filteredLeads.filter(lead => !['APPLICATION', 'REJECTED', 'CLOSED', 'JUNK'].includes(lead.status)).length}</div>
+                      <div className="text-2xl font-bold">{dashboardLeads.filter(lead => !['APPLICATION', 'REJECTED', 'CLOSED', 'JUNK'].includes(lead.status)).length}</div>
                       <p className="text-xs text-muted-foreground">
-                        of {filteredLeads.length} total
+                        of {dashboardLeads.length} total
                       </p>
                     </CardContent>
                   </Card>
@@ -2623,9 +2693,9 @@ Average Credit Score: ${leadsList.length ? Math.round(leadsList.reduce((sum, lea
                       <DollarSign className="h-4 w-4 text-muted-foreground" />
                     </CardHeader>
                     <CardContent>
-                      <div className="text-2xl font-bold">{filteredLeads.filter(lead => ['APPLICATION', 'APPROVED', 'REAL'].includes(lead.status)).length}</div>
+                      <div className="text-2xl font-bold">{dashboardLeads.filter(lead => ['APPLICATION', 'APPROVED', 'REAL'].includes(lead.status)).length}</div>
                       <p className="text-xs text-muted-foreground">
-                        {filteredLeads.length ? Math.round((filteredLeads.filter(lead => ['APPLICATION', 'APPROVED', 'REAL'].includes(lead.status)).length / filteredLeads.length) * 100) : 0}% conversion
+                        {dashboardLeads.length ? Math.round((dashboardLeads.filter(lead => ['APPLICATION', 'APPROVED', 'REAL'].includes(lead.status)).length / dashboardLeads.length) * 100) : 0}% conversion
                       </p>
                     </CardContent>
                   </Card>
@@ -2646,6 +2716,61 @@ Average Credit Score: ${leadsList.length ? Math.round(leadsList.reduce((sum, lea
                   </Card>
                 )}
               </div>
+
+              {isAdminOnly && canViewLeads && (
+                <Card>
+                  <CardHeader className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                    <div>
+                      <CardTitle>Agent Lead Overview</CardTitle>
+                      <CardDescription>Assigned vs contacted leads per agent</CardDescription>
+                    </div>
+                    <div className="w-full sm:w-64">
+                      <Select value={selectedAgentId} onValueChange={setSelectedAgentId}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Filter by agent" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">All Agents</SelectItem>
+                          {agentLeadSummary.map(agent => (
+                            <SelectItem key={agent.id} value={agent.id}>
+                              {agent.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </CardHeader>
+                  <CardContent>
+                    {agentLeadSummary.length === 0 ? (
+                      <p className="text-sm text-gray-500">No agents available.</p>
+                    ) : (
+                      <div className="space-y-3 max-h-64 overflow-y-auto pr-2">
+                        {agentLeadSummary.map(agent => (
+                          <div
+                            key={agent.id}
+                            className={`flex items-center justify-between p-2 rounded-lg border ${selectedAgentId === agent.id ? 'bg-blue-50 border-blue-200' : 'border-gray-100'}`}
+                          >
+                            <div>
+                              <p className="font-medium text-gray-900">{agent.name}</p>
+                              <p className="text-xs text-gray-500">
+                                {agent.assignedCount} assigned · {agent.contactedCount} contacted
+                              </p>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <Badge variant="outline" className="text-xs">
+                                {agent.assignedCount} assigned
+                              </Badge>
+                              <Badge variant="outline" className="text-xs">
+                                {agent.contactedCount} contacted
+                              </Badge>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              )}
 
               {/* Recent Activity - show only if user has permission for the resource */}
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -2676,12 +2801,12 @@ Average Credit Score: ${leadsList.length ? Math.round(leadsList.reduce((sum, lea
                                 </div>
                               ))}
                             </div>
-                          ) : filteredLeads.length === 0 ? (
+                          ) : dashboardLeads.length === 0 ? (
                             <div className="text-center py-8 text-gray-500">
                               No assigned leads
                             </div>
                           ) : (
-                            filteredLeads.slice(0, 4).map((lead) => (
+                            dashboardLeads.slice(0, 4).map((lead) => (
                               <div
                                 key={lead.id}
                                 className="flex items-center justify-between p-3 border rounded-lg cursor-pointer hover:bg-gray-50 transition-colors"
@@ -2693,7 +2818,9 @@ Average Credit Score: ${leadsList.length ? Math.round(leadsList.reduce((sum, lea
                                   </Avatar>
                                   <div>
                                     <p className="font-medium">{lead.name}</p>
-                                    <p className="text-sm text-gray-500">${lead.loanAmount?.toLocaleString() || 0}</p>
+                                    <p className="text-sm text-gray-500 truncate max-w-[200px]">
+                                      {lead.propertyAddress || 'Property location unavailable'}
+                                    </p>
                                   </div>
                                 </div>
                                 <div className="flex items-center gap-2">
@@ -2845,15 +2972,11 @@ Average Credit Score: ${leadsList.length ? Math.round(leadsList.reduce((sum, lea
               <LeadManagement
                 user={user}
                 leads={leads}
-                employees={employees}
                 canViewLeads={canViewLeads}
                 canCreateLeads={canCreateLeads}
                 loading={loading.leads}
-                onRefresh={refreshData}
-                refreshData={refreshData}
-                showBulkImportModal={showBulkImportModal}
+                onRefresh={refreshLeads}
                 setShowBulkImportModal={setShowBulkImportModal}
-                handleBulkImportComplete={handleBulkImportComplete}
               />
             </TabsContent>
 
@@ -2886,7 +3009,7 @@ Average Credit Score: ${leadsList.length ? Math.round(leadsList.reduce((sum, lea
             </TabsContent>
 
             <TabsContent value="leads-pool">
-              <LeadsPool user={user} onLeadClaimed={fetchData} />
+              <LeadsPool user={user} onLeadClaimed={refreshLeads} />
             </TabsContent>
 
             <TabsContent value="analytics">

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
+import { invalidateCache } from '@/lib/cache';
 
 // Mark a lead as contacted
 export async function POST(request: NextRequest) {
@@ -56,6 +57,8 @@ export async function POST(request: NextRequest) {
         updatedAt: new Date()
       }
     });
+
+    invalidateCache('leads', lead.companyId);
 
     return NextResponse.json({
       success: true,

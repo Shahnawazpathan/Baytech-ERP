@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { invalidateCache } from '@/lib/cache'
 
 // Update lead status
 export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -20,16 +21,20 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     }
     
     // Update the lead status
+    const shouldSetContactedAt = status === 'CONTACTED' && !existingLead.contactedAt
     const updatedLead = await db.lead.update({
       where: { id },
       data: {
         status: status,
+        contactedAt: shouldSetContactedAt ? new Date() : existingLead.contactedAt,
         updatedAt: new Date()
       },
       include: {
         assignedTo: true
       }
     })
+
+    invalidateCache('leads', existingLead.companyId)
 
     // Transform the updated lead to match expected format
     const transformedLead = {
@@ -43,13 +48,15 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       assignedTo: updatedLead.assignedTo ? `${updatedLead.assignedTo.firstName} ${updatedLead.assignedTo.lastName}` : 'Unassigned',
       assignedToId: updatedLead.assignedToId,
       assignedAt: updatedLead.assignedAt,
+      contactedAt: updatedLead.contactedAt,
       propertyAddress: updatedLead.address,
       creditScore: updatedLead.creditScore,
       source: updatedLead.source,
       createdAt: updatedLead.createdAt,
       updatedAt: updatedLead.updatedAt,
       firstName: updatedLead.firstName,
-      lastName: updatedLead.lastName
+      lastName: updatedLead.lastName,
+      notes: updatedLead.notes || ''
     }
 
     return NextResponse.json(transformedLead)
