@@ -66,7 +66,8 @@ export function LeadManagement({
   const [leadFilter, setLeadFilter] = useState({
     search: '',
     status: 'ALL',
-    priority: 'ALL'
+    priority: 'ALL',
+    assignedTo: 'ALL'
   });
 
   // Debounced search
@@ -88,6 +89,7 @@ export function LeadManagement({
                            (lead.email && lead.email.toLowerCase().includes(debouncedLeadSearch.toLowerCase()))
       const matchesStatus = leadFilter.status === 'ALL' || lead.status === leadFilter.status
       const matchesPriority = leadFilter.priority === 'ALL' || lead.priority === leadFilter.priority
+      const matchesAssignee = leadFilter.assignedTo === 'ALL' || lead.assignedToId === leadFilter.assignedTo
 
       // Role-based filtering
       let roleMatches = true;
@@ -96,9 +98,9 @@ export function LeadManagement({
         roleMatches = lead.assignedToId === user?.id;
       }
 
-      return (debouncedLeadSearch === '' || matchesSearch) && matchesStatus && matchesPriority && roleMatches
+      return (debouncedLeadSearch === '' || matchesSearch) && matchesStatus && matchesPriority && matchesAssignee && roleMatches
     })
-  }, [leadsList, debouncedLeadSearch, leadFilter.status, leadFilter.priority, user?.role, user?.id]);
+  }, [leadsList, debouncedLeadSearch, leadFilter.status, leadFilter.priority, leadFilter.assignedTo, user?.role, user?.id]);
 
   // Paginated data
   const paginatedLeads = useMemo(() => {
@@ -113,7 +115,7 @@ export function LeadManagement({
   // Reset pagination when filters change
   React.useEffect(() => {
     setLeadPage(1)
-  }, [debouncedLeadSearch, leadFilter.status, leadFilter.priority]);
+  }, [debouncedLeadSearch, leadFilter.status, leadFilter.priority, leadFilter.assignedTo]);
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -631,11 +633,29 @@ export function LeadManagement({
                   <SelectItem value="LOW">LOW</SelectItem>
                 </SelectContent>
               </Select>
-              {leadFilter.search || leadFilter.status !== 'ALL' || leadFilter.priority !== 'ALL' ? (
+              {(user?.role === 'Administrator' || user?.role === 'Manager') && (
+                <Select value={leadFilter.assignedTo} onValueChange={(value) => setLeadFilter({...leadFilter, assignedTo: value})}>
+                  <SelectTrigger className="w-40">
+                    <SelectValue placeholder="Agent" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="ALL">All Agents</SelectItem>
+                    {Array.from(new Map(leadsList.map(lead => [
+                      lead.assignedToId || 'unassigned',
+                      lead.assignedTo || 'Unassigned'
+                    ])).entries()).map(([id, name]) => (
+                      <SelectItem key={id} value={id}>
+                        {name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+              {leadFilter.search || leadFilter.status !== 'ALL' || leadFilter.priority !== 'ALL' || leadFilter.assignedTo !== 'ALL' ? (
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => setLeadFilter({ search: '', status: 'ALL', priority: 'ALL' })}
+                  onClick={() => setLeadFilter({ search: '', status: 'ALL', priority: 'ALL', assignedTo: 'ALL' })}
                 >
                   <X className="h-4 w-4 mr-2" />
                   Clear

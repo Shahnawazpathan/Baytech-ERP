@@ -52,7 +52,7 @@ interface Employee {
   lastName: string
   email: string
   position: string
-  role: { name: string }
+  role?: { name: string }
 }
 
 interface TaskManagementProps {
@@ -97,6 +97,8 @@ export function TaskManagement({ companyId = 'default-company', userId, userRole
     'Documentation',
     'Support'
   ]
+  const roleLower = userRole?.toLowerCase() || ''
+  const canCreateTasks = roleLower.includes('admin') || roleLower.includes('manager')
 
   // Fetch tasks
   const fetchTasks = async () => {
@@ -126,21 +128,26 @@ export function TaskManagement({ companyId = 'default-company', userId, userRole
 
   // Fetch employees
   const fetchEmployees = async () => {
+    if (!canCreateTasks) {
+      setEmployees([])
+      return
+    }
     try {
       const response = await fetch('/api/employees', {
         headers: {
-          'x-company-id': companyId
+          'x-company-id': companyId,
+          'x-user-id': userId || ''
         }
       })
       const data = await response.json()
 
-      let employeeList = data.employees || []
+      let employeeList = data.data || []
 
       // Filter employees based on user role
-      if (userRole === 'Manager') {
+      if (roleLower.includes('manager')) {
         // Managers can only assign to Employees (not other Managers or Admins)
         employeeList = employeeList.filter((emp: Employee) =>
-          emp.role.name === 'Employee'
+          emp.role?.name?.toLowerCase().includes('employee')
         )
       }
       // Admins can see all employees
@@ -159,7 +166,7 @@ export function TaskManagement({ companyId = 'default-company', userId, userRole
   useEffect(() => {
     fetchTasks()
     fetchEmployees()
-  }, [companyId, userId])
+  }, [companyId, userId, userRole])
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -347,9 +354,6 @@ export function TaskManagement({ companyId = 'default-company', userId, userRole
   }
 
   const stats = getTaskStats()
-
-  // Check if user can create tasks (Admin or Manager)
-  const canCreateTasks = userRole === 'Admin' || userRole === 'Manager'
 
   return (
     <div className="space-y-6">
@@ -661,7 +665,7 @@ export function TaskManagement({ companyId = 'default-company', userId, userRole
                   <SelectContent>
                     {employees.map(employee => (
                       <SelectItem key={employee.id} value={employee.id}>
-                        {employee.firstName} {employee.lastName} ({employee.role.name})
+                        {employee.firstName} {employee.lastName}{employee.role?.name ? ` (${employee.role.name})` : ''}
                       </SelectItem>
                     ))}
                   </SelectContent>

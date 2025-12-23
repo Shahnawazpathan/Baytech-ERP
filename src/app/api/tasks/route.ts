@@ -19,11 +19,14 @@ export async function GET(request: NextRequest) {
       include: { role: true }
     }) : null
 
-    const userRole = user?.role.name
+    const userRole = user?.role.name || ''
+    const roleLower = userRole.toLowerCase()
+    const isAdmin = roleLower.includes('admin')
+    const isManager = roleLower.includes('manager')
 
     // Fetch tasks based on role
     let tasks
-    if (userRole === 'Admin') {
+    if (isAdmin) {
       // Admins can see all tasks
       tasks = await db.task.findMany({
         where: { companyId, isActive: true },
@@ -48,7 +51,7 @@ export async function GET(request: NextRequest) {
         },
         orderBy: { createdAt: 'desc' }
       })
-    } else if (userRole === 'Manager') {
+    } else if (isManager) {
       // Managers see tasks they created and tasks assigned to them
       tasks = await db.task.findMany({
         where: {
@@ -166,9 +169,12 @@ export async function POST(request: NextRequest) {
     }
 
     const creatorRole = creator.role.name
+    const creatorRoleLower = creatorRole.toLowerCase()
+    const creatorIsAdmin = creatorRoleLower.includes('admin')
+    const creatorIsManager = creatorRoleLower.includes('manager')
 
     // Check if user has permission to create tasks (only Admin and Manager)
-    if (creatorRole !== 'Admin' && creatorRole !== 'Manager') {
+    if (!creatorIsAdmin && !creatorIsManager) {
       return NextResponse.json(
         { success: false, error: 'Only Admins and Managers can create tasks' },
         { status: 403 }
@@ -189,9 +195,10 @@ export async function POST(request: NextRequest) {
     }
 
     const assigneeRole = assignee.role.name
+    const assigneeRoleLower = assigneeRole.toLowerCase()
 
     // If creator is Manager, they can only assign to Employees (not other Managers or Admins)
-    if (creatorRole === 'Manager' && (assigneeRole === 'Admin' || assigneeRole === 'Manager')) {
+    if (creatorIsManager && (assigneeRoleLower.includes('admin') || assigneeRoleLower.includes('manager'))) {
       return NextResponse.json(
         { success: false, error: 'Managers can only create tasks for Employees' },
         { status: 403 }

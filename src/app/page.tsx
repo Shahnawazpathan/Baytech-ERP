@@ -2371,16 +2371,14 @@ Average Credit Score: ${leadsList.length ? Math.round(leadsList.reduce((sum, lea
               </Button>
             )}
 
-            {isAdmin() && (
-              <Button
-                variant={activeTab === 'tasks' ? 'secondary' : 'ghost'}
-                className={`w-full gap-2 transition-all duration-200 ${!sidebarOpen ? 'justify-center px-2 lg:px-2' : 'justify-start'} hover:scale-105`}
-                onClick={() => handleNavigation('tasks')}
-              >
-                <CheckSquare className="h-4 w-4 flex-shrink-0" />
-                {sidebarOpen && <span className="truncate">Tasks</span>}
-              </Button>
-            )}
+            <Button
+              variant={activeTab === 'tasks' ? 'secondary' : 'ghost'}
+              className={`w-full gap-2 transition-all duration-200 ${!sidebarOpen ? 'justify-center px-2 lg:px-2' : 'justify-start'} hover:scale-105`}
+              onClick={() => handleNavigation('tasks')}
+            >
+              <CheckSquare className="h-4 w-4 flex-shrink-0" />
+              {sidebarOpen && <span className="truncate">Tasks</span>}
+            </Button>
 
 
 
@@ -2602,9 +2600,7 @@ Average Credit Score: ${leadsList.length ? Math.round(leadsList.reduce((sum, lea
               {canViewAttendance && (
                 <TabsTrigger value="attendance">Attendance</TabsTrigger>
               )}
-              {(user?.role?.toLowerCase().includes('admin') || user?.role?.toLowerCase().includes('manager')) && (
-                <TabsTrigger value="tasks">Tasks</TabsTrigger>
-              )}
+              <TabsTrigger value="tasks">Tasks</TabsTrigger>
               {(user?.role?.toLowerCase().includes('admin') || user?.role?.toLowerCase().includes('manager') || canViewReports) && (
                 <TabsTrigger value="analytics">Analytics</TabsTrigger>
               )}
