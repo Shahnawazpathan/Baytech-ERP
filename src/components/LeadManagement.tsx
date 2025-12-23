@@ -46,6 +46,8 @@ export function LeadManagement({
   const [showNotesModal, setShowNotesModal] = useState(false);
   const [notesLead, setNotesLead] = useState<any>(null);
   const [notesValue, setNotesValue] = useState('');
+  const [notesStatus, setNotesStatus] = useState('');
+  const [followUpDate, setFollowUpDate] = useState('');
   const [newLead, setNewLead] = useState({
     firstName: '',
     lastName: '',
@@ -135,6 +137,26 @@ export function LeadManagement({
       case 'LOW': return 'bg-green-100 text-green-800'
       default: return 'bg-gray-100 text-gray-800'
     }
+  }
+
+  const formatNotesStatus = (status?: string) => {
+    switch (status) {
+      case 'RING':
+        return 'Ring'
+      case 'NOT_CONTACTABLE':
+        return 'Not Contactable'
+      case 'FOLLOW_UP':
+        return 'Follow Up'
+      default:
+        return '-'
+    }
+  }
+
+  const toDateInputValue = (value?: string | null) => {
+    if (!value) return ''
+    const parsed = new Date(value)
+    if (Number.isNaN(parsed.getTime())) return ''
+    return parsed.toISOString().split('T')[0]
   }
 
   const handleExportLeads = () => {
@@ -239,11 +261,22 @@ export function LeadManagement({
   const handleNotesClick = (lead: any) => {
     setNotesLead(lead);
     setNotesValue(lead.notes || '');
+    setNotesStatus(lead.notesStatus || '');
+    setFollowUpDate(toDateInputValue(lead.followUpDate));
     setShowNotesModal(true);
   };
 
   const handleUpdateNotes = async () => {
     if (!notesLead) return;
+
+    if (notesStatus === 'FOLLOW_UP' && !followUpDate) {
+      toast({
+        title: "Validation Error",
+        description: "Please select a follow-up date.",
+        variant: "destructive",
+      });
+      return;
+    }
 
     try {
       const response = await fetch(`/api/leads/${notesLead.id}`, {
@@ -255,6 +288,8 @@ export function LeadManagement({
         },
         body: JSON.stringify({
           notes: notesValue,
+          notesStatus: notesStatus || null,
+          followUpDate: notesStatus === 'FOLLOW_UP' ? followUpDate : null,
           companyId: user?.companyId
         })
       })
@@ -263,6 +298,8 @@ export function LeadManagement({
         setShowNotesModal(false);
         setNotesLead(null);
         setNotesValue('');
+        setNotesStatus('');
+        setFollowUpDate('');
         await onRefresh();
 
         toast({
@@ -650,6 +687,7 @@ export function LeadManagement({
                     <th className="text-left p-3">Assigned To</th>
                     <th className="text-left p-3">Assigned At</th>
                     <th className="text-left p-3">Contact Required By</th>
+                    <th className="text-left p-3">Notes Status</th>
                     <th className="text-left p-3">Notes</th>
                     <th className="text-left p-3">Actions</th>
                   </tr>
@@ -715,6 +753,16 @@ export function LeadManagement({
                             </div>
                           ) : '-'}
                         </td>
+                        <td className="p-3">
+                          <div className="text-sm">
+                            <div>{formatNotesStatus(lead.notesStatus)}</div>
+                            {lead.notesStatus === 'FOLLOW_UP' && lead.followUpDate && (
+                              <div className="text-xs text-gray-500">
+                                {new Date(lead.followUpDate).toLocaleDateString()}
+                              </div>
+                            )}
+                          </div>
+                        </td>
                         <td className="p-3 max-w-[220px]">
                           <span className="block truncate" title={lead.notes || ''}>
                             {lead.notes || '-'}
@@ -750,7 +798,7 @@ export function LeadManagement({
                   })}
                   {filteredLeads.length === 0 && (
                     <tr>
-                      <td colSpan={canDeleteLeads ? 11 : 10} className="p-3 text-center text-gray-500">
+                      <td colSpan={canDeleteLeads ? 12 : 11} className="p-3 text-center text-gray-500">
                         No leads found
                       </td>
                     </tr>
@@ -1046,6 +1094,8 @@ export function LeadManagement({
                     setShowNotesModal(false);
                     setNotesLead(null);
                     setNotesValue('');
+                    setNotesStatus('');
+                    setFollowUpDate('');
                   }}
                 >
                   Close
@@ -1063,6 +1113,46 @@ export function LeadManagement({
                 />
               </div>
 
+              <div className="space-y-2 mt-4">
+                <Label htmlFor="notes-status">Notes Status</Label>
+                <Select
+                  value={notesStatus || 'NONE'}
+                  onValueChange={(value) => {
+                    if (value === 'NONE') {
+                      setNotesStatus('');
+                      setFollowUpDate('');
+                      return;
+                    }
+                    setNotesStatus(value);
+                    if (value !== 'FOLLOW_UP') {
+                      setFollowUpDate('');
+                    }
+                  }}
+                >
+                  <SelectTrigger id="notes-status">
+                    <SelectValue placeholder="Select status" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="NONE">No Status</SelectItem>
+                    <SelectItem value="RING">Ring</SelectItem>
+                    <SelectItem value="NOT_CONTACTABLE">Not Contactable</SelectItem>
+                    <SelectItem value="FOLLOW_UP">Follow Up</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {notesStatus === 'FOLLOW_UP' && (
+                <div className="space-y-2 mt-4">
+                  <Label htmlFor="follow-up-date">Follow Up Date</Label>
+                  <Input
+                    id="follow-up-date"
+                    type="date"
+                    value={followUpDate}
+                    onChange={(e) => setFollowUpDate(e.target.value)}
+                  />
+                </div>
+              )}
+
               <div className="flex justify-end gap-2 mt-4">
                 <Button
                   variant="outline"
@@ -1070,6 +1160,8 @@ export function LeadManagement({
                     setShowNotesModal(false);
                     setNotesLead(null);
                     setNotesValue('');
+                    setNotesStatus('');
+                    setFollowUpDate('');
                   }}
                 >
                   Cancel

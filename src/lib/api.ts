@@ -91,7 +91,7 @@ export async function fetchEmployees(
 export async function fetchLeads(
   companyId: string,
   page: number = 1,
-  limit: number = 100
+  limit: number = 1000
 ): Promise<any[]> {
   const response = await apiFetch<any[] | PaginatedResponse<any>>(
     `/api/leads?page=${page}&limit=${limit}`,

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import type { PrismaPromise } from '@prisma/client'
 import { cache, createCacheKey, invalidateCache } from '@/lib/cache'
+import { mergeLeadMetadata, parseLeadMetadata } from '@/lib/lead-metadata'
 
 export async function GET(request: NextRequest) {
   try {
@@ -10,7 +11,7 @@ export async function GET(request: NextRequest) {
     // Parse pagination parameters
     const { searchParams } = new URL(request.url)
     const page = parseInt(searchParams.get('page') || '1')
-    const limit = parseInt(searchParams.get('limit') || '100')
+    const limit = parseInt(searchParams.get('limit') || '1000')
     const skip = (page - 1) * limit
 
     // Check cache first
@@ -48,6 +49,7 @@ export async function GET(request: NextRequest) {
           createdAt: true,
           updatedAt: true,
           notes: true,
+          metadata: true,
           assignedTo: {
             select: {
               id: true,
@@ -67,27 +69,32 @@ export async function GET(request: NextRequest) {
     ])
 
     // Transform the data to match the expected format
-    const transformedLeads = leads.map(lead => ({
-      id: lead.id,
-      name: lead.lastName ? `${lead.firstName || ''} ${lead.lastName}`.trim() : lead.firstName,
-      email: lead.email,
-      phone: lead.phone,
-      loanAmount: lead.loanAmount,
-      status: lead.status,
-      priority: lead.priority,
-      assignedTo: lead.assignedTo ? `${lead.assignedTo.firstName} ${lead.assignedTo.lastName}` : 'Unassigned',
-      assignedToId: lead.assignedToId,
-      assignedAt: lead.assignedAt,
-      contactedAt: lead.contactedAt,
-      propertyAddress: lead.address,
-      creditScore: lead.creditScore,
-      source: lead.source,
-      createdAt: lead.createdAt,
-      updatedAt: lead.updatedAt,
-      firstName: lead.firstName,
-      lastName: lead.lastName || '',
-      notes: lead.notes || ''
-    }))
+    const transformedLeads = leads.map(lead => {
+      const metadata = parseLeadMetadata(lead.metadata)
+      return {
+        id: lead.id,
+        name: lead.lastName ? `${lead.firstName || ''} ${lead.lastName}`.trim() : lead.firstName,
+        email: lead.email,
+        phone: lead.phone,
+        loanAmount: lead.loanAmount,
+        status: lead.status,
+        priority: lead.priority,
+        assignedTo: lead.assignedTo ? `${lead.assignedTo.firstName} ${lead.assignedTo.lastName}` : 'Unassigned',
+        assignedToId: lead.assignedToId,
+        assignedAt: lead.assignedAt,
+        contactedAt: lead.contactedAt,
+        propertyAddress: lead.address,
+        creditScore: lead.creditScore,
+        source: lead.source,
+        createdAt: lead.createdAt,
+        updatedAt: lead.updatedAt,
+        firstName: lead.firstName,
+        lastName: lead.lastName || '',
+        notes: lead.notes || '',
+        notesStatus: metadata.notesStatus,
+        followUpDate: metadata.followUpDate
+      }
+    })
 
     const response = {
       data: transformedLeads,
@@ -118,6 +125,10 @@ export async function POST(request: NextRequest) {
 
     // Create a new lead
     const normalizedStatus = body.status || 'NEW'
+    const metadata = mergeLeadMetadata(null, {
+      notesStatus: body.notesStatus,
+      followUpDate: body.followUpDate
+    })
     const lead = await db.lead.create({
       data: {
         leadNumber: `LEAD${Date.now()}`, // Generate lead number
@@ -135,6 +146,7 @@ export async function POST(request: NextRequest) {
         creditScore: body.creditScore || null,
         source: body.source?.trim() || 'Website',
         notes: body.notes?.trim() || null,
+        metadata,
         contactedAt: normalizedStatus === 'CONTACTED' ? new Date() : null,
         isActive: true
       },
@@ -163,7 +175,9 @@ export async function POST(request: NextRequest) {
       updatedAt: lead.updatedAt,
       firstName: lead.firstName,
       lastName: lead.lastName || '',
-      notes: lead.notes || ''
+      notes: lead.notes || '',
+      notesStatus: body.notesStatus || null,
+      followUpDate: body.followUpDate || null
     }
 
     invalidateCache('leads', lead.companyId)
@@ -303,7 +317,8 @@ export async function PUT(request: NextRequest) {
         source: true,
         createdAt: true,
         updatedAt: true,
-        notes: true
+        notes: true,
+        metadata: true
       }
     })
 
@@ -354,6 +369,7 @@ export async function PUT(request: NextRequest) {
     }
 
     const createdLeads = createdLeadRecords.map(lead => {
+      const metadata = parseLeadMetadata(lead.metadata)
       const employee = lead.assignedToId ? employeeById.get(lead.assignedToId) : null
       return {
         id: lead.id,
@@ -374,7 +390,9 @@ export async function PUT(request: NextRequest) {
         updatedAt: lead.updatedAt,
         firstName: lead.firstName,
         lastName: lead.lastName || '',
-        notes: lead.notes || ''
+        notes: lead.notes || '',
+        notesStatus: metadata.notesStatus,
+        followUpDate: metadata.followUpDate
       }
     })
 

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { invalidateCache } from '@/lib/cache'
+import { parseLeadMetadata } from '@/lib/lead-metadata'
 
 // Update lead status
 export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -37,6 +38,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     invalidateCache('leads', existingLead.companyId)
 
     // Transform the updated lead to match expected format
+    const metadataValues = parseLeadMetadata(updatedLead.metadata)
     const transformedLead = {
       id: updatedLead.id,
       name: `${updatedLead.firstName || ''} ${updatedLead.lastName || ''}`.trim(),
@@ -56,7 +58,9 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       updatedAt: updatedLead.updatedAt,
       firstName: updatedLead.firstName,
       lastName: updatedLead.lastName,
-      notes: updatedLead.notes || ''
+      notes: updatedLead.notes || '',
+      notesStatus: metadataValues.notesStatus,
+      followUpDate: metadataValues.followUpDate
     }
 
     return NextResponse.json(transformedLead)

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { invalidateCache } from '@/lib/cache'
+import { mergeLeadMetadata, parseLeadMetadata } from '@/lib/lead-metadata'
 
 // Update a lead
 export async function PUT(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -21,6 +22,13 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
     }
     
     // Update the lead
+    const shouldUpdateMetadata = body.notesStatus !== undefined || body.followUpDate !== undefined
+    const metadata = shouldUpdateMetadata
+      ? mergeLeadMetadata(existingLead.metadata, {
+          notesStatus: body.notesStatus,
+          followUpDate: body.followUpDate
+        })
+      : existingLead.metadata
     const updatedLead = await db.lead.update({
       where: { id },
       data: {
@@ -36,6 +44,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
         creditScore: body.creditScore !== undefined ? body.creditScore : existingLead.creditScore,
         source: body.source !== undefined ? body.source : existingLead.source,
         notes: body.notes !== undefined ? (body.notes === '' ? null : body.notes) : existingLead.notes,
+        metadata,
         updatedAt: new Date()
       },
       include: {
@@ -46,6 +55,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
     invalidateCache('leads', existingLead.companyId)
 
     // Transform the updated lead to match expected format
+    const metadataValues = parseLeadMetadata(updatedLead.metadata)
     const transformedLead = {
       id: updatedLead.id,
       name: updatedLead.lastName ? `${updatedLead.firstName || ''} ${updatedLead.lastName}`.trim() : updatedLead.firstName,
@@ -65,7 +75,9 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
       updatedAt: updatedLead.updatedAt,
       firstName: updatedLead.firstName,
       lastName: updatedLead.lastName || '',
-      notes: updatedLead.notes
+      notes: updatedLead.notes,
+      notesStatus: metadataValues.notesStatus,
+      followUpDate: metadataValues.followUpDate
     }
 
     return NextResponse.json(transformedLead)
@@ -98,6 +110,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     }
 
     // Transform the lead to match expected format
+    const metadataValues = parseLeadMetadata(lead.metadata)
     const transformedLead = {
       id: lead.id,
       name: lead.lastName ? `${lead.firstName || ''} ${lead.lastName}`.trim() : lead.firstName,
@@ -116,7 +129,9 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       updatedAt: lead.updatedAt,
       firstName: lead.firstName,
       lastName: lead.lastName || '',
-      notes: lead.notes
+      notes: lead.notes,
+      notesStatus: metadataValues.notesStatus,
+      followUpDate: metadataValues.followUpDate
     }
 
     return NextResponse.json(transformedLead)

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { invalidateCache } from '@/lib/cache'
+import { parseLeadMetadata } from '@/lib/lead-metadata'
 
 // Get leads pool
 export async function GET(request: NextRequest) {
@@ -92,6 +93,7 @@ export async function GET(request: NextRequest) {
             assignedAt: true,
             createdAt: true,
             notes: true,
+            metadata: true,
             assignedTo: {
               select: {
                 id: true,
@@ -137,6 +139,7 @@ export async function GET(request: NextRequest) {
             assignedAt: true,
             createdAt: true,
             notes: true,
+            metadata: true,
             assignedTo: {
               select: {
                 id: true,
@@ -158,29 +161,34 @@ export async function GET(request: NextRequest) {
     }
 
     // Transform the data
-    const transformedLeads = leads.map(lead => ({
-      id: lead.id,
-      leadNumber: lead.leadNumber,
-      firstName: lead.firstName,
-      lastName: lead.lastName,
-      name: `${lead.firstName || ''} ${lead.lastName || ''}`.trim(),
-      email: lead.email,
-      phone: lead.phone,
-      loanAmount: lead.loanAmount,
-      status: lead.status,
-      priority: lead.priority,
-      source: lead.source,
-      creditScore: lead.creditScore,
-      propertyAddress: lead.address,
-      assignedTo: lead.assignedTo
-        ? `${lead.assignedTo.firstName} ${lead.assignedTo.lastName}`
-        : 'Unassigned',
-      assignedToId: lead.assignedToId,
-      assignedAt: lead.assignedAt,
-      createdAt: lead.createdAt,
-      notes: lead.notes,
-      canBeTaken: lead.status === 'NEW' // Only NEW leads can be taken
-    }))
+    const transformedLeads = leads.map(lead => {
+      const metadata = parseLeadMetadata(lead.metadata)
+      return {
+        id: lead.id,
+        leadNumber: lead.leadNumber,
+        firstName: lead.firstName,
+        lastName: lead.lastName,
+        name: `${lead.firstName || ''} ${lead.lastName || ''}`.trim(),
+        email: lead.email,
+        phone: lead.phone,
+        loanAmount: lead.loanAmount,
+        status: lead.status,
+        priority: lead.priority,
+        source: lead.source,
+        creditScore: lead.creditScore,
+        propertyAddress: lead.address,
+        assignedTo: lead.assignedTo
+          ? `${lead.assignedTo.firstName} ${lead.assignedTo.lastName}`
+          : 'Unassigned',
+        assignedToId: lead.assignedToId,
+        assignedAt: lead.assignedAt,
+        createdAt: lead.createdAt,
+        notes: lead.notes,
+        notesStatus: metadata.notesStatus,
+        followUpDate: metadata.followUpDate,
+        canBeTaken: lead.status === 'NEW' // Only NEW leads can be taken
+      }
+    })
 
     return NextResponse.json({
       success: true,

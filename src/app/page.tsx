@@ -342,7 +342,7 @@ export default function Home() {
 
       if (canViewLeads) {
         promises.push(
-          fetch('/api/leads', {
+          fetch('/api/leads?limit=1000', {
             headers: {
               'x-user-id': safeUserId,
               'x-company-id': safeCompanyId
@@ -452,7 +452,7 @@ export default function Home() {
         leads: true
       }))
 
-      const leadsRes = await fetch('/api/leads', {
+      const leadsRes = await fetch('/api/leads?limit=1000', {
         headers: {
           'x-user-id': safeUserId,
           'x-company-id': safeCompanyId
@@ -627,7 +627,7 @@ export default function Home() {
           }
           case 'leads': {
             if (canViewLeads) {
-              const leadsRes = await fetch('/api/leads', {
+              const leadsRes = await fetch('/api/leads?limit=1000', {
                 headers: {
                   'x-user-id': safeUserId,
                   'x-company-id': safeCompanyId
