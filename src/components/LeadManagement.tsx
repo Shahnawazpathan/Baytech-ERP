@@ -641,11 +641,11 @@ export function LeadManagement({
                   <SelectContent>
                     <SelectItem value="ALL">All Agents</SelectItem>
                     {Array.from(new Map(leadsList.map(lead => [
-                      lead.assignedToId || 'unassigned',
-                      lead.assignedTo || 'Unassigned'
+                      String(lead.assignedToId || 'unassigned'),
+                      String(lead.assignedTo || 'Unassigned')
                     ])).entries()).map(([id, name]) => (
-                      <SelectItem key={id} value={id}>
-                        {name}
+                      <SelectItem key={String(id)} value={String(id)}>
+                        {String(name)}
                       </SelectItem>
                     ))}
                   </SelectContent>
