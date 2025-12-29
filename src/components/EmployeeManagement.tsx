@@ -8,6 +8,7 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Switch } from '@/components/ui/switch';
 import { useToast } from '@/hooks/use-toast';
 import { useDebounce } from '@/hooks/use-debounce';
 import { 
@@ -391,6 +392,39 @@ export function EmployeeManagement({
     setShowAddEmployeeModal(true)
   }
 
+  const toggleAutoAssign = async (employeeId: string, enabled: boolean) => {
+    try {
+      const response = await fetch(`/api/employees/${employeeId}/auto-assign`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-user-id': user?.id,
+          'x-company-id': user?.companyId
+        },
+        body: JSON.stringify({ autoAssignEnabled: enabled })
+      });
+
+      if (response.ok) {
+        await refreshData();
+        toast({
+          title: "Success",
+          description: `Auto-assign ${enabled ? 'enabled' : 'disabled'} successfully`,
+        });
+      } else {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to update auto-assign');
+      }
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to update auto-assign",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const canManageAssignments = user?.role === 'Administrator' || user?.role === 'Manager' || user?.email === 'admin@baytech.com';
+
   // Check if user has delete permissions (Admin only)
   const canDeleteEmployees = user?.role === 'Administrator' || user?.email === 'admin@baytech.com';
 
@@ -539,7 +573,9 @@ export function EmployeeManagement({
                 <SelectContent>
                   <SelectItem value="ALL">All Status</SelectItem>
                   <SelectItem value="ACTIVE">Active</SelectItem>
+                  <SelectItem value="INACTIVE">Inactive</SelectItem>
                   <SelectItem value="ON_LEAVE">On Leave</SelectItem>
+                  <SelectItem value="TERMINATED">Terminated</SelectItem>
                 </SelectContent>
               </Select>
               {employeeFilter.search || employeeFilter.department !== 'ALL' || employeeFilter.status !== 'ALL' ? (
@@ -584,6 +620,7 @@ export function EmployeeManagement({
                     <th className="text-left p-3">Department</th>
                     <th className="text-left p-3">Status</th>
                     <th className="text-left p-3">Hire Date</th>
+                    <th className="text-left p-3">Auto Assign</th>
                     <th className="text-left p-3">Actions</th>
                   </tr>
                 </thead>
@@ -609,6 +646,14 @@ export function EmployeeManagement({
                         </Badge>
                       </td>
                       <td className="p-3">{employee.hireDate ? new Date(employee.hireDate).toLocaleDateString() : 'N/A'}</td>
+                      <td className="p-3">
+                        <Switch
+                          checked={!!employee.autoAssignEnabled}
+                          onCheckedChange={(checked) => toggleAutoAssign(employee.id, checked)}
+                          disabled={!canManageAssignments}
+                          aria-label={`Auto-assign for ${employee.name}`}
+                        />
+                      </td>
                       <td className="p-3">
                         <div className="flex gap-2">
                           <Button
@@ -644,7 +689,7 @@ export function EmployeeManagement({
                   ))}
                   {filteredEmployees.length === 0 && (
                     <tr>
-                      <td colSpan={6} className="p-3 text-center text-gray-500">
+                      <td colSpan={7} className="p-3 text-center text-gray-500">
                         No employees found
                       </td>
                     </tr>

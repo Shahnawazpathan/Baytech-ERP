@@ -59,7 +59,8 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
         address: body.address,
         status: body.status,
         hireDate: new Date(body.hireDate),
-        updatedAt: new Date()
+        updatedAt: new Date(),
+        ...(body.autoAssignEnabled !== undefined && { autoAssignEnabled: body.autoAssignEnabled })
       },
       include: {
         department: true,
@@ -82,6 +83,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
       address: updatedEmployee.address || '',
       firstName: updatedEmployee.firstName,
       lastName: updatedEmployee.lastName,
+      autoAssignEnabled: updatedEmployee.autoAssignEnabled,
     }
 
     return NextResponse.json(transformedEmployee)
@@ -175,6 +177,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       address: employee.address || '',
       firstName: employee.firstName,
       lastName: employee.lastName,
+      autoAssignEnabled: employee.autoAssignEnabled,
     }
 
     return NextResponse.json(transformedEmployee)

@@ -40,6 +40,13 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    if (!employee.isActive || employee.status !== 'ACTIVE') {
+      return Response.json(
+        { error: 'Your account is inactive. Please contact an administrator.' },
+        { status: 403 }
+      );
+    }
+
     // Return user data (excluding password)
     const { password: _, ...userWithoutPassword } = employee;
 

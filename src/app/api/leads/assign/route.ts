@@ -46,9 +46,12 @@ export async function POST(request: NextRequest) {
           }
         }
       }),
-      db.employee.findUnique({
+      db.employee.findFirst({
         where: {
           id: employeeId,
+          status: 'ACTIVE',
+          isActive: true,
+          autoAssignEnabled: true,
           role: {
             name: {
               not: {
@@ -76,7 +79,7 @@ export async function POST(request: NextRequest) {
 
     if (!employee) {
       return NextResponse.json(
-        { success: false, error: 'Employee not found' },
+        { success: false, error: 'Employee not available for assignment' },
         { status: 404 }
       )
     }
@@ -212,6 +215,7 @@ export async function PUT(request: NextRequest) {
         id: { in: targetEmployeeIds },
         status: 'ACTIVE',
         isActive: true,
+        autoAssignEnabled: true,
         role: {
           name: {
             not: {

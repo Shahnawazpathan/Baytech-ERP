@@ -218,6 +218,7 @@ export async function PUT(request: NextRequest) {
         companyId,
         status: 'ACTIVE',
         isActive: true,
+        autoAssignEnabled: true,
         role: {
           name: {
             not: {

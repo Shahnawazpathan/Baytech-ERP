@@ -19,6 +19,9 @@ const LeadAssignmentComponent: React.FC<LeadAssignmentProps> = ({
   const { toast } = useToast();
   const [selectedEmployeeId, setSelectedEmployeeId] = useState(lead.assignedToId || '');
   const [isAssigning, setIsAssigning] = useState(false);
+  const eligibleEmployees = employees.filter(
+    employee => employee.status === 'ACTIVE' && employee.autoAssignEnabled !== false
+  );
 
   const handleAssign = async () => {
     if (!selectedEmployeeId) {
@@ -107,7 +110,7 @@ const LeadAssignmentComponent: React.FC<LeadAssignmentProps> = ({
           </SelectValue>
         </SelectTrigger>
         <SelectContent>
-          {employees.map((employee) => (
+          {eligibleEmployees.map((employee) => (
             <SelectItem key={employee.id} value={employee.id}>
               {employee.firstName} {employee.lastName} ({employee.department})
             </SelectItem>

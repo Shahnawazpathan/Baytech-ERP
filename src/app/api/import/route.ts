@@ -696,7 +696,8 @@ async function getAvailableEmployee(companyId: string) {
       where: {
         companyId,
         status: 'ACTIVE',
-        isActive: true
+        isActive: true,
+        autoAssignEnabled: true
       },
       include: {
         _count: {

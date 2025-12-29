@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { hasPermission } from '@/lib/rbac'
-import { cache, createCacheKey } from '@/lib/cache'
+import { cache, createCacheKey, invalidateCache } from '@/lib/cache'
 import bcrypt from 'bcrypt'
 
 export async function GET(request: NextRequest) {
@@ -35,7 +35,9 @@ export async function GET(request: NextRequest) {
 
     let whereClause: any = {
       companyId,
-      isActive: true
+      status: {
+        not: 'TERMINATED'
+      }
     };
 
     // If it's not an admin, only show employees from same department or subordinates
@@ -75,6 +77,7 @@ export async function GET(request: NextRequest) {
           address: true,
           status: true,
           isActive: true,
+          autoAssignEnabled: true,
           createdAt: true,
           updatedAt: true,
           department: {
@@ -114,6 +117,7 @@ export async function GET(request: NextRequest) {
       firstName: emp.firstName,
       lastName: emp.lastName,
       isActive: emp.isActive,
+      autoAssignEnabled: emp.autoAssignEnabled,
       roleId: emp.roleId
     }))
 
@@ -187,7 +191,8 @@ export async function POST(request: NextRequest) {
         hireDate: new Date(body.hireDate),
         address: body.address,
         status: 'ACTIVE',
-        isActive: true
+        isActive: true,
+        autoAssignEnabled: body.autoAssignEnabled ?? true
       },
       include: {
         department: true,
@@ -210,6 +215,7 @@ export async function POST(request: NextRequest) {
       firstName: employee.firstName,
       lastName: employee.lastName,
       isActive: employee.isActive,
+      autoAssignEnabled: employee.autoAssignEnabled,
       roleId: employee.roleId
     }
 
@@ -278,6 +284,7 @@ export async function PUT(request: NextRequest) {
         status: body.status,
         hireDate: new Date(body.hireDate),
         address: body.address,
+        ...(body.autoAssignEnabled !== undefined && { autoAssignEnabled: body.autoAssignEnabled }),
       },
       include: {
         department: true,
@@ -300,6 +307,7 @@ export async function PUT(request: NextRequest) {
       firstName: employee.firstName,
       lastName: employee.lastName,
       isActive: employee.isActive,
+      autoAssignEnabled: employee.autoAssignEnabled,
       roleId: employee.roleId
     };
 
@@ -381,6 +389,8 @@ export async function DELETE(request: NextRequest) {
         status: 'TERMINATED'  // Update status to terminated
       }
     });
+
+    invalidateCache('employees', existingEmployee.companyId)
 
     return NextResponse.json({
       id: employee.id,

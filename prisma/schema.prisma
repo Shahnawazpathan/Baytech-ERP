@@ -120,6 +120,7 @@ model Employee {
   profileImage           String?
   companyId              String
   isActive               Boolean               @default(true)
+  autoAssignEnabled      Boolean               @default(true)
   createdAt              DateTime              @default(now())
   updatedAt              DateTime              @updatedAt
   password               String?

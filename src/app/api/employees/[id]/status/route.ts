@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { hasPermission } from '@/lib/rbac'
+import { invalidateCache } from '@/lib/cache'
 
 // Update employee status (activate/deactivate)
 export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -28,6 +29,13 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
         { status: 404 }
       )
     }
+
+    if (!existingEmployee.isActive) {
+      return NextResponse.json(
+        { error: 'Cannot update status for a deleted employee' },
+        { status: 400 }
+      )
+    }
     
     // Additional check: only allow updating if user is admin or a manager updating their subordinates
     if (userId) {
@@ -51,7 +59,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       where: { id },
       data: {
         status: status,
-        isActive: status === 'ACTIVE',
+        isActive: status === 'TERMINATED' ? false : true,
         updatedAt: new Date()
       },
       include: {
@@ -77,6 +85,8 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       firstName: updatedEmployee.firstName,
       lastName: updatedEmployee.lastName,
     }
+
+    invalidateCache('employees', existingEmployee.companyId)
 
     return NextResponse.json(transformedEmployee)
   } catch (error) {

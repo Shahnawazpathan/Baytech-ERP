@@ -47,6 +47,7 @@ export async function POST(request: NextRequest) {
             departmentId: lead.assignedTo?.departmentId,
             status: 'ACTIVE',
             isActive: true,
+            autoAssignEnabled: true,
             role: {
               name: {
                 not: {
