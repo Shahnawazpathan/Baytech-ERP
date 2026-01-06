@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -16,7 +16,8 @@ import {
   UserPlus,
   Upload,
   X,
-  Trash2
+  Trash2,
+  UserCheck
 } from 'lucide-react';
 
 interface LeadManagementProps {
@@ -497,6 +498,111 @@ export function LeadManagement({
     }
   };
 
+  const [employees, setEmployees] = useState<any[]>([]);
+  const [loadingEmployees, setLoadingEmployees] = useState(false);
+  const [selectedEmployeeForAssignment, setSelectedEmployeeForAssignment] = useState('');
+  const [isAssigning, setIsAssigning] = useState(false);
+
+  // Fetch employees for admin assignment
+  useEffect(() => {
+    const fetchEmployees = async () => {
+      if (user?.companyId) {
+        setLoadingEmployees(true);
+        try {
+          const response = await fetch(`/api/employees?companyId=${user.companyId}`, {
+            headers: {
+              'x-user-id': user?.id,
+              'x-company-id': user?.companyId
+            }
+          });
+          if (response.ok) {
+            const data = await response.json();
+            setEmployees(Array.isArray(data.data) ? data.data : []);
+          } else {
+            throw new Error('Failed to fetch employees');
+          }
+        } catch (error) {
+          console.error('Error fetching employees:', error);
+          toast({
+            title: "Error",
+            description: "Failed to fetch employees",
+            variant: "destructive",
+          });
+        } finally {
+          setLoadingEmployees(false);
+        }
+      }
+    };
+
+    if (user?.role === 'Administrator' || user?.role === 'Manager') {
+      fetchEmployees();
+    }
+  }, [user?.id, user?.companyId, user?.role, toast]);
+
+  // Handle assigning selected leads to an employee
+  const handleAssignSelectedLeads = async () => {
+    if (selectedLeads.length === 0) {
+      toast({
+        title: "Error",
+        description: "Please select at least one lead to assign",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (!selectedEmployeeForAssignment) {
+      toast({
+        title: "Error",
+        description: "Please select an employee to assign the leads to",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsAssigning(true);
+    try {
+      const response = await fetch('/api/leads/assign', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-user-id': user?.id,
+          'x-company-id': user?.companyId
+        },
+        body: JSON.stringify({
+          leadIds: selectedLeads,
+          employeeId: selectedEmployeeForAssignment
+        })
+      });
+
+      if (response.ok) {
+        const employee = employees.find(e => e.id === selectedEmployeeForAssignment);
+        toast({
+          title: "Success",
+          description: `${selectedLeads.length} lead${selectedLeads.length > 1 ? 's' : ''} assigned to ${employee?.firstName} ${employee?.lastName || ''}`,
+        });
+        setSelectedLeads([]);
+        setSelectedEmployeeForAssignment('');
+        await onRefresh();
+      } else {
+        const error = await response.json();
+        toast({
+          title: "Error",
+          description: error.error || 'Failed to assign leads',
+          variant: "destructive",
+        });
+      }
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to assign leads",
+        variant: "destructive",
+      });
+    } finally {
+      setIsAssigning(false);
+    }
+  };
+
+
   return (
     <div className="space-y-6">
       {/* Lead Management Header */}
@@ -507,13 +613,44 @@ export function LeadManagement({
         </div>
         <div className="flex gap-2">
           {(user?.role === 'Administrator' || user?.role === 'Manager') && selectedLeads.length > 0 && (
-            <Button
-              variant="destructive"
-              onClick={() => setShowDeleteConfirm(true)}
-            >
-              <Trash2 className="h-4 w-4 mr-2" />
-              Delete Selected ({selectedLeads.length})
-            </Button>
+            <>
+              <div className="flex items-center gap-2">
+                <Select
+                  value={selectedEmployeeForAssignment}
+                  onValueChange={setSelectedEmployeeForAssignment}
+                  disabled={isAssigning || loadingEmployees}
+                >
+                  <SelectTrigger className="w-48">
+                    <SelectValue placeholder="Assign to employee..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {employees
+                      .filter(e => e.status === 'ACTIVE' && e.isActive)
+                      .map((employee) => (
+                        <SelectItem key={employee.id} value={employee.id}>
+                          {employee.firstName} {employee.lastName || ''}
+                        </SelectItem>
+                      ))}
+                  </SelectContent>
+                </Select>
+                <Button
+                  variant="default"
+                  onClick={handleAssignSelectedLeads}
+                  disabled={!selectedEmployeeForAssignment || isAssigning}
+                  className="bg-green-600 hover:bg-green-700"
+                >
+                  <UserCheck className="h-4 w-4 mr-2" />
+                  Assign ({selectedLeads.length})
+                </Button>
+              </div>
+              <Button
+                variant="destructive"
+                onClick={() => setShowDeleteConfirm(true)}
+              >
+                <Trash2 className="h-4 w-4 mr-2" />
+                Delete ({selectedLeads.length})
+              </Button>
+            </>
           )}
           <Button
             variant="outline"
