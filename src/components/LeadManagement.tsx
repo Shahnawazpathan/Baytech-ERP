@@ -164,10 +164,12 @@ export function LeadManagement({
 
   const handleExportLeads = () => {
     const csvContent = [
-      ['Name', 'Email', 'Phone', 'Property Location', 'Status', 'Priority', 'Assigned To', 'Credit Score'],
+      ['Name', 'Email', 'Phone', 'Property Location', 'Status', 'Priority', 'Assigned To', 'Credit Score', 'Notes Status', 'Notes'],
       ...filteredLeads.map(lead => [
         lead.name, lead.email, lead.phone, lead.propertyAddress, lead.status, lead.priority,
-        lead.assignedTo, lead.creditScore
+        lead.assignedTo, lead.creditScore,
+        lead.notesStatus || '',
+        `"${(lead.notes || '').replace(/"/g, '""')}"`
       ])
     ].map(row => row.join(',')).join('\n')
 
