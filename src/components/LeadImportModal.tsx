@@ -15,7 +15,7 @@ import { Upload, FileText, AlertCircle, CheckCircle, X, Download, FileSpreadshee
 interface LeadImportModalProps {
   open: boolean
   onOpenChange: (open: boolean) => void
-  onImportComplete: (leads: any[]) => void
+  onImportComplete: (leads: any[]) => void | Promise<void>
 }
 
 interface DetectedField {
@@ -274,18 +274,29 @@ export function LeadImportModal({ open, onOpenChange, onImportComplete }: LeadIm
       setImportProgress(Math.min(100, ((i + batchSize) / totalLeads) * 100))
     }
     
-    // Complete import
-    onImportComplete(mappedLeads)
-    toast({
-      title: "Import Successful",
-      description: `Successfully imported ${mappedLeads.length} leads`,
-    })
-    
-    // Reset and close
-    setTimeout(() => {
-      resetModal()
-      onOpenChange(false)
-    }, 1000)
+    try {
+      // Complete import
+      await onImportComplete(mappedLeads)
+      setImportProgress(100)
+      toast({
+        title: "Import Successful",
+        description: `Successfully imported ${mappedLeads.length} leads`,
+      })
+      
+      // Reset and close
+      setTimeout(() => {
+        resetModal()
+        onOpenChange(false)
+      }, 1000)
+    } catch (error) {
+      setImportProgress(0)
+      setStep('preview')
+      toast({
+        title: "Import Failed",
+        description: error instanceof Error ? error.message : "Failed to import leads",
+        variant: "destructive",
+      })
+    }
   }
 
   const resetModal = () => {

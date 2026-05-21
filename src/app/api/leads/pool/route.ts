@@ -13,152 +13,89 @@ export async function GET(request: NextRequest) {
     const limit = parseInt(searchParams.get('limit') || '50')
     const skip = (page - 1) * limit
 
-    let whereClause: any = {
+    const eightHoursAgo = new Date(Date.now() - 8 * 60 * 60 * 1000)
+    const basePoolWhere = {
       companyId,
       isActive: true,
       status: 'NEW',
-      contactedAt: null
+      contactedAt: null,
+      OR: [
+        { assignedToId: null },
+        { assignedAt: { lte: eightHoursAgo } }
+      ]
+    }
+
+    let whereClause: any = basePoolWhere
+
+    if (filter === 'all' || filter === 'available') {
+      whereClause = basePoolWhere
     }
 
     // Filter based on type
     if (filter === 'unassigned') {
-      whereClause.assignedToId = null
-    } else if (filter === 'available') {
-      // Base filter already limits to NEW, keep for clarity
-      whereClause.status = 'NEW'
-    } else if (filter === 'reassigned') {
-      // Show only leads that were actually auto-reassigned due to no contact
-      // These are leads that have a history record of AUTO_REASSIGNED action
       whereClause = {
         companyId,
         isActive: true,
         status: 'NEW',
         contactedAt: null,
-        history: {
-          some: {
-            action: 'AUTO_REASSIGNED'
-          }
-        }
+        assignedToId: null
+      }
+    } else if (filter === 'available') {
+      whereClause = basePoolWhere
+    } else if (filter === 'reassigned') {
+      // Show assigned leads that are overdue for first contact and can be claimed.
+      whereClause = {
+        companyId,
+        isActive: true,
+        status: 'NEW',
+        contactedAt: null,
+        assignedToId: { not: null },
+        assignedAt: { lte: eightHoursAgo }
       }
     }
 
     // Execute queries in parallel
     let leads, total;
 
-    if (filter === 'reassigned') {
-      // For 'reassigned' filter, we need to query leads with AUTO_REASSIGNED history that are still not contacted
-      // This requires a different approach since we need to join with lead history
-      const leadIds = await db.leadHistory.findMany({
-        where: {
-          action: 'AUTO_REASSIGNED',
-          createdAt: {
-            gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) // Within last 30 days to optimize
-          },
-          lead: {
-            companyId,
-            isActive: true,
-            contactedAt: null, // Not contacted yet
-            status: 'NEW' // Still active
-          }
-        },
+    [leads, total] = await Promise.all([
+      db.lead.findMany({
+        where: whereClause,
         select: {
-          leadId: true
-        },
-        distinct: ['leadId'] // Get unique lead IDs
-      });
-
-      const leadIdsArray = leadIds.map(l => l.leadId);
-
-      [leads, total] = await Promise.all([
-        db.lead.findMany({
-          where: {
-            id: { in: leadIdsArray },
-            contactedAt: null, // Ensure they're still not contacted
-            status: 'NEW' // Still active
-          },
-          select: {
-            id: true,
-            leadNumber: true,
-            firstName: true,
-            lastName: true,
-            email: true,
-            phone: true,
-            loanAmount: true,
-            status: true,
-            priority: true,
-            source: true,
-            creditScore: true,
-            address: true,
-            assignedToId: true,
-            assignedAt: true,
-            createdAt: true,
-            notes: true,
-            metadata: true,
-            assignedTo: {
-              select: {
-                id: true,
-                firstName: true,
-                lastName: true,
-                email: true
-              }
+          id: true,
+          leadNumber: true,
+          firstName: true,
+          lastName: true,
+          email: true,
+          phone: true,
+          loanAmount: true,
+          status: true,
+          priority: true,
+          source: true,
+          creditScore: true,
+          address: true,
+          assignedToId: true,
+          assignedAt: true,
+          createdAt: true,
+          notes: true,
+          metadata: true,
+          assignedTo: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              email: true
             }
-          },
-          orderBy: [
-            { priority: 'desc' },
-            { createdAt: 'desc' }
-          ],
-          take: limit,
-          skip: skip
-        }),
-        db.lead.count({
-          where: {
-            id: { in: leadIdsArray },
-            contactedAt: null, // Ensure they're still not contacted
-            status: 'NEW' // Still active
           }
-        })
-      ]);
-    } else {
-      [leads, total] = await Promise.all([
-        db.lead.findMany({
-          where: whereClause,
-          select: {
-            id: true,
-            leadNumber: true,
-            firstName: true,
-            lastName: true,
-            email: true,
-            phone: true,
-            loanAmount: true,
-            status: true,
-            priority: true,
-            source: true,
-            creditScore: true,
-            address: true,
-            assignedToId: true,
-            assignedAt: true,
-            createdAt: true,
-            notes: true,
-            metadata: true,
-            assignedTo: {
-              select: {
-                id: true,
-                firstName: true,
-                lastName: true,
-                email: true
-              }
-            }
-          },
-          orderBy: [
-            { priority: 'desc' },
-            { createdAt: 'desc' }
-          ],
-          take: limit,
-          skip: skip
-        }),
-        db.lead.count({ where: whereClause })
-      ]);
-    }
+        },
+        orderBy: [
+          { priority: 'desc' },
+          { createdAt: 'desc' }
+        ],
+        take: limit,
+        skip: skip
+      }),
+      db.lead.count({ where: whereClause })
+    ]);
 
     // Transform the data
     const transformedLeads = leads.map(lead => {
@@ -186,7 +123,7 @@ export async function GET(request: NextRequest) {
         notes: lead.notes,
         notesStatus: metadata.notesStatus,
         followUpDate: metadata.followUpDate,
-        canBeTaken: lead.status === 'NEW' // Only NEW leads can be taken
+        canBeTaken: lead.status === 'NEW' // Pool query already limits this to eligible leads.
       }
     })
 
@@ -253,6 +190,13 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    if (!lead.isActive) {
+      return NextResponse.json(
+        { success: false, error: 'Inactive leads cannot be claimed from the pool' },
+        { status: 400 }
+      )
+    }
+
     // Check if lead can be taken
     if (!force && lead.status !== 'NEW') {
       return NextResponse.json(
@@ -260,6 +204,13 @@ export async function POST(request: NextRequest) {
           success: false,
           error: `Lead cannot be taken. Current status: ${lead.status}. Only NEW leads can be claimed.`
         },
+        { status: 400 }
+      )
+    }
+
+    if (!force && lead.contactedAt) {
+      return NextResponse.json(
+        { success: false, error: 'Contacted leads cannot be claimed from the pool' },
         { status: 400 }
       )
     }
@@ -283,12 +234,32 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    if (employee.companyId !== lead.companyId) {
+      return NextResponse.json(
+        { success: false, error: 'Lead does not belong to this employee company' },
+        { status: 403 }
+      )
+    }
+
     // Check if employee is trying to take their own lead
     if (lead.assignedToId === employeeId) {
       return NextResponse.json(
         { success: false, error: 'This lead is already assigned to you' },
         { status: 400 }
       )
+    }
+
+    if (!force) {
+      const eightHoursAgo = new Date(Date.now() - 8 * 60 * 60 * 1000)
+      const isUnassigned = !lead.assignedToId
+      const isOverdue = Boolean(lead.assignedAt && lead.assignedAt <= eightHoursAgo)
+
+      if (!isUnassigned && !isOverdue) {
+        return NextResponse.json(
+          { success: false, error: 'Lead is not available in the pool yet. Assigned leads become claimable after 8 hours without contact.' },
+          { status: 400 }
+        )
+      }
     }
 
     const previousAssigneeId = lead.assignedToId

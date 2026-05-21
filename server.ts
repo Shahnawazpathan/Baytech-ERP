@@ -24,15 +24,15 @@ async function runAutoAssignment() {
     
     console.log('Starting automatic lead reassignment job...');
     
-    // Find leads that were assigned more than 2 hours ago but not contacted
-    const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000); // 2 hours ago
+    // Find leads that were assigned more than 8 hours ago but not contacted
+    const eightHoursAgo = new Date(Date.now() - 8 * 60 * 60 * 1000); // 8 hours ago
 
     const uncontactedLeads = await db.lead.findMany({
       where: {
         assignedToId: { not: null }, // Leads that are assigned
         assignedAt: {
           not: null,
-          lte: twoHoursAgo // Assigned more than 2 hours ago
+          lte: eightHoursAgo // Assigned more than 8 hours ago
         },
         contactedAt: null, // Leads that haven't been contacted yet
         status: { in: ['NEW', 'CONTACTED'] } // Only reassign active leads
@@ -68,7 +68,15 @@ async function runAutoAssignment() {
           where: {
             departmentId: lead.assignedTo?.departmentId,
             status: 'ACTIVE',
-            isActive: true
+            isActive: true,
+            autoAssignEnabled: true,
+            role: {
+              name: {
+                not: {
+                  contains: 'Administrator'
+                }
+              }
+            }
           }
         });
 
@@ -129,6 +137,7 @@ async function runAutoAssignment() {
           where: { id: lead.id },
           data: {
             assignedToId: leastLoadedEmployee.id,
+            assignedAt: new Date(),
             updatedAt: new Date()
           }
         });
@@ -147,7 +156,7 @@ async function runAutoAssignment() {
               assignedToId: leastLoadedEmployee.id,
               assignedToName: `${leastLoadedEmployee.firstName} ${leastLoadedEmployee.lastName}`
             }),
-            notes: `Auto-reassigned from ${previousAssigneeName} to ${leastLoadedEmployee.firstName} ${leastLoadedEmployee.lastName} after 2 hours without contact`
+            notes: `Auto-reassigned from ${previousAssigneeName} to ${leastLoadedEmployee.firstName} ${leastLoadedEmployee.lastName} after 8 hours without contact`
           }
         });
 
@@ -155,7 +164,7 @@ async function runAutoAssignment() {
         await db.notification.create({
           data: {
             title: 'Lead Auto-Reassigned',
-            message: `${lead.firstName} ${lead.lastName} has been auto-reassigned to you after 2 hours without contact`,
+            message: `${lead.firstName} ${lead.lastName} has been auto-reassigned to you after 8 hours without contact`,
             type: 'WARNING',
             category: 'LEAD',
             companyId: leastLoadedEmployee.companyId,
@@ -173,7 +182,7 @@ async function runAutoAssignment() {
           await db.notification.create({
             data: {
               title: 'Lead Auto-Reassigned',
-              message: `${lead.firstName} ${lead.lastName} has been auto-reassigned to ${leastLoadedEmployee.firstName} ${leastLoadedEmployee.lastName} after 2 hours without contact`,
+              message: `${lead.firstName} ${lead.lastName} has been auto-reassigned to ${leastLoadedEmployee.firstName} ${leastLoadedEmployee.lastName} after 8 hours without contact`,
               type: 'INFO',
               category: 'LEAD',
               companyId: lead.assignedTo?.companyId || 'default-company',

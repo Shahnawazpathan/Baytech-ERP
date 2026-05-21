@@ -1256,6 +1256,7 @@ export default function Home() {
         variant: "destructive",
         duration: 4000,
       });
+      throw error;
     }
   }
 

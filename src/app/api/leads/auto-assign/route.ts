@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 
-// Background job to reassign leads not contacted within 2 hours
+// Background job to reassign leads not contacted within 8 hours
 export async function POST(request: NextRequest) {
   try {
     // Find leads that were assigned more than 8 hours ago but not contacted
@@ -115,6 +115,7 @@ export async function POST(request: NextRequest) {
           where: { id: lead.id },
           data: {
             assignedToId: leastLoadedEmployee.id,
+            assignedAt: new Date(),
             updatedAt: new Date()
           }
         });
@@ -133,7 +134,7 @@ export async function POST(request: NextRequest) {
               assignedToId: leastLoadedEmployee.id,
               assignedToName: `${leastLoadedEmployee.firstName} ${leastLoadedEmployee.lastName}`
             }),
-            notes: `Auto-reassigned from ${previousAssigneeName} to ${leastLoadedEmployee.firstName} ${leastLoadedEmployee.lastName} after 2 hours without contact`
+            notes: `Auto-reassigned from ${previousAssigneeName} to ${leastLoadedEmployee.firstName} ${leastLoadedEmployee.lastName} after 8 hours without contact`
           }
         });
 
@@ -141,7 +142,7 @@ export async function POST(request: NextRequest) {
         await db.notification.create({
           data: {
             title: 'Lead Auto-Reassigned',
-            message: `${lead.firstName} ${lead.lastName} has been auto-reassigned to you after 2 hours without contact`,
+            message: `${lead.firstName} ${lead.lastName} has been auto-reassigned to you after 8 hours without contact`,
             type: 'WARNING',
             category: 'LEAD',
             companyId: leastLoadedEmployee.companyId,
@@ -159,7 +160,7 @@ export async function POST(request: NextRequest) {
           await db.notification.create({
             data: {
               title: 'Lead Auto-Reassigned',
-              message: `${lead.firstName} ${lead.lastName} has been auto-reassigned to ${leastLoadedEmployee.firstName} ${leastLoadedEmployee.lastName} after 2 hours without contact`,
+              message: `${lead.firstName} ${lead.lastName} has been auto-reassigned to ${leastLoadedEmployee.firstName} ${leastLoadedEmployee.lastName} after 8 hours without contact`,
               type: 'INFO',
               category: 'LEAD',
               companyId: lead.assignedTo?.companyId || 'default-company',

@@ -9,10 +9,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { useToast } from '@/hooks/use-toast'
+import { LeadImportModal } from '@/components/LeadImportModal'
 import {
   Users,
   Search,
-  Filter,
   TrendingUp,
   Phone,
   Mail,
@@ -20,10 +20,9 @@ import {
   Calendar,
   AlertCircle,
   CheckCircle,
-  Clock,
   RefreshCw,
   UserPlus,
-  ArrowRight
+  Upload
 } from 'lucide-react'
 
 interface LeadsPoolProps {
@@ -37,10 +36,11 @@ export function LeadsPool({ user, onLeadClaimed }: LeadsPoolProps) {
   const [filteredLeads, setFilteredLeads] = useState<any[]>([])
   const [loading, setLoading] = useState(false)
   const [searchTerm, setSearchTerm] = useState('')
-  const [filterType, setFilterType] = useState('reassigned') // all, unassigned, available, reassigned
+  const [filterType, setFilterType] = useState('available') // all, unassigned, available, reassigned
   const [priorityFilter, setPriorityFilter] = useState('all')
   const [selectedLead, setSelectedLead] = useState<any>(null)
   const [showClaimDialog, setShowClaimDialog] = useState(false)
+  const [showImportDialog, setShowImportDialog] = useState(false)
   const [claiming, setClaiming] = useState(false)
 
   const normalizeLeads = (data: any): any[] => {
@@ -50,10 +50,10 @@ export function LeadsPool({ user, onLeadClaimed }: LeadsPoolProps) {
   }
 
   // Fetch leads pool
-  const fetchLeadsPool = async () => {
+  const fetchLeadsPool = async (filterOverride = filterType) => {
     try {
       setLoading(true)
-      const response = await fetch(`/api/leads/pool?filter=${filterType}`, {
+      const response = await fetch(`/api/leads/pool?filter=${filterOverride}`, {
         headers: {
           'x-user-id': user?.id || '',
           'x-company-id': user?.companyId || 'default-company'
@@ -157,6 +157,45 @@ export function LeadsPool({ user, onLeadClaimed }: LeadsPoolProps) {
     }
   }
 
+  const handlePoolImportComplete = async (importedLeads: any[]) => {
+    try {
+      const response = await fetch('/api/leads', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-user-id': user?.id || '',
+          'x-company-id': user?.companyId || 'default-company'
+        },
+        body: JSON.stringify({
+          leads: importedLeads,
+          autoAssign: false,
+          companyId: user?.companyId || 'default-company'
+        })
+      })
+
+      const result = await response.json()
+
+      if (!response.ok || !result.success) {
+        throw new Error(result.error || 'Failed to import leads into pool')
+      }
+
+      toast({
+        title: "Leads Imported to Pool",
+        description: `Successfully imported ${result.imported} unassigned leads`,
+      })
+      setFilterType('available')
+      await fetchLeadsPool('available')
+      if (onLeadClaimed) onLeadClaimed()
+    } catch (error) {
+      toast({
+        title: "Import Failed",
+        description: error instanceof Error ? error.message : "Failed to import leads into pool",
+        variant: "destructive",
+      })
+      throw error
+    }
+  }
+
   // Priority colors
   const getPriorityColor = (priority: string) => {
     switch (priority) {
@@ -197,10 +236,16 @@ export function LeadsPool({ user, onLeadClaimed }: LeadsPoolProps) {
             Claim available leads from the shared pool
           </p>
         </div>
-        <Button onClick={fetchLeadsPool} variant="outline" disabled={loading}>
-          <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
-          Refresh
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Button onClick={() => setShowImportDialog(true)} className="bg-blue-600 hover:bg-blue-700">
+            <Upload className="h-4 w-4 mr-2" />
+            Upload Leads
+          </Button>
+          <Button onClick={() => fetchLeadsPool()} variant="outline" disabled={loading}>
+            <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
+            Refresh
+          </Button>
+        </div>
       </div>
 
       {/* Stats Cards */}
@@ -262,7 +307,7 @@ export function LeadsPool({ user, onLeadClaimed }: LeadsPoolProps) {
                 <SelectItem value="all">All Leads</SelectItem>
                 <SelectItem value="unassigned">Unassigned Only</SelectItem>
                 <SelectItem value="available">Available to Claim</SelectItem>
-                <SelectItem value="reassigned">Reassigned (No Contact)</SelectItem>
+                <SelectItem value="reassigned">Overdue (No Contact)</SelectItem>
               </SelectContent>
             </Select>
 
@@ -487,6 +532,12 @@ export function LeadsPool({ user, onLeadClaimed }: LeadsPoolProps) {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <LeadImportModal
+        open={showImportDialog}
+        onOpenChange={setShowImportDialog}
+        onImportComplete={handlePoolImportComplete}
+      />
     </div>
   )
 }
