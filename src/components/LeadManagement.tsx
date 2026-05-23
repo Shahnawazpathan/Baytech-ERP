@@ -17,8 +17,10 @@ import {
   Upload,
   X,
   Trash2,
-  UserCheck
+  UserCheck,
+  Loader2
 } from 'lucide-react';
+import { useQuery } from '@tanstack/react-query';
 
 interface LeadManagementProps {
   user: any;
@@ -77,41 +79,43 @@ export function LeadManagement({
   const itemsPerPage = 10;
   const [leadPage, setLeadPage] = useState(1);
 
+  // React Query for Server-Side Pagination & Filtering
+  const { data: leadsData, isLoading: leadsLoading, refetch: refetchLeads } = useQuery({
+    queryKey: ['leads', user?.companyId, leadPage, itemsPerPage, debouncedLeadSearch, leadFilter.status, leadFilter.priority, leadFilter.assignedTo],
+    queryFn: async () => {
+      const searchParams = new URLSearchParams({
+        page: leadPage.toString(),
+        limit: itemsPerPage.toString(),
+        search: debouncedLeadSearch,
+        status: leadFilter.status,
+        priority: leadFilter.priority,
+        assignedTo: leadFilter.assignedTo
+      });
+      const res = await fetch(`/api/leads?${searchParams.toString()}`, {
+        headers: {
+          'x-user-id': user?.id || '',
+          'x-company-id': user?.companyId || ''
+        }
+      });
+      if (!res.ok) throw new Error('Failed to fetch leads');
+      return res.json();
+    },
+    enabled: !!user?.companyId && canViewLeads
+  });
+
+  const paginatedLeads = useMemo(() => {
+    return leadsData?.data || [];
+  }, [leadsData]);
+
+  const totalLeadPages = leadsData?.pagination?.pages || 0;
+  const totalLeadsCount = leadsData?.pagination?.total || 0;
+
+  // We keep leadsList around for the top stats cards (which use the full dataset passed from parent)
   const leadsList = useMemo(() => {
     if (Array.isArray(leads)) return leads;
     if (leads && Array.isArray((leads as any).data)) return (leads as any).data;
     return [];
   }, [leads]);
-
-  // Filtered data
-  const filteredLeads = useMemo(() => {
-    return leadsList.filter(lead => {
-      const matchesSearch = (lead.name && lead.name.toLowerCase().includes(debouncedLeadSearch.toLowerCase())) ||
-                           (lead.email && lead.email.toLowerCase().includes(debouncedLeadSearch.toLowerCase()))
-      const matchesStatus = leadFilter.status === 'ALL' || lead.status === leadFilter.status
-      const matchesPriority = leadFilter.priority === 'ALL' || lead.priority === leadFilter.priority
-      const matchesAssignee = leadFilter.assignedTo === 'ALL' || lead.assignedToId === leadFilter.assignedTo
-
-      // Role-based filtering
-      let roleMatches = true;
-      if (user?.role !== 'Administrator' && user?.role !== 'Manager') {
-        // Employee can only see leads assigned to them
-        roleMatches = lead.assignedToId === user?.id;
-      }
-
-      return (debouncedLeadSearch === '' || matchesSearch) && matchesStatus && matchesPriority && matchesAssignee && roleMatches
-    })
-  }, [leadsList, debouncedLeadSearch, leadFilter.status, leadFilter.priority, leadFilter.assignedTo, user?.role, user?.id]);
-
-  // Paginated data
-  const paginatedLeads = useMemo(() => {
-    const startIndex = (leadPage - 1) * itemsPerPage
-    const endIndex = startIndex + itemsPerPage
-    return filteredLeads.slice(startIndex, endIndex)
-  }, [filteredLeads, leadPage, itemsPerPage]);
-
-  // Total pages for pagination
-  const totalLeadPages = Math.ceil(filteredLeads.length / itemsPerPage);
 
   // Reset pagination when filters change
   React.useEffect(() => {
@@ -163,9 +167,11 @@ export function LeadManagement({
   }
 
   const handleExportLeads = () => {
+    // Note: For large datasets, server-side export is recommended.
+    // For now, we export the current page.
     const csvContent = [
       ['Name', 'Email', 'Phone', 'Property Location', 'Status', 'Priority', 'Assigned To', 'Credit Score', 'Notes Status', 'Notes'],
-      ...filteredLeads.map(lead => [
+      ...paginatedLeads.map((lead: any) => [
         lead.name, lead.email, lead.phone, lead.propertyAddress, lead.status, lead.priority,
         lead.assignedTo, lead.creditScore,
         lead.notesStatus || '',
@@ -245,6 +251,7 @@ export function LeadManagement({
           });
           setShowAddLeadModal(false);
           await onRefresh();
+          await refetchLeads();
 
           toast({
             title: "Success",
@@ -851,8 +858,23 @@ export function LeadManagement({
                     <th className="text-left p-3">Actions</th>
                   </tr>
                 </thead>
-                <tbody>
-                  {paginatedLeads.map((lead) => {
+                <tbody className="bg-white divide-y divide-gray-200">
+                  {leadsLoading ? (
+                    <tr>
+                      <td colSpan={canDeleteLeads ? 12 : 11} className="px-6 py-12 text-center text-sm text-gray-500">
+                        <div className="flex flex-col items-center justify-center space-y-4">
+                          <Loader2 className="h-8 w-8 animate-spin text-blue-500" />
+                          <p>Loading leads...</p>
+                        </div>
+                      </td>
+                    </tr>
+                  ) : paginatedLeads.length === 0 ? (
+                    <tr>
+                      <td colSpan={canDeleteLeads ? 12 : 11} className="p-3 text-center text-gray-500">
+                        No leads found
+                      </td>
+                    </tr>
+                  ) : paginatedLeads.map((lead: any) => {
                     // Calculate the 2-hour contact deadline if assigned
                     const contactDeadline = lead.assignedAt ? new Date(new Date(lead.assignedAt).getTime() + 2 * 60 * 60 * 1000) : null;
                     const isOverdue = contactDeadline && new Date() > contactDeadline && !lead.contactedAt;
@@ -955,22 +977,15 @@ export function LeadManagement({
                       </tr>
                     );
                   })}
-                  {filteredLeads.length === 0 && (
-                    <tr>
-                      <td colSpan={canDeleteLeads ? 12 : 11} className="p-3 text-center text-gray-500">
-                        No leads found
-                      </td>
-                    </tr>
-                  )}
                 </tbody>
               </table>
             </div>
           )}
           {/* Pagination Controls */}
-          {filteredLeads.length > itemsPerPage && (
-            <div className="flex items-center justify-between px-4 py-3 border-t">
+          {totalLeadsCount > itemsPerPage && (
+            <div className="flex items-center justify-between mt-4">
               <div className="text-sm text-gray-500">
-                Showing {((leadPage - 1) * itemsPerPage) + 1} to {Math.min(leadPage * itemsPerPage, filteredLeads.length)} of {filteredLeads.length} leads
+                Showing {((leadPage - 1) * itemsPerPage) + 1} to {Math.min(leadPage * itemsPerPage, totalLeadsCount)} of {totalLeadsCount} leads
               </div>
               <div className="flex gap-2">
                 <Button

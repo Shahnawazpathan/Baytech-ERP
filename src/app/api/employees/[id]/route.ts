@@ -96,6 +96,49 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
   }
 }
 
+// Delete an employee
+export async function DELETE(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  try {
+    const userId = request.headers.get('x-user-id');
+    const { id } = await params;
+
+    if (!userId || !(await hasPermission(userId, 'employee', 'DELETE'))) {
+      return NextResponse.json(
+        { error: 'Insufficient permissions to delete employee' },
+        { status: 403 }
+      )
+    }
+
+    const requestingUser = await db.employee.findUnique({
+      where: { id: userId },
+      include: { role: true }
+    });
+
+    if (requestingUser?.role?.name !== 'Administrator') {
+      return NextResponse.json(
+        { error: 'Only administrators can delete employees' },
+        { status: 403 }
+      )
+    }
+
+    const existingEmployee = await db.employee.findUnique({ where: { id } });
+    if (!existingEmployee) {
+      return NextResponse.json({ error: 'Employee not found' }, { status: 404 })
+    }
+
+    if (id === userId) {
+      return NextResponse.json({ error: 'Cannot delete your own account' }, { status: 400 })
+    }
+
+    await db.employee.delete({ where: { id } });
+
+    return NextResponse.json({ success: true, message: 'Employee deleted successfully' })
+  } catch (error) {
+    console.error('Error deleting employee:', error)
+    return NextResponse.json({ error: 'Failed to delete employee' }, { status: 500 })
+  }
+}
+
 // Get a single employee
 export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {

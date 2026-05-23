@@ -8,22 +8,52 @@ export async function GET(request: NextRequest) {
   try {
     const companyId = request.headers.get('x-company-id') || 'default-company'
 
-    // Parse pagination parameters
+    // Parse pagination and filter parameters
     const { searchParams } = new URL(request.url)
     const page = parseInt(searchParams.get('page') || '1')
-    const limit = parseInt(searchParams.get('limit') || '1000')
+    const limit = parseInt(searchParams.get('limit') || '10')
+    const search = searchParams.get('search') || ''
+    const status = searchParams.get('status') || 'ALL'
+    const priority = searchParams.get('priority') || 'ALL'
+    const assignedTo = searchParams.get('assignedTo') || 'ALL'
+    
     const skip = (page - 1) * limit
 
     // Check cache first
-    const cacheKey = createCacheKey('leads', { companyId, page, limit })
+    const cacheKey = createCacheKey('leads', { companyId, page, limit, search, status, priority, assignedTo })
     const cached = cache.get(cacheKey)
     if (cached) {
       return NextResponse.json(cached)
     }
 
-    const whereClause = {
+    const whereClause: any = {
       companyId,
       isActive: true
+    }
+
+    if (search) {
+      whereClause.OR = [
+        { firstName: { contains: search } },
+        { lastName: { contains: search } },
+        { email: { contains: search } },
+        { phone: { contains: search } }
+      ]
+    }
+
+    if (status !== 'ALL') {
+      whereClause.status = status
+    }
+
+    if (priority !== 'ALL') {
+      whereClause.priority = priority
+    }
+
+    if (assignedTo !== 'ALL') {
+      if (assignedTo === 'unassigned') {
+        whereClause.assignedToId = null
+      } else {
+        whereClause.assignedToId = assignedTo
+      }
     }
 
     // Optimize: Run count and fetch in parallel

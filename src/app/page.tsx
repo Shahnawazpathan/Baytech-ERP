@@ -35,6 +35,7 @@ import { useAuth } from '@/hooks/use-auth'
 import { useToast } from '@/hooks/use-toast'
 import { useLenis } from '@/hooks/use-lenis'
 import { useDebounce } from '@/hooks/use-debounce'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 
 // Lazy load heavy components for better performance
 const LeadImportModal = lazy(() => import('@/components/LeadImportModal').then(mod => ({ default: mod.LeadImportModal })))
@@ -78,6 +79,7 @@ import {
 } from 'lucide-react'
 import { EmployeeManagement } from '@/components/EmployeeManagement'
 import { LeadManagement } from '@/components/LeadManagement'
+import { AnalyticsDashboard } from '@/components/AnalyticsDashboard'
 import { usePermissions } from '@/hooks/use-permissions'
 import { io, Socket } from 'socket.io-client'
 
@@ -99,27 +101,84 @@ export default function Home() {
   const [socket, setSocket] = useState<Socket | null>(null)
   const [notificationPopoverOpen, setNotificationPopoverOpen] = useState(false)
   
-  // Global state for all data
-  const [notifications, setNotifications] = useState<any[]>([])
-  const [employees, setEmployees] = useState<any[]>([])
-  const [leads, setLeads] = useState<any[]>([])
-  const [attendanceRecords, setAttendanceRecords] = useState<any[]>([])
-  const [reports, setReports] = useState<any[]>([])
-  
-  // Loading states
-  const [loading, setLoading] = useState({
-    employees: false,
-    leads: false,
-    attendance: false,
-    notifications: false,
-    stats: false
-  })
-  const [isRefreshing, setIsRefreshing] = useState(false)
+  const queryClient = useQueryClient()
+
   const normalizeList = useCallback((value: any) => {
     if (Array.isArray(value)) return value
     if (value && Array.isArray(value.data)) return value.data
     return []
   }, [])
+
+  // React Query Data Fetching
+  const { data: employeesData, isLoading: employeesLoading } = useQuery({
+    queryKey: ['employees', safeCompanyId],
+    queryFn: () => fetch('/api/employees', { headers: { 'x-user-id': safeUserId, 'x-company-id': safeCompanyId } }).then(r => r.json()),
+    enabled: !!safeCompanyId && canViewEmployees && !permissionsLoading,
+  });
+  const employees = employeesData ? normalizeList(employeesData) : [];
+
+  const { data: leadsQueryData, isLoading: leadsLoading } = useQuery({
+    queryKey: ['leads_overview', safeCompanyId],
+    queryFn: () => fetch('/api/leads?limit=1000', { headers: { 'x-user-id': safeUserId, 'x-company-id': safeCompanyId } }).then(r => r.json()),
+    enabled: !!safeCompanyId && canViewLeads && !permissionsLoading,
+  });
+  const leads = leadsQueryData?.data ? normalizeList(leadsQueryData.data) : [];
+
+  const { data: attendanceData, isLoading: attendanceLoading } = useQuery({
+    queryKey: ['attendance', safeCompanyId],
+    queryFn: () => fetch('/api/attendance', { headers: { 'x-user-id': safeUserId, 'x-company-id': safeCompanyId } }).then(r => r.json()),
+    enabled: !!safeCompanyId && canViewAttendance && !permissionsLoading,
+  });
+  const attendanceRecords = attendanceData ? normalizeList(attendanceData) : [];
+
+  const { data: notificationsData, isLoading: notificationsLoading } = useQuery({
+    queryKey: ['notifications', safeCompanyId],
+    queryFn: () => fetch('/api/notifications', { headers: { 'x-user-id': safeUserId, 'x-company-id': safeCompanyId } }).then(r => r.json()),
+    enabled: !!safeCompanyId && !permissionsLoading,
+  });
+  const notifications = notificationsData || [];
+  const setNotifications = (updater: ((prev: any[]) => any[]) | any[]) => {
+    queryClient.setQueryData(['notifications', safeCompanyId], (old: any) => {
+      const prev = Array.isArray(old) ? old : [];
+      return typeof updater === 'function' ? updater(prev) : updater;
+    });
+  };
+
+  const { data: reportsData } = useQuery({
+    queryKey: ['reports', safeCompanyId],
+    queryFn: () => fetch('/api/reports', { headers: { 'x-user-id': safeUserId, 'x-company-id': safeCompanyId } }).then(r => r.json()),
+    enabled: !!safeCompanyId && canViewReports && !permissionsLoading,
+  });
+  const reports = reportsData?.success ? reportsData.data || [] : [];
+  const setReports = (updater: ((prev: any[]) => any[]) | any[]) => {
+    queryClient.setQueryData(['reports', safeCompanyId], (old: any) => {
+      const prev = old?.success ? old.data || [] : [];
+      const next = typeof updater === 'function' ? updater(prev) : updater;
+      return { success: true, data: next };
+    });
+  };
+
+  const { data: statsData, isLoading: statsLoading } = useQuery({
+    queryKey: ['stats', safeCompanyId],
+    queryFn: () => fetch('/api/reports/overview-stats', { headers: { 'x-user-id': safeUserId, 'x-company-id': safeCompanyId } }).then(r => r.json()),
+    enabled: !!safeCompanyId && canViewReports && !permissionsLoading,
+  });
+
+  const loading = {
+    employees: employeesLoading,
+    leads: leadsLoading,
+    attendance: attendanceLoading,
+    notifications: notificationsLoading,
+    stats: statsLoading
+  };
+
+  useEffect(() => {
+    if (notificationsData) {
+      setUnreadNotifications(notificationsData.filter((n: any) => !n.isRead).length);
+    }
+  }, [notificationsData]);
+
+  const [isRefreshing, setIsRefreshing] = useState(false)
   const roleLower = user?.role?.toLowerCase() || ''
   const isAdminOnly = roleLower.includes('admin') || user?.email === 'admin@baytech.com'
   const isManager = roleLower.includes('manager')
@@ -316,133 +375,12 @@ export default function Home() {
   })
 
   // Analytics state
-  const [analyticsData, setAnalyticsData] = useState<any>(null)
-  const [analyticsDateRange, setAnalyticsDateRange] = useState('30') // days
-  const [loadingAnalytics, setLoadingAnalytics] = useState(false)
   const [initialized, setInitialized] = useState(false)
 
   // Fetch data from API using parallel requests
   const fetchData = useCallback(async () => {
-    if (permissionsLoading) return
-    try {
-      const promises: Array<Promise<Response | null>> = [];
-
-      if (canViewEmployees) {
-        promises.push(
-          fetch('/api/employees', {
-            headers: {
-              'x-user-id': safeUserId,
-              'x-company-id': safeCompanyId
-            }
-          })
-        );
-      } else {
-        promises.push(Promise.resolve(null)); // Placeholder
-      }
-
-      if (canViewLeads) {
-        promises.push(
-          fetch('/api/leads?limit=1000', {
-            headers: {
-              'x-user-id': safeUserId,
-              'x-company-id': safeCompanyId
-            }
-          })
-        );
-      } else {
-        promises.push(Promise.resolve(null)); // Placeholder
-      }
-
-      if (canViewAttendance) {
-        promises.push(
-          fetch('/api/attendance', {
-            headers: {
-              'x-user-id': safeUserId,
-              'x-company-id': safeCompanyId
-            }
-          })
-        );
-      } else {
-        promises.push(Promise.resolve(null)); // Placeholder
-      }
-
-      promises.push(
-        fetch('/api/notifications', {
-          headers: {
-            'x-user-id': safeUserId,
-            'x-company-id': safeCompanyId
-          }
-        })
-      );
-
-      if (canViewReports) {
-        promises.push(
-          fetch('/api/reports/overview-stats', {
-            headers: {
-              'x-user-id': safeUserId,
-              'x-company-id': safeCompanyId
-            }
-          })
-        );
-      } else {
-        promises.push(Promise.resolve(null)); // Placeholder
-      }
-
-      setLoading(prev => ({
-        ...prev,
-        employees: canViewEmployees ? true : false,
-        leads: canViewLeads ? true : false,
-        attendance: canViewAttendance ? true : false,
-        notifications: true,
-        stats: canViewReports ? true : false
-      }));
-
-      const responses = await Promise.all(promises);
-
-      // Process responses in parallel
-      if (responses[0]?.ok) { // employees
-        const employeesData = await responses[0].json();
-        setEmployees(normalizeList(employeesData));
-      }
-
-      if (responses[1]?.ok) { // leads
-        const leadsData = await responses[1].json();
-        setLeads(normalizeList(leadsData));
-      }
-
-      if (responses[2]?.ok) { // attendance
-        const attendanceData = await responses[2].json();
-        setAttendanceRecords(normalizeList(attendanceData));
-      }
-
-      if (responses[3]?.ok) { // notifications
-        const notificationsData = await responses[3].json();
-        setNotifications(notificationsData);
-        // Update unread count
-        const unreadCount = notificationsData.filter(n => !n.isRead).length
-        setUnreadNotifications(unreadCount);
-      }
-
-      if (responses[4]?.ok) { // stats
-        const statsData = await responses[4].json();
-        setStats(statsData);
-      }
-    } catch (error) {
-      toast({
-        title: "Error",
-        description: "Failed to load data. Please try again.",
-        variant: "destructive",
-      })
-    } finally {
-      setLoading(prev => ({
-        employees: false,
-        leads: false,
-        attendance: false,
-        notifications: false,
-        stats: false
-      }));
-    }
-  }, [safeUserId, safeCompanyId, canViewEmployees, canViewLeads, canViewAttendance, canViewReports, toast, normalizeList, permissionsLoading])
+    await queryClient.invalidateQueries();
+  }, [queryClient])
 
   const refreshLeads = useCallback(async () => {
     if (!canViewLeads || permissionsLoading) return
@@ -527,24 +465,8 @@ export default function Home() {
 
   // Function to specifically fetch reports data
   const fetchReportsData = useCallback(async () => {
-    if (permissionsLoading) return
-    try {
-      const reportsRes = await fetch('/api/reports', {
-        headers: {
-          'x-user-id': safeUserId,
-          'x-company-id': safeCompanyId
-        }
-      });
-      if (reportsRes.ok) {
-        const reportsData = await reportsRes.json();
-        if (reportsData.success) {
-          setReports(reportsData.data || []);
-        }
-      }
-    } catch (error) {
-      // Error is handled elsewhere
-    }
-  }, [permissionsLoading, user?.id, user?.companyId])
+    await queryClient.invalidateQueries({ queryKey: ['reports'] });
+  }, [queryClient])
 
   // Analytics Functions
   const fetchAnalytics = useCallback(async (range: string = '30') => {
@@ -602,60 +524,13 @@ export default function Home() {
 
     if (activeTab === 'analytics') {
       fetchReportsData()
-      fetchAnalytics(analyticsDateRange)
       return
     }
 
     const refreshTabData = async () => {
       setIsRefreshing(true)
       try {
-        switch (activeTab) {
-          case 'employees': {
-            if (canViewEmployees) {
-              const employeesRes = await fetch('/api/employees', {
-                headers: {
-                  'x-user-id': safeUserId,
-                  'x-company-id': safeCompanyId
-                }
-              })
-              if (employeesRes.ok) {
-                const data = await employeesRes.json()
-                setEmployees(data)
-              }
-            }
-            break
-          }
-          case 'leads': {
-            if (canViewLeads) {
-              const leadsRes = await fetch('/api/leads?limit=1000', {
-                headers: {
-                  'x-user-id': safeUserId,
-                  'x-company-id': safeCompanyId
-                }
-              })
-              if (leadsRes.ok) {
-                const data = await leadsRes.json()
-                setLeads(data)
-              }
-            }
-            break
-          }
-          case 'attendance': {
-            if (canViewAttendance) {
-              const attendanceRes = await fetch('/api/attendance', {
-                headers: {
-                  'x-user-id': safeUserId,
-                  'x-company-id': safeCompanyId
-                }
-              })
-              if (attendanceRes.ok) {
-                const data = await attendanceRes.json()
-                setAttendanceRecords(data)
-              }
-            }
-            break
-          }
-        }
+        await queryClient.invalidateQueries();
       } catch (error) {
         // Error handled by existing toasts
       } finally {
@@ -666,13 +541,11 @@ export default function Home() {
     refreshTabData()
   }, [
     activeTab,
-    analyticsDateRange,
     canViewAttendance,
     canViewEmployees,
     canViewLeads,
     fetchData,
     fetchReportsData,
-    fetchAnalytics,
     initialized,
     user?.companyId,
     user?.id
@@ -1914,159 +1787,6 @@ export default function Home() {
     window.URL.revokeObjectURL(url)
   }
 
-  const generateReport = async (type: string) => {
-    try {
-      const response = await fetch('/api/reports', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ type })
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to generate report via API');
-      }
-
-      const result = await response.json();
-      return result.data.report;
-    } catch (error) {
-      toast({
-        title: "Error",
-        description: "Failed to generate report. Using fallback method.",
-        variant: "destructive",
-      });
-      
-      // Fallback to local generation
-      return {
-        id: reports.length + 1,
-        name: `${type} Report - ${new Date().toLocaleDateString()}`,
-        type: type,
-        generatedDate: new Date().toISOString().split('T')[0],
-        status: "COMPLETED"
-      };
-    }
-  }
-
-  const handleGenerateReport = async (type: string) => {
-    try {
-      const report = await generateReport(type);
-      
-      // Add the new report to the local state
-      setReports(prevReports => [...prevReports, report]);
-      
-      // Generate report content based on type
-      let reportContent = '';
-      switch (type) {
-        case 'Sales':
-          reportContent = generateSalesReport();
-          break;
-        case 'Employee Performance':
-          reportContent = generateEmployeePerformanceReport();
-          break;
-        case 'Lead Conversion':
-          reportContent = generateLeadConversionReport();
-          break;
-        default:
-          reportContent = 'General Report Content';
-      }
-
-      // Download the report
-      const blob = new Blob([reportContent], { type: 'text/plain' });
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `${report.name.replace(/\s+/g, '_')}.txt`;
-      a.click();
-      window.URL.revokeObjectURL(url);
-      
-      toast({
-        title: "Report Generated",
-        description: `${type} report downloaded successfully`,
-      });
-    } catch (error) {
-      toast({
-        title: "Error",
-        description: "Failed to generate report",
-        variant: "destructive",
-      });
-    }
-  }
-
-  const generateSalesReport = () => {
-    const totalLeads = leadsList.length
-    const convertedLeads = leadsList.filter(lead => lead.status === 'APPLICATION' || lead.status === 'REAL').length
-    const conversionRate = totalLeads ? ((convertedLeads / totalLeads) * 100).toFixed(2) : '0'
-    const totalLoanAmount = leadsList.reduce((sum, lead) => sum + (lead.loanAmount || 0), 0)
-    
-    return `Sales Report
-Generated: ${new Date().toLocaleDateString()}
-
-Total Leads: ${totalLeads}
-Converted Leads: ${convertedLeads}
-Conversion Rate: ${conversionRate}%
-Total Loan Amount: $${totalLoanAmount.toLocaleString()}
-Average Loan Amount: $${Math.round(totalLoanAmount / totalLeads).toLocaleString()}
-
-Lead Status Breakdown:
-${Object.entries(
-  leadsList.reduce((acc, lead) => {
-    acc[lead.status] = (acc[lead.status] || 0) + 1
-    return acc
-  }, {} as Record<string, number>)
-).map(([status, count]) => `${status}: ${count}`).join('\n')}
-`
-  }
-
-  const generateEmployeePerformanceReport = () => {
-    const activeEmployees = employeesList.filter(emp => emp.status === 'ACTIVE').length
-    const onLeaveEmployees = employeesList.filter(emp => emp.status === 'ON_LEAVE').length
-    
-    return `Employee Performance Report
-Generated: ${new Date().toLocaleDateString()}
-
-Total Employees: ${employeesList.length}
-Active Employees: ${activeEmployees}
-Employees on Leave: ${onLeaveEmployees}
-
-Department Breakdown:
-${Object.entries(
-  employeesList.reduce((acc, emp) => {
-    acc[emp.department] = (acc[emp.department] || 0) + 1
-    return acc
-  }, {} as Record<string, number>)
-).map(([dept, count]) => `${dept}: ${count}`).join('\n')}
-
-Attendance Overview:
-Present: ${attendanceList.filter(r => r.status === 'PRESENT').length}
-Late: ${attendanceList.filter(r => r.status === 'LATE').length}
-Absent: ${attendanceList.filter(r => r.status === 'ABSENT').length}
-`
-  }
-
-  const generateLeadConversionReport = () => {
-    const statusBreakdown = leadsList.reduce((acc, lead) => {
-      acc[lead.status] = (acc[lead.status] || 0) + 1
-      return acc
-    }, {} as Record<string, number>)
-
-    return `Lead Conversion Analysis
-Generated: ${new Date().toLocaleDateString()}
-
-Total Leads: ${leadsList.length}
-
-Status Breakdown:
-${Object.entries(statusBreakdown as Record<string, number>).map(([status, count]) => `${status}: ${count} (${(leadsList.length ? ((count / leadsList.length) * 100) : 0).toFixed(1)}%)`).join('\n')}
-
-Priority Distribution:
-High: ${leadsList.filter(l => l.priority === 'HIGH').length}
-Medium: ${leadsList.filter(l => l.priority === 'MEDIUM').length}
-Low: ${leadsList.filter(l => l.priority === 'LOW').length}
-
-Average Credit Score: ${leadsList.length ? Math.round(leadsList.reduce((sum, lead) => sum + (lead.creditScore || 0), 0) / leadsList.length) : 0}
-`
-  }
-
   const handleNavigation = (section: string) => {
     setActiveTab(section)
     // Smooth scroll to top when changing tabs
@@ -3010,420 +2730,16 @@ Average Credit Score: ${leadsList.length ? Math.round(leadsList.reduce((sum, lea
             </TabsContent>
 
             <TabsContent value="analytics">
-              <div className="space-y-6">
-                {/* Analytics Header with Date Range Filter */}
-                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-                  <div>
-                    <h2 className="text-2xl font-bold text-gray-900">Analytics & Reports</h2>
-                    <p className="text-sm text-gray-500">Comprehensive business intelligence and insights</p>
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    <Select
-                      value={analyticsDateRange}
-                      onValueChange={(value) => {
-                        setAnalyticsDateRange(value)
-                        fetchAnalytics(value)
-                      }}
-                    >
-                      <SelectTrigger className="w-[180px]">
-                        <SelectValue placeholder="Select range" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="7">Last 7 days</SelectItem>
-                        <SelectItem value="30">Last 30 days</SelectItem>
-                        <SelectItem value="90">Last 90 days</SelectItem>
-                        <SelectItem value="365">Last year</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => handleGenerateReport('Sales')}
-                    >
-                      <FileText className="h-4 w-4 mr-2" />
-                      Generate Report
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={async () => {
-                        try {
-                          const reportsRes = await fetch('/api/reports', {
-                            headers: {
-                              'x-user-id': safeUserId,
-                              'x-company-id': safeCompanyId
-                            }
-                          });
-
-                          if (reportsRes.ok) {
-                            const reportsData = await reportsRes.json();
-                            const reportsToExport = reportsData.success ? reportsData.data || [] : reports;
-
-                            const csvContent = [
-                              ['Report Name', 'Type', 'Generated Date', 'Status'],
-                              ...reportsToExport.map(report => [
-                                report.name, report.type, report.generatedDate, report.status
-                              ])
-                            ].map(row => row.join(',')).join('\n');
-
-                            const blob = new Blob([csvContent], { type: 'text/csv' });
-                            const url = window.URL.createObjectURL(blob);
-                            const a = document.createElement('a');
-                            a.href = url;
-                            a.download = `reports_${new Date().toISOString().split('T')[0]}.csv`;
-                            a.click();
-                            window.URL.revokeObjectURL(url);
-
-                            toast({
-                              title: "Export Success",
-                              description: `Exported ${reportsToExport.length} reports successfully`,
-                            });
-                          }
-                        } catch (error) {
-                          toast({
-                            title: "Export Error",
-                            description: "Failed to export reports",
-                            variant: "destructive",
-                          });
-                        }
-                      }}
-                    >
-                      <Download className="h-4 w-4 mr-2" />
-                      Export
-                    </Button>
-                  </div>
-                </div>
-
-                {loadingAnalytics ? (
-                  <div className="text-center py-20">
-                    <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900"></div>
-                    <p className="mt-2 text-gray-500">Loading analytics...</p>
-                  </div>
-                ) : analyticsData ? (
-                  <>
-                    {/* Key Performance Indicators */}
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                      <Card className="bg-gradient-to-br from-blue-50 to-blue-100 border-blue-200">
-                        <CardHeader className="pb-2">
-                          <CardDescription className="text-blue-700 font-medium">Total Leads</CardDescription>
-                        </CardHeader>
-                        <CardContent>
-                          <div className="flex items-center justify-between">
-                            <div className="text-3xl font-bold text-blue-900">{analyticsData.overview.totalLeads}</div>
-                            <Users className="h-8 w-8 text-blue-600 opacity-50" />
-                          </div>
-                          <p className="text-xs text-blue-600 mt-2">
-                            {analyticsData.overview.activeLeads} active
-                          </p>
-                        </CardContent>
-                      </Card>
-
-                      <Card className="bg-gradient-to-br from-green-50 to-green-100 border-green-200">
-                        <CardHeader className="pb-2">
-                          <CardDescription className="text-green-700 font-medium">Conversion Rate</CardDescription>
-                        </CardHeader>
-                        <CardContent>
-                          <div className="flex items-center justify-between">
-                            <div className="text-3xl font-bold text-green-900">
-                              {analyticsData.overview.conversionRate.toFixed(1)}%
-                            </div>
-                            <TrendingUp className="h-8 w-8 text-green-600 opacity-50" />
-                          </div>
-                          <p className="text-xs text-green-600 mt-2">
-                            {analyticsData.overview.convertedLeads} converted
-                          </p>
-                        </CardContent>
-                      </Card>
-
-                      <Card className="bg-gradient-to-br from-purple-50 to-purple-100 border-purple-200">
-                        <CardHeader className="pb-2">
-                          <CardDescription className="text-purple-700 font-medium">Revenue Pipeline</CardDescription>
-                        </CardHeader>
-                        <CardContent>
-                          <div className="flex items-center justify-between">
-                            <div className="text-3xl font-bold text-purple-900">
-                              ${(analyticsData.overview.pipelineRevenue / 1000000).toFixed(1)}M
-                            </div>
-                            <DollarSign className="h-8 w-8 text-purple-600 opacity-50" />
-                          </div>
-                          <p className="text-xs text-purple-600 mt-2">
-                            ${(analyticsData.overview.convertedRevenue / 1000000).toFixed(1)}M converted
-                          </p>
-                        </CardContent>
-                      </Card>
-
-                      <Card className="bg-gradient-to-br from-orange-50 to-orange-100 border-orange-200">
-                        <CardHeader className="pb-2">
-                          <CardDescription className="text-orange-700 font-medium">Avg Response Time</CardDescription>
-                        </CardHeader>
-                        <CardContent>
-                          <div className="flex items-center justify-between">
-                            <div className="text-3xl font-bold text-orange-900">
-                              {analyticsData.overview.avgResponseTime}h
-                            </div>
-                            <Clock className="h-8 w-8 text-orange-600 opacity-50" />
-                          </div>
-                          <p className="text-xs text-orange-600 mt-2">
-                            {analyticsData.overview.responseRate.toFixed(0)}% within 2hrs
-                          </p>
-                        </CardContent>
-                      </Card>
-                    </div>
-
-                    {/* Lead Trends Chart */}
-                    <Card>
-                      <CardHeader>
-                        <CardTitle>Lead Trends Over Time</CardTitle>
-                        <CardDescription>Daily lead activity and conversions</CardDescription>
-                      </CardHeader>
-                      <CardContent>
-                        <div className="h-80">
-                          <ResponsiveContainer width="100%" height="100%">
-                            <AreaChart data={analyticsData.trends}>
-                              <defs>
-                                <linearGradient id="colorNew" x1="0" y1="0" x2="0" y2="1">
-                                  <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.8}/>
-                                  <stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/>
-                                </linearGradient>
-                                <linearGradient id="colorConverted" x1="0" y1="0" x2="0" y2="1">
-                                  <stop offset="5%" stopColor="#10b981" stopOpacity={0.8}/>
-                                  <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
-                                </linearGradient>
-                              </defs>
-                              <CartesianGrid strokeDasharray="3 3" />
-                              <XAxis dataKey="date" tick={{ fontSize: 12 }} />
-                              <YAxis />
-                              <Tooltip />
-                              <Legend />
-                              <Area
-                                type="monotone"
-                                dataKey="total"
-                                stroke="#3b82f6"
-                                fillOpacity={1}
-                                fill="url(#colorNew)"
-                                name="Total Leads"
-                              />
-                              <Area
-                                type="monotone"
-                                dataKey="converted"
-                                stroke="#10b981"
-                                fillOpacity={1}
-                                fill="url(#colorConverted)"
-                                name="Converted"
-                              />
-                            </AreaChart>
-                          </ResponsiveContainer>
-                        </div>
-                      </CardContent>
-                    </Card>
-
-                    {/* Charts Grid */}
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                      {/* Status Distribution */}
-                      <Card>
-                        <CardHeader>
-                          <CardTitle>Lead Status Distribution</CardTitle>
-                          <CardDescription>Current pipeline status</CardDescription>
-                        </CardHeader>
-                        <CardContent>
-                          <div className="h-80">
-                            <ResponsiveContainer width="100%" height="100%">
-                              <PieChart>
-                                <Pie
-                                  data={Object.entries(analyticsData.statusDistribution).map(([name, value]) => ({
-                                    name,
-                                    value
-                                  }))}
-                                  cx="50%"
-                                  cy="50%"
-                                  labelLine={false}
-                                  label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
-                                  outerRadius={80}
-                                  fill="#8884d8"
-                                  dataKey="value"
-                                >
-                                  {Object.keys(analyticsData.statusDistribution).map((_, index) => (
-                                    <Cell key={`cell-${index}`} fill={['#3b82f6', '#8b5cf6', '#10b981', '#f59e0b', '#ef4444', '#6b7280', '#000000'][index]} />
-                                  ))}
-                                </Pie>
-                                <Tooltip />
-                                <Legend />
-                              </PieChart>
-                            </ResponsiveContainer>
-                          </div>
-                        </CardContent>
-                      </Card>
-
-                      {/* Lead Sources */}
-                      <Card>
-                        <CardHeader>
-                          <CardTitle>Lead Sources</CardTitle>
-                          <CardDescription>Where your leads come from</CardDescription>
-                        </CardHeader>
-                        <CardContent>
-                          <div className="h-80">
-                            <ResponsiveContainer width="100%" height="100%">
-                              <BarChart
-                                data={Object.entries(analyticsData.sources).map(([name, value]) => ({
-                                  name,
-                                  leads: value
-                                }))}
-                              >
-                                <CartesianGrid strokeDasharray="3 3" />
-                                <XAxis dataKey="name" />
-                                <YAxis />
-                                <Tooltip />
-                                <Legend />
-                                <Bar dataKey="leads" fill="#8b5cf6" />
-                              </BarChart>
-                            </ResponsiveContainer>
-                          </div>
-                        </CardContent>
-                      </Card>
-
-                      {/* Department Performance */}
-                      <Card>
-                        <CardHeader>
-                          <CardTitle>Department Performance</CardTitle>
-                          <CardDescription>Conversion rates by department</CardDescription>
-                        </CardHeader>
-                        <CardContent>
-                          <div className="h-80">
-                            <ResponsiveContainer width="100%" height="100%">
-                              <BarChart data={analyticsData.departmentStats}>
-                                <CartesianGrid strokeDasharray="3 3" />
-                                <XAxis dataKey="name" />
-                                <YAxis />
-                                <Tooltip />
-                                <Legend />
-                                <Bar dataKey="totalLeads" name="Total Leads" fill="#3b82f6" />
-                                <Bar dataKey="converted" name="Converted" fill="#10b981" />
-                              </BarChart>
-                            </ResponsiveContainer>
-                          </div>
-                        </CardContent>
-                      </Card>
-
-                      {/* Priority Distribution */}
-                      <Card>
-                        <CardHeader>
-                          <CardTitle>Lead Priority Distribution</CardTitle>
-                          <CardDescription>Priority levels of current leads</CardDescription>
-                        </CardHeader>
-                        <CardContent>
-                          <div className="h-80">
-                            <ResponsiveContainer width="100%" height="100%">
-                              <PieChart>
-                                <Pie
-                                  data={Object.entries(analyticsData.priorityDistribution).map(([name, value]) => ({
-                                    name,
-                                    value
-                                  }))}
-                                  cx="50%"
-                                  cy="50%"
-                                  labelLine={false}
-                                  label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
-                                  outerRadius={80}
-                                  fill="#8884d8"
-                                  dataKey="value"
-                                >
-                                  {Object.keys(analyticsData.priorityDistribution).map((_, index) => (
-                                    <Cell key={`cell-${index}`} fill={['#10b981', '#3b82f6', '#f59e0b', '#ef4444'][index]} />
-                                  ))}
-                                </Pie>
-                                <Tooltip />
-                                <Legend />
-                              </PieChart>
-                            </ResponsiveContainer>
-                          </div>
-                        </CardContent>
-                      </Card>
-                    </div>
-
-                    {/* Conversion Funnel */}
-                    <Card>
-                      <CardHeader>
-                        <CardTitle>Lead Conversion Funnel</CardTitle>
-                        <CardDescription>Track lead progression through stages</CardDescription>
-                      </CardHeader>
-                      <CardContent>
-                        <div className="space-y-4">
-                          {analyticsData.funnel.map((stage: any, index: number) => (
-                            <div key={index} className="relative">
-                              <div className="flex items-center justify-between mb-2">
-                                <span className="text-sm font-medium text-gray-700">{stage.stage}</span>
-                                <span className="text-sm text-gray-500">{stage.count} leads ({stage.percentage.toFixed(1)}%)</span>
-                              </div>
-                              <div className="w-full bg-gray-200 rounded-full h-8 overflow-hidden">
-                                <div
-                                  className={`h-8 rounded-full flex items-center justify-center text-white text-sm font-medium transition-all duration-500 ${
-                                    index === 0 ? 'bg-blue-500' :
-                                    index === 1 ? 'bg-purple-500' :
-                                    index === 2 ? 'bg-green-500' :
-                                    index === 3 ? 'bg-yellow-500' :
-                                    'bg-red-500'
-                                  }`}
-                                  style={{ width: `${Math.max(stage.percentage, 5)}%` }}
-                                >
-                                  {stage.count > 0 && stage.count}
-                                </div>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      </CardContent>
-                    </Card>
-
-                    {/* Top Performers */}
-                    <Card>
-                      <CardHeader>
-                        <CardTitle>Top Performers</CardTitle>
-                        <CardDescription>Employees with highest conversion rates</CardDescription>
-                      </CardHeader>
-                      <CardContent>
-                        <div className="space-y-4">
-                          {analyticsData.topPerformers.slice(0, 5).map((performer: any, index: number) => (
-                            <div key={index} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                              <div className="flex items-center space-x-3">
-                                <div className={`flex items-center justify-center w-8 h-8 rounded-full ${
-                                  index === 0 ? 'bg-yellow-100 text-yellow-700' :
-                                  index === 1 ? 'bg-gray-100 text-gray-700' :
-                                  index === 2 ? 'bg-orange-100 text-orange-700' :
-                                  'bg-blue-100 text-blue-700'
-                                }`}>
-                                  {index + 1}
-                                </div>
-                                <div>
-                                  <p className="font-medium text-gray-900">{performer.name}</p>
-                                  <p className="text-sm text-gray-500">{performer.totalLeads} leads</p>
-                                </div>
-                              </div>
-                              <div className="text-right">
-                                <p className="font-semibold text-green-600">{performer.converted} converted</p>
-                                <p className="text-sm text-gray-500">{performer.conversionRate.toFixed(1)}% rate</p>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      </CardContent>
-                    </Card>
-                  </>
-                ) : (
-                  <Card>
-                    <CardContent className="text-center py-20">
-                      <BarChart3 className="h-16 w-16 mx-auto text-gray-300 mb-4" />
-                      <p className="text-gray-500">No analytics data available</p>
-                      <Button
-                        onClick={() => fetchAnalytics(analyticsDateRange)}
-                        className="mt-4"
-                        variant="outline"
-                      >
-                        Load Analytics
-                      </Button>
-                    </CardContent>
-                  </Card>
-                )}
-              </div>
+              <AnalyticsDashboard 
+                safeUserId={safeUserId}
+                safeCompanyId={safeCompanyId}
+                canViewReports={canViewReports}
+                reports={reports}
+                leadsList={leadsList}
+                employeesList={employeesList}
+                attendanceList={attendanceList}
+                setReports={setReports}
+              />
             </TabsContent>
           </Tabs>
         </main>
