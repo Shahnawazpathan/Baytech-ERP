@@ -123,6 +123,13 @@ export default function Home() {
     enabled: !!safeCompanyId && canViewLeads && !permissionsLoading,
   });
   const leads = leadsQueryData?.data ? normalizeList(leadsQueryData.data) : [];
+  const setLeads = (updater: ((prev: any[]) => any[]) | any[]) => {
+    queryClient.setQueryData(['leads_overview', safeCompanyId], (old: any) => {
+      const prev = old?.data ? normalizeList(old.data) : [];
+      const next = typeof updater === 'function' ? updater(prev) : updater;
+      return { ...old, data: next };
+    });
+  };
 
   const { data: attendanceData, isLoading: attendanceLoading } = useQuery({
     queryKey: ['attendance', safeCompanyId],
@@ -130,6 +137,13 @@ export default function Home() {
     enabled: !!safeCompanyId && canViewAttendance && !permissionsLoading,
   });
   const attendanceRecords = attendanceData ? normalizeList(attendanceData) : [];
+  const setAttendanceRecords = (updater: ((prev: any[]) => any[]) | any[]) => {
+    queryClient.setQueryData(['attendance', safeCompanyId], (old: any) => {
+      const prev = Array.isArray(old) ? old : normalizeList(old);
+      const next = typeof updater === 'function' ? updater(prev) : updater;
+      return next;
+    });
+  };
 
   const { data: notificationsData, isLoading: notificationsLoading } = useQuery({
     queryKey: ['notifications', safeCompanyId],
@@ -385,11 +399,6 @@ export default function Home() {
   const refreshLeads = useCallback(async () => {
     if (!canViewLeads || permissionsLoading) return
     try {
-      setLoading(prev => ({
-        ...prev,
-        leads: true
-      }))
-
       const leadsRes = await fetch('/api/leads?limit=1000', {
         headers: {
           'x-user-id': safeUserId,
@@ -407,11 +416,6 @@ export default function Home() {
         description: "Failed to refresh leads. Please try again.",
         variant: "destructive",
       })
-    } finally {
-      setLoading(prev => ({
-        ...prev,
-        leads: false
-      }))
     }
   }, [canViewLeads, permissionsLoading, safeUserId, safeCompanyId, normalizeList, toast])
 
@@ -468,35 +472,6 @@ export default function Home() {
     await queryClient.invalidateQueries({ queryKey: ['reports'] });
   }, [queryClient])
 
-  // Analytics Functions
-  const fetchAnalytics = useCallback(async (range: string = '30') => {
-    if (permissionsLoading) return
-    try {
-      setLoadingAnalytics(true)
-      const response = await fetch(`/api/reports/analytics?range=${range}`, {
-        headers: {
-          'x-user-id': safeUserId || '',
-          'x-company-id': safeCompanyId || 'default-company'
-        }
-      })
-
-      if (response.ok) {
-        const result = await response.json()
-        if (result.success) {
-          setAnalyticsData(result.data)
-        }
-      }
-    } catch (error) {
-      console.error('Error fetching analytics:', error)
-      toast({
-        title: "Error",
-        description: "Failed to fetch analytics data",
-        variant: "destructive",
-      })
-    } finally {
-      setLoadingAnalytics(false)
-    }
-  }, [permissionsLoading, toast, user?.companyId, user?.id])
 
 
   // Initial data fetch (run once when permissions are ready)
