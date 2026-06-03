@@ -13,7 +13,7 @@ import { fileURLToPath } from 'url';
 
 
 const dev = process.env.NODE_ENV !== 'production';
-const currentPort = process.env.PORT ? parseInt(process.env.PORT) : 3000;
+const currentPort = process.env.PORT ? parseInt(process.env.PORT) : 3007;
 const hostname = '0.0.0.0';
 
 // Function to run auto-assignment job
