@@ -2,13 +2,13 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { invalidateCache } from '@/lib/cache'
 import { hasPermission } from '@/lib/rbac'
+import { createLeadHistory } from '@/lib/lead-history'
+import { assignLeadSchema, bulkAssignSchema } from '@/lib/leads-validation'
 
+/** Assign a single lead to an employee. */
 export async function POST(request: NextRequest) {
   try {
-    const userId = request.headers.get('x-user-id');
-    const body = await request.json()
-    const { leadId, employeeId, notes } = body
-
+    const userId = request.headers.get('x-user-id')
     if (!userId) {
       return NextResponse.json(
         { success: false, error: 'User authentication required' },
@@ -16,35 +16,30 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    if (!leadId || !employeeId) {
+    const json = await request.json()
+    const parsed = assignLeadSchema.safeParse(json)
+    if (!parsed.success) {
       return NextResponse.json(
-        { success: false, error: 'Missing required fields' },
+        { success: false, error: 'Invalid input', details: parsed.error.flatten() },
         { status: 400 }
       )
     }
+    const { leadId, employeeId, notes } = parsed.data
 
-    // Check permission to assign leads
-    const hasPermissionResult = await hasPermission(userId, 'lead', 'UPDATE');
+    const hasPermissionResult = await hasPermission(userId, 'lead', 'UPDATE')
     if (!hasPermissionResult) {
       return NextResponse.json(
         { success: false, error: 'Insufficient permissions to assign leads' },
         { status: 403 }
-      );
+      )
     }
 
-    // Get lead and employee
     const [lead, employee] = await Promise.all([
       db.lead.findUnique({
         where: { id: leadId },
         include: {
-          assignedTo: {
-            select: {
-              id: true,
-              firstName: true,
-              lastName: true
-            }
-          }
-        }
+          assignedTo: { select: { id: true, firstName: true, lastName: true } },
+        },
       }),
       db.employee.findFirst({
         where: {
@@ -52,77 +47,54 @@ export async function POST(request: NextRequest) {
           status: 'ACTIVE',
           isActive: true,
           autoAssignEnabled: true,
-          role: {
-            name: {
-              not: {
-                contains: 'Administrator'
-              }
-            }
-          }
+          role: { name: { not: { contains: 'Administrator' } } },
         },
-        select: {
-          id: true,
-          firstName: true,
-          lastName: true,
-          email: true,
-          companyId: true
-        }
-      })
+        select: { id: true, firstName: true, lastName: true, email: true, companyId: true },
+      }),
     ])
 
     if (!lead) {
-      return NextResponse.json(
-        { success: false, error: 'Lead not found' },
-        { status: 404 }
-      )
+      return NextResponse.json({ success: false, error: 'Lead not found' }, { status: 404 })
     }
-
     if (!employee) {
       return NextResponse.json(
         { success: false, error: 'Employee not available for assignment' },
         { status: 404 }
       )
     }
+    if (lead.companyId !== employee.companyId) {
+      return NextResponse.json(
+        { success: false, error: 'Lead and employee belong to different companies' },
+        { status: 403 }
+      )
+    }
 
-    // Update lead assignment
+    const previousAssigneeId = lead.assignedToId
+    const previousAssigneeName = lead.assignedTo
+      ? `${lead.assignedTo.firstName} ${lead.assignedTo.lastName}`
+      : null
+
     const updatedLead = await db.lead.update({
       where: { id: leadId },
-      data: { 
-        assignedToId: employeeId,
-        assignedAt: new Date() // Set the assignment timestamp
-      },
+      data: { assignedToId: employeeId, assignedAt: new Date() },
       include: {
         company: true,
-        assignedTo: {
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true,
-            email: true
-          }
-        }
-      }
+        assignedTo: { select: { id: true, firstName: true, lastName: true, email: true } },
+      },
     })
 
-    // Create lead history
-    await db.leadHistory.create({
-      data: {
-        leadId,
-        employeeId,
-        action: 'ASSIGNED',
-        oldValue: JSON.stringify({ 
-          assignedToId: lead.assignedToId,
-          assignedToName: lead.assignedTo ? `${lead.assignedTo.firstName} ${lead.assignedTo.lastName}` : null
-        }),
-        newValue: JSON.stringify({ 
-          assignedToId: employeeId,
-          assignedToName: `${employee.firstName} ${employee.lastName}`
-        }),
-        notes: notes || `Assigned to ${employee.firstName} ${employee.lastName}`
-      }
+    await createLeadHistory({
+      leadId,
+      employeeId,
+      action: 'ASSIGNED',
+      oldValue: { assignedToId: previousAssigneeId, assignedToName: previousAssigneeName },
+      newValue: {
+        assignedToId: employeeId,
+        assignedToName: `${employee.firstName} ${employee.lastName}`,
+      },
+      notes: notes || `Assigned to ${employee.firstName} ${employee.lastName}`,
     })
 
-    // Create notification for assigned employee
     await db.notification.create({
       data: {
         title: 'New Lead Assigned',
@@ -131,12 +103,11 @@ export async function POST(request: NextRequest) {
         category: 'LEAD',
         companyId: employee.companyId,
         employeeId,
-        metadata: JSON.stringify({ leadId, leadNumber: lead.leadNumber })
-      }
+        metadata: JSON.stringify({ leadId, leadNumber: lead.leadNumber }),
+      },
     })
 
-    // Create notification for previous assignee if different
-    if (lead.assignedToId && lead.assignedToId !== employeeId) {
+    if (previousAssigneeId && previousAssigneeId !== employeeId) {
       await db.notification.create({
         data: {
           title: 'Lead Reassigned',
@@ -144,34 +115,26 @@ export async function POST(request: NextRequest) {
           type: 'INFO',
           category: 'LEAD',
           companyId: employee.companyId,
-          employeeId: lead.assignedToId,
-          metadata: JSON.stringify({ leadId, leadNumber: lead.leadNumber })
-        }
+          employeeId: previousAssigneeId,
+          metadata: JSON.stringify({ leadId, leadNumber: lead.leadNumber }),
+        },
       })
     }
 
     invalidateCache('leads', employee.companyId)
+    invalidateCache('pool', employee.companyId)
 
-    return NextResponse.json({
-      success: true,
-      data: updatedLead
-    })
+    return NextResponse.json({ success: true, data: updatedLead })
   } catch (error) {
     console.error('Error assigning lead:', error)
-    return NextResponse.json(
-      { success: false, error: 'Failed to assign lead' },
-      { status: 500 }
-    )
+    return NextResponse.json({ success: false, error: 'Failed to assign lead' }, { status: 500 })
   }
 }
 
-// Bulk assignment endpoint
+/** Bulk-assign leads (one or many employees, with strategy). */
 export async function PUT(request: NextRequest) {
   try {
-    const userId = request.headers.get('x-user-id');
-    const body = await request.json()
-    const { leadIds, employeeId, employeeIds, strategy = 'round_robin' } = body
-
+    const userId = request.headers.get('x-user-id')
     if (!userId) {
       return NextResponse.json(
         { success: false, error: 'User authentication required' },
@@ -179,58 +142,47 @@ export async function PUT(request: NextRequest) {
       )
     }
 
-    if (!leadIds || !Array.isArray(leadIds) || leadIds.length === 0) {
+    const json = await request.json()
+    const parsed = bulkAssignSchema.safeParse(json)
+    if (!parsed.success) {
       return NextResponse.json(
-        { success: false, error: 'Lead IDs are required' },
+        { success: false, error: 'Invalid input', details: parsed.error.flatten() },
         { status: 400 }
       )
     }
+    const { leadIds, employeeId, employeeIds, strategy = 'round_robin' } = parsed.data
 
-    // Support both single employee (employeeId) and multiple employees (employeeIds)
-    const targetEmployeeIds = employeeIds && Array.isArray(employeeIds) && employeeIds.length > 0
-      ? employeeIds
-      : employeeId
+    const targetEmployeeIds =
+      employeeIds && employeeIds.length > 0
+        ? employeeIds
+        : employeeId
         ? [employeeId]
-        : null;
+        : []
 
-    if (!targetEmployeeIds || targetEmployeeIds.length === 0) {
+    if (targetEmployeeIds.length === 0) {
       return NextResponse.json(
         { success: false, error: 'At least one employee ID is required' },
         { status: 400 }
       )
     }
 
-    // Check permission to assign leads
-    const hasPermissionResult = await hasPermission(userId, 'lead', 'UPDATE');
+    const hasPermissionResult = await hasPermission(userId, 'lead', 'UPDATE')
     if (!hasPermissionResult) {
       return NextResponse.json(
         { success: false, error: 'Insufficient permissions to assign leads' },
         { status: 403 }
-      );
+      )
     }
 
-    // Get all employees to assign to (excluding admins)
     const employees = await db.employee.findMany({
       where: {
         id: { in: targetEmployeeIds },
         status: 'ACTIVE',
         isActive: true,
         autoAssignEnabled: true,
-        role: {
-          name: {
-            not: {
-              contains: 'Administrator'
-            }
-          }
-        }
+        role: { name: { not: { contains: 'Administrator' } } },
       },
-      select: {
-        id: true,
-        firstName: true,
-        lastName: true,
-        email: true,
-        companyId: true
-      }
+      select: { id: true, firstName: true, lastName: true, email: true, companyId: true },
     })
 
     if (employees.length === 0) {
@@ -240,14 +192,9 @@ export async function PUT(request: NextRequest) {
       )
     }
 
-    // Get leads to be assigned
     const leads = await db.lead.findMany({
-      where: {
-        id: { in: leadIds },
-        isActive: true
-      }
+      where: { id: { in: leadIds }, isActive: true },
     })
-
     if (leads.length === 0) {
       return NextResponse.json(
         { success: false, error: 'No valid leads found' },
@@ -255,94 +202,67 @@ export async function PUT(request: NextRequest) {
       )
     }
 
-    // Assign leads based on strategy
-    const assignments: { [key: string]: string[] } = {}
-    employees.forEach(emp => assignments[emp.id] = [])
-
-    if (strategy === 'round_robin' || strategy === 'equal') {
-      // Round-robin distribution
-      let employeeIndex = 0
-      for (const lead of leads) {
-        const employee = employees[employeeIndex]
-        assignments[employee.id].push(lead.id)
-        employeeIndex = (employeeIndex + 1) % employees.length
-      }
-    } else if (strategy === 'least_loaded') {
-      // Get current lead counts for each employee
-      const leadCounts = await Promise.all(
-        employees.map(async (emp) => {
-          const count = await db.lead.count({
-            where: {
-              assignedToId: emp.id,
-              status: { in: ['NEW', 'CONTACTED', 'QUALIFIED', 'APPLICATION'] }
-            }
-          })
-          return { employeeId: emp.id, count }
-        })
+    // Constrain leads to the same company as the employees
+    const companyId = employees[0].companyId
+    const companyLeads = leads.filter((l) => l.companyId === companyId)
+    if (companyLeads.length === 0) {
+      return NextResponse.json(
+        { success: false, error: 'No leads belong to this company' },
+        { status: 403 }
       )
-
-      // Sort employees by lead count (ascending)
-      leadCounts.sort((a, b) => a.count - b.count)
-
-      // Assign leads to employees with least load
-      for (const lead of leads) {
-        // Find employee with minimum current assignments
-        const minEmployee = leadCounts.reduce((min, curr) =>
-          curr.count < min.count ? curr : min
-        )
-        assignments[minEmployee.employeeId].push(lead.id)
-        minEmployee.count++ // Increment count for next iteration
-      }
-    } else {
-      // Default to first employee if strategy is unknown
-      assignments[employees[0].id] = leadIds
     }
 
-    // Process all assignments using batch operations (transaction)
-    const employeeNotifications: { [key: string]: number } = {}
-    const now = new Date()
+    const assignments: { [key: string]: string[] } = {}
+    employees.forEach((emp) => (assignments[emp.id] = []))
 
-    // Prepare all history records
-    const historyRecords: Array<{
-      leadId: string;
-      employeeId: string;
-      action: string;
-      oldValue: string;
-      newValue: string;
-      notes: string;
-    }> = []
-    const notificationRecords: Array<{
-      title: string;
-      message: string;
-      type: string;
-      category: string;
-      companyId: string;
-      employeeId: string;
-      metadata: string;
-    }> = []
+    if (strategy === 'round_robin' || strategy === 'equal') {
+      let i = 0
+      for (const lead of companyLeads) {
+        assignments[employees[i].id].push(lead.id)
+        i = (i + 1) % employees.length
+      }
+    } else if (strategy === 'least_loaded') {
+      const leadCounts = await Promise.all(
+        employees.map(async (emp) => ({
+          employeeId: emp.id,
+          count: await db.lead.count({
+            where: {
+              assignedToId: emp.id,
+              status: { in: ['NEW', 'CONTACTED', 'QUALIFIED', 'APPLICATION'] },
+            },
+          }),
+        }))
+      )
+      leadCounts.sort((a, b) => a.count - b.count)
+      for (const lead of companyLeads) {
+        const minEmployee = leadCounts.reduce((min, curr) => (curr.count < min.count ? curr : min))
+        assignments[minEmployee.employeeId].push(lead.id)
+        minEmployee.count++
+      }
+    } else {
+      assignments[employees[0].id] = companyLeads.map((l) => l.id)
+    }
+
+    const now = new Date()
+    const historyRecords: any[] = []
+    const notificationRecords: any[] = []
 
     for (const employee of employees) {
       const employeeLeadIds = assignments[employee.id]
       if (employeeLeadIds.length === 0) continue
 
-      employeeNotifications[employee.id] = employeeLeadIds.length
-
-      // Prepare history records for this batch
-      for (const leadId of employeeLeadIds) {
-        const lead = leads.find(l => l.id === leadId)
+      for (const lid of employeeLeadIds) {
+        const lead = companyLeads.find((l) => l.id === lid)
         if (!lead) continue
-
         historyRecords.push({
-          leadId,
+          leadId: lid,
           employeeId: employee.id,
           action: 'BULK_ASSIGNED',
           oldValue: JSON.stringify({ assignedToId: lead.assignedToId }),
           newValue: JSON.stringify({ assignedToId: employee.id }),
-          notes: `Bulk assigned to ${employee.firstName} ${employee.lastName} using ${strategy} strategy`
+          notes: `Bulk assigned to ${employee.firstName} ${employee.lastName} using ${strategy} strategy`,
         })
       }
-
-      // Prepare notification for this employee
       notificationRecords.push({
         title: 'Bulk Lead Assignment',
         message: `${employeeLeadIds.length} lead${employeeLeadIds.length > 1 ? 's have' : ' has'} been assigned to you`,
@@ -350,74 +270,45 @@ export async function PUT(request: NextRequest) {
         category: 'LEAD',
         companyId: employee.companyId,
         employeeId: employee.id,
-        metadata: JSON.stringify({
-          leadIds: employeeLeadIds,
-          count: employeeLeadIds.length,
-          strategy
-        })
+        metadata: JSON.stringify({ leadIds: employeeLeadIds, count: employeeLeadIds.length, strategy }),
       })
     }
 
-    // Execute all updates in a single transaction
     await db.$transaction([
-      // Update all leads in batches per employee
-      ...employees.flatMap(employee => {
-        const employeeLeadIds = assignments[employee.id]
-        if (employeeLeadIds.length === 0) return []
-
+      ...employees.flatMap((employee) => {
+        const ids = assignments[employee.id]
+        if (ids.length === 0) return []
         return [
           db.lead.updateMany({
-            where: { id: { in: employeeLeadIds } },
-            data: {
-              assignedToId: employee.id,
-              assignedAt: now
-            }
-          })
+            where: { id: { in: ids } },
+            data: { assignedToId: employee.id, assignedAt: now },
+          }),
         ]
       }),
-      // Create all history records at once
-      db.leadHistory.createMany({
-        data: historyRecords
-      }),
-      // Create all notifications at once
-      db.notification.createMany({
-        data: notificationRecords
-      })
+      ...(historyRecords.length > 0 ? [db.leadHistory.createMany({ data: historyRecords })] : []),
+      ...(notificationRecords.length > 0 ? [db.notification.createMany({ data: notificationRecords })] : []),
     ])
 
-    invalidateCache('leads', employees[0].companyId)
-
-    // Get updated leads for response
-    const updatedLeads = await db.lead.findMany({
-      where: { id: { in: leadIds } },
-      select: {
-        id: true,
-        leadNumber: true,
-        assignedToId: true,
-        assignedAt: true
-      }
-    })
+    invalidateCache('leads', companyId)
+    invalidateCache('pool', companyId)
 
     return NextResponse.json({
       success: true,
       data: {
-        assignedLeads: updatedLeads.length,
-        employees: employees.map(emp => `${emp.firstName} ${emp.lastName}`),
+        assignedLeads: companyLeads.length,
+        employees: employees.map((emp) => `${emp.firstName} ${emp.lastName}`),
         strategy,
-        distribution: Object.keys(assignments).map(empId => {
-          const emp = employees.find(e => e.id === empId)
+        distribution: Object.keys(assignments).map((empId) => {
+          const emp = employees.find((e) => e.id === empId)
           return {
             employee: emp ? `${emp.firstName} ${emp.lastName}` : 'Unknown',
-            leadCount: assignments[empId].length
+            leadCount: assignments[empId].length,
           }
-        })
-      }
+        }),
+      },
     })
   } catch (error) {
     console.error('Error in bulk lead assignment:', error)
-    return NextResponse.json(
-      { success: false, error: 'Failed to assign leads' },
-      { status: 500 }
-    )
+    return NextResponse.json({ success: false, error: 'Failed to assign leads' }, { status: 500 })
   }
 }

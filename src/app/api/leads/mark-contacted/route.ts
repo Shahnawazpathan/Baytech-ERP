@@ -1,93 +1,74 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { db } from '@/lib/db';
-import { invalidateCache } from '@/lib/cache';
+import { NextRequest, NextResponse } from 'next/server'
+import { db } from '@/lib/db'
+import { invalidateCache } from '@/lib/cache'
+import { hasPermission } from '@/lib/rbac'
+import { markContactedSchema } from '@/lib/leads-validation'
 
-// Mark a lead as contacted
+/**
+ * Mark a lead as contacted.
+ * Either the assignee OR a user with the `lead.UPDATE` permission (admin/manager) can do this.
+ */
 export async function POST(request: NextRequest) {
   try {
-    const userId = request.headers.get('x-user-id');
-    const body = await request.json();
-    const { leadId } = body;
-
+    const userId = request.headers.get('x-user-id')
     if (!userId) {
       return NextResponse.json(
         { success: false, error: 'User authentication required' },
         { status: 401 }
-      );
+      )
     }
 
-    if (!leadId) {
+    const json = await request.json()
+    const parsed = markContactedSchema.safeParse(json)
+    if (!parsed.success) {
       return NextResponse.json(
-        { success: false, error: 'Missing required fields' },
+        { success: false, error: 'Invalid input', details: parsed.error.flatten() },
         { status: 400 }
-      );
+      )
     }
+    const { leadId } = parsed.data
 
-    // Check if lead exists and is assigned to this user or they have permission
-    const lead = await db.lead.findUnique({
-      where: { id: leadId }
-    });
-
+    const lead = await db.lead.findUnique({ where: { id: leadId } })
     if (!lead) {
       return NextResponse.json(
         { success: false, error: 'Lead not found' },
         { status: 404 }
-      );
+      )
     }
 
-    // Check if user has permission to update this lead
-    // Either they are assigned to the lead or they are an admin/manager
-    const hasPermission = 
-      lead.assignedToId === userId || // User is assigned to the lead
-      await isAdminOrManager(userId); // User is an admin or manager
-
-    if (!hasPermission) {
-      return NextResponse.json(
-        { success: false, error: 'Insufficient permissions to mark lead as contacted' },
-        { status: 403 }
-      );
+    // Authorization: the assignee OR a user with the `lead.UPDATE` permission can mark contacted
+    const isAssignee = lead.assignedToId === userId
+    if (!isAssignee) {
+      const canUpdate = await hasPermission(userId, 'lead', 'UPDATE')
+      if (!canUpdate) {
+        return NextResponse.json(
+          { success: false, error: 'Insufficient permissions to mark this lead as contacted' },
+          { status: 403 }
+        )
+      }
     }
 
     // Update the lead to mark as contacted and set status to CONTACTED
     const updatedLead = await db.lead.update({
       where: { id: leadId },
-      data: { 
+      data: {
         contactedAt: new Date(),
-        status: 'CONTACTED', // Set status to CONTACTED as per the lead lifecycle
-        updatedAt: new Date()
-      }
-    });
+        status: 'CONTACTED',
+        updatedAt: new Date(),
+      },
+    })
 
-    invalidateCache('leads', lead.companyId);
+    invalidateCache('leads', lead.companyId)
 
     return NextResponse.json({
       success: true,
-      data: updatedLead
-    });
+      data: updatedLead,
+    })
   } catch (error) {
-    console.error('Error marking lead as contacted:', error);
+    console.error('Error marking lead as contacted:', error)
     return NextResponse.json(
       { success: false, error: 'Failed to mark lead as contacted' },
       { status: 500 }
-    );
-  }
-}
-
-// Helper function to check if user is admin or manager
-async function isAdminOrManager(userId: string): Promise<boolean> {
-  try {
-    const user = await db.employee.findUnique({
-      where: { id: userId },
-      select: { role: { select: { name: true } } }
-    });
-    
-    if (!user) return false;
-    
-    // Check if user's role contains "Admin" or "Manager" (case insensitive)
-    const roleName = user.role?.name.toLowerCase();
-    return roleName?.includes('admin') || roleName?.includes('manager');
-  } catch (error) {
-    console.error('Error checking user permissions:', error);
-    return false;
+    )
   }
 }

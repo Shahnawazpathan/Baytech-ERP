@@ -1,219 +1,229 @@
 "use client"
 
-import React, { useState, useCallback } from 'react'
+import React, { useState, useCallback, useRef } from 'react'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { useToast } from '@/hooks/use-toast'
-import { Upload, FileText, AlertCircle, CheckCircle, X, Download, FileSpreadsheet } from 'lucide-react'
+import { Upload, FileText, AlertCircle, CheckCircle, Download, FileSpreadsheet, Loader2 } from 'lucide-react'
+import Papa from 'papaparse'
+import { MAX_IMPORT_FILE_SIZE } from '@/lib/leads-constants'
 
 interface LeadImportModalProps {
   open: boolean
   onOpenChange: (open: boolean) => void
-  onImportComplete: (leads: any[]) => void | Promise<void>
+  /**
+   * Called with the parsed+validated leads. The parent owns the API call
+   * (and the success/failure toast) so this modal only surfaces validation
+   * errors and *its own* "Analyzed" / "Validated" feedback.
+   */
+  onImportComplete: (leads: any[]) => Promise<void> | void
 }
+
+type FieldType = 'text' | 'number' | 'email' | 'phone' | 'date'
 
 interface DetectedField {
   originalName: string
   mappedName: string
-  type: 'text' | 'number' | 'email' | 'phone' | 'date'
+  type: FieldType
   required: boolean
   sampleValue?: string
 }
 
+type Step = 'upload' | 'mapping' | 'preview' | 'importing'
+
+const STANDARD_FIELDS: Array<{ key: string; label: string; required: boolean; type: FieldType }> = [
+  { key: 'firstName', label: 'Name', required: true, type: 'text' },
+  { key: 'phone', label: 'Mobile Number', required: true, type: 'phone' },
+  { key: 'propertyAddress', label: 'Property Location', required: false, type: 'text' },
+]
+
+const HEADER_ALIASES: Record<string, string> = {
+  // name
+  'name': 'firstName',
+  'first_name': 'firstName',
+  'firstname': 'firstName',
+  'first name': 'firstName',
+  'fname': 'firstName',
+  'customer_name': 'firstName',
+  'client_name': 'firstName',
+  'full_name': 'firstName',
+  // phone
+  'phone': 'phone',
+  'phone_number': 'phone',
+  'telephone': 'phone',
+  'mobile': 'phone',
+  'mobile_number': 'phone',
+  'cell': 'phone',
+  'contact': 'phone',
+  'contact_number': 'phone',
+  'mobile_no': 'phone',
+  'phone_no': 'phone',
+  // address
+  'property_location': 'propertyAddress',
+  'property location': 'propertyAddress',
+  'location': 'propertyAddress',
+  'property_address': 'propertyAddress',
+  'property address': 'propertyAddress',
+  'address': 'propertyAddress',
+  'property': 'propertyAddress',
+  'property_info': 'propertyAddress',
+  'property details': 'propertyAddress',
+}
+
+function detectFieldType(value: string): FieldType {
+  if (!value) return 'text'
+  if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) return 'email'
+  if (/^\+?[\d\s\-()]{7,}$/.test(value)) return 'phone'
+  if (/^\d+\.?\d*$/.test(value)) return 'number'
+  if (!isNaN(Date.parse(value)) && /\d{4}/.test(value)) return 'date'
+  return 'text'
+}
+
+function smartFieldMapping(header: string): string {
+  return HEADER_ALIASES[header.toLowerCase().trim()] || ''
+}
+
 export function LeadImportModal({ open, onOpenChange, onImportComplete }: LeadImportModalProps) {
   const { toast } = useToast()
-  const [step, setStep] = useState<'upload' | 'mapping' | 'preview' | 'importing'>('upload')
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
+  const [step, setStep] = useState<Step>('upload')
   const [file, setFile] = useState<File | null>(null)
-  const [csvData, setCsvData] = useState<string[][]>([])
   const [headers, setHeaders] = useState<string[]>([])
+  const [rows, setRows] = useState<string[][]>([])
   const [detectedFields, setDetectedFields] = useState<DetectedField[]>([])
   const [mappedLeads, setMappedLeads] = useState<any[]>([])
-  const [importProgress, setImportProgress] = useState(0)
   const [errors, setErrors] = useState<string[]>([])
+  const [parsing, setParsing] = useState(false)
 
-  const standardFields = [
-    { key: 'firstName', label: 'Name', required: true, type: 'text' as const },
-    { key: 'phone', label: 'Mobile Number', required: true, type: 'phone' as const },
-    { key: 'propertyAddress', label: 'Property Location', required: false, type: 'text' as const },
-  ]
-
-  const detectFieldType = (value: string): 'text' | 'number' | 'email' | 'phone' | 'date' => {
-    if (!value) return 'text'
-    
-    // Email detection
-    if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) return 'email'
-    
-    // Phone detection
-    if (/^[\+]?[1-9][\d]{0,15}$/.test(value.replace(/[\s\-\(\)]/g, ''))) return 'phone'
-    
-    // Number detection
-    if (/^\d+\.?\d*$/.test(value)) return 'number'
-    
-    // Date detection
-    if (Date.parse(value)) return 'date'
-    
-    return 'text'
-  }
-
-  const smartFieldMapping = (headerName: string): string | null => {
-    const normalized = headerName.toLowerCase().trim()
-
-    const mappings: Record<string, string> = {
-      // Name variations
-      'name': 'firstName',
-      'first_name': 'firstName',
-      'firstname': 'firstName',
-      'first name': 'firstName',
-      'fname': 'firstName',
-      'customer_name': 'firstName',
-      'client_name': 'firstName',
-
-      // Mobile variations
-      'phone': 'phone',
-      'phone_number': 'phone',
-      'telephone': 'phone',
-      'mobile': 'phone',
-      'mobile_number': 'phone',
-      'cell': 'phone',
-      'contact': 'phone',
-      'contact_number': 'phone',
-      'mobile_no': 'phone',
-      'phone_no': 'phone',
-
-      // Property Location variations
-      'property_location': 'propertyAddress',
-      'property location': 'propertyAddress',
-      'location': 'propertyAddress',
-      'property_address': 'propertyAddress',
-      'property address': 'propertyAddress',
-      'address': 'propertyAddress',
-      'property': 'propertyAddress',
-      'property_info': 'propertyAddress',
-      'property details': 'propertyAddress',
-    }
-
-    return mappings[normalized] || null
-  }
-
-  const analyzeFile = useCallback((fileContent: string) => {
-    const lines = fileContent.split('\n').filter(line => line.trim())
-    if (lines.length < 2) {
-      throw new Error('File must contain at least a header row and one data row')
-    }
-
-    // Parse CSV (basic implementation)
-    const parseCSV = (text: string): string[][] => {
-      const lines = text.split('\n')
-      const result: string[][] = []
-      
-      for (const line of lines) {
-        if (line.trim()) {
-          // Simple CSV parsing - handles basic comma separation
-          const row = line.split(',').map(cell => cell.trim().replace(/^"|"$/g, ''))
-          result.push(row)
-        }
-      }
-      
-      return result
-    }
-
-    const data = parseCSV(fileContent)
-    const headerRow = data[0]
-    const dataRows = data.slice(1)
-
-    setCsvData(data)
-    setHeaders(headerRow)
-
-    // Detect fields and auto-map
-    const detected: DetectedField[] = headerRow.map((header, index) => {
-      const sampleValues = dataRows.slice(0, 5).map(row => row[index]).filter(Boolean)
-      const sampleValue = sampleValues[0] || ''
-      
-      const detectedType = detectFieldType(sampleValue)
-      const mappedName = smartFieldMapping(header) || ''
-      const isRequired = ['firstName', 'phone'].includes(mappedName)
-
-      return {
-        originalName: header,
-        mappedName,
-        type: detectedType,
-        required: isRequired,
-        sampleValue
-      }
-    })
-
-    setDetectedFields(detected)
-    setStep('mapping')
+  const reset = useCallback(() => {
+    setStep('upload')
+    setFile(null)
+    setHeaders([])
+    setRows([])
+    setDetectedFields([])
+    setMappedLeads([])
+    setErrors([])
+    if (fileInputRef.current) fileInputRef.current.value = ''
   }, [])
 
-  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const selectedFile = event.target.files?.[0]
-    if (!selectedFile) return
+  const handleClose = (next: boolean) => {
+    if (step === 'importing') return
+    if (!next) reset()
+    onOpenChange(next)
+  }
 
-    if (!selectedFile.name.toLowerCase().endsWith('.csv')) {
-      toast({
-        title: "Invalid File Type",
-        description: "Please upload a CSV file",
-        variant: "destructive",
-      })
-      return
-    }
-
-    setFile(selectedFile)
-    const reader = new FileReader()
-    
-    reader.onload = (e) => {
-      const content = e.target?.result as string
-      try {
-        analyzeFile(content)
-        toast({
-          title: "File Analyzed",
-          description: `Found ${csvData.length - 1} potential leads`,
-        })
-      } catch (error) {
-        toast({
-          title: "File Analysis Error",
-          description: error instanceof Error ? error.message : "Failed to analyze file",
-          variant: "destructive",
-        })
+  const parseFile = useCallback(
+    (selectedFile: File) => {
+      if (!selectedFile.name.toLowerCase().endsWith('.csv')) {
+        toast({ title: 'Invalid File Type', description: 'Please upload a CSV file', variant: 'destructive' })
+        return
       }
-    }
-    
-    reader.readAsText(selectedFile)
+      if (selectedFile.size > MAX_IMPORT_FILE_SIZE) {
+        toast({
+          title: 'File Too Large',
+          description: `File exceeds the ${Math.round(MAX_IMPORT_FILE_SIZE / 1024 / 1024)} MB limit`,
+          variant: 'destructive',
+        })
+        return
+      }
+
+      setFile(selectedFile)
+      setParsing(true)
+      Papa.parse<string[]>(selectedFile, {
+        skipEmptyLines: true,
+        complete: (result) => {
+          setParsing(false)
+          const data = result.data
+          if (!data || data.length < 2) {
+            toast({
+              title: 'Empty File',
+              description: 'CSV must contain a header row and at least one data row',
+              variant: 'destructive',
+            })
+            return
+          }
+          if (result.errors.length > 0) {
+            // Soft warn — continue with whatever parsed
+            toast({
+              title: 'Some rows had issues',
+              description: `${result.errors.length} row(s) had parsing warnings`,
+              variant: 'destructive',
+            })
+          }
+          const headerRow = data[0].map((h) => h.trim())
+          const dataRows = data.slice(1)
+          setHeaders(headerRow)
+          setRows(dataRows)
+
+          // Detect fields and auto-map
+          const detected: DetectedField[] = headerRow.map((header, index) => {
+            const sampleValues = dataRows
+              .slice(0, 5)
+              .map((row) => row[index])
+              .filter(Boolean) as string[]
+            const sampleValue = sampleValues[0] || ''
+            const mappedName = smartFieldMapping(header)
+            const detectedType = detectFieldType(sampleValue)
+            const isRequired = ['firstName', 'phone'].includes(mappedName)
+            return {
+              originalName: header,
+              mappedName,
+              type: detectedType,
+              required: isRequired,
+              sampleValue,
+            }
+          })
+          setDetectedFields(detected)
+          setStep('mapping')
+          toast({
+            title: 'File Analyzed',
+            description: `Found ${dataRows.length} potential leads across ${detected.length} columns`,
+          })
+        },
+        error: (err) => {
+          setParsing(false)
+          toast({
+            title: 'File Parse Error',
+            description: err.message,
+            variant: 'destructive',
+          })
+        },
+      })
+    },
+    [toast]
+  )
+
+  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const f = event.target.files?.[0]
+    if (f) parseFile(f)
   }
 
   const updateFieldMapping = (index: number, mappedName: string) => {
-    setDetectedFields(prev => prev.map((field, i) => 
-      i === index ? { ...field, mappedName } : field
-    ))
+    setDetectedFields((prev) => prev.map((f, i) => (i === index ? { ...f, mappedName } : f)))
   }
 
   const validateMapping = (): string[] => {
     const validationErrors: string[] = []
-    const mappedFields = detectedFields.filter(f => f.mappedName)
+    const mappedFields = detectedFields.filter((f) => f.mappedName && f.mappedName !== 'unmapped')
 
-    // Check required fields
     const requiredFields = ['firstName', 'phone']
-    requiredFields.forEach(field => {
-      if (!mappedFields.find(f => f.mappedName === field && f.mappedName !== 'unmapped')) {
-        const fieldLabel = standardFields.find(sf => sf.key === field)?.label || field
+    for (const field of requiredFields) {
+      if (!mappedFields.find((f) => f.mappedName === field)) {
+        const fieldLabel = STANDARD_FIELDS.find((sf) => sf.key === field)?.label || field
         validationErrors.push(`${fieldLabel} is required but not mapped`)
       }
-    })
-
-    // Check for duplicate mappings (excluding 'unmapped')
-    const mappings = mappedFields.map(f => f.mappedName).filter(name => name !== 'unmapped')
-    const duplicates = mappings.filter((item, index) => mappings.indexOf(item) !== index)
-    if (duplicates.length > 0) {
-      validationErrors.push(`Duplicate mappings found: ${duplicates.join(', ')}`)
     }
-
+    const mappings = mappedFields.map((f) => f.mappedName)
+    const dupes = mappings.filter((m, i) => mappings.indexOf(m) !== i)
+    if (dupes.length > 0) {
+      validationErrors.push(`Duplicate mappings: ${[...new Set(dupes)].join(', ')}`)
+    }
     return validationErrors
   }
 
@@ -224,105 +234,61 @@ export function LeadImportModal({ open, onOpenChange, onImportComplete }: LeadIm
       return
     }
 
-    // Process the data
-    const processedLeads: any[] = []
-    const dataRows = csvData.slice(1)
-
-    dataRows.forEach((row, rowIndex) => {
+    const processed: any[] = []
+    for (const row of rows) {
       const lead: any = {
-        id: Date.now() + rowIndex,
-        status: "NEW",
-        assignedTo: "Unassigned",
+        status: 'NEW',
+        source: 'Import',
       }
-
       detectedFields.forEach((field, fieldIndex) => {
         if (field.mappedName && field.mappedName !== 'unmapped' && row[fieldIndex]) {
           let value: any = row[fieldIndex].trim()
-
-          // Type conversion
-          if (field.type === 'number') {
-            value = parseFloat(value) || 0
-          } else if (field.type === 'email') {
-            value = value.toLowerCase()
-          }
-
+          if (field.type === 'number') value = parseFloat(value) || 0
+          else if (field.type === 'email') value = value.toLowerCase()
           lead[field.mappedName] = value
         }
       })
-
-      // Set defaults
       if (!lead.source) lead.source = 'Import'
+      processed.push(lead)
+    }
 
-      processedLeads.push(lead)
-    })
-
-    setMappedLeads(processedLeads)
-    setStep('preview')
+    setMappedLeads(processed)
     setErrors([])
+    setStep('preview')
   }
 
   const executeImport = async () => {
     setStep('importing')
-    setImportProgress(0)
-    
-    // Simulate import progress
-    const totalLeads = mappedLeads.length
-    const batchSize = Math.max(1, Math.floor(totalLeads / 10))
-    
-    for (let i = 0; i < totalLeads; i += batchSize) {
-      await new Promise(resolve => setTimeout(resolve, 100))
-      setImportProgress(Math.min(100, ((i + batchSize) / totalLeads) * 100))
-    }
-    
     try {
-      // Complete import
+      // Parent does the API call and shows its own toast.
       await onImportComplete(mappedLeads)
-      setImportProgress(100)
+      // Brief success confirmation; close on next tick so the parent toast appears first.
       toast({
-        title: "Import Successful",
-        description: `Successfully imported ${mappedLeads.length} leads`,
+        title: 'Import Successful',
+        description: `Sent ${mappedLeads.length} leads for import`,
       })
-      
-      // Reset and close
       setTimeout(() => {
-        resetModal()
+        reset()
         onOpenChange(false)
-      }, 1000)
+      }, 600)
     } catch (error) {
-      setImportProgress(0)
       setStep('preview')
       toast({
-        title: "Import Failed",
-        description: error instanceof Error ? error.message : "Failed to import leads",
-        variant: "destructive",
+        title: 'Import Failed',
+        description: error instanceof Error ? error.message : 'Failed to import leads',
+        variant: 'destructive',
       })
     }
-  }
-
-  const resetModal = () => {
-    setStep('upload')
-    setFile(null)
-    setCsvData([])
-    setHeaders([])
-    setDetectedFields([])
-    setMappedLeads([])
-    setImportProgress(0)
-    setErrors([])
   }
 
   const downloadTemplate = () => {
     const templateHeaders = ['name', 'mobile_number', 'property_location']
-    const sampleData = [
+    const sample = [
       ['John Smith', '555-0123', '123 Main St, City, State'],
       ['Jane Doe', '555-0456', '456 Oak Ave, City, State'],
-      ['Michael Johnson', '555-0789', '789 Pine St, City, State']
     ]
-
-    const csvContent = [templateHeaders, ...sampleData]
-      .map(row => row.map(field => `"${field}"`).join(','))
-      .join('\n')
-
-    const blob = new Blob([csvContent], { type: 'text/csv' })
+    const csv = Papa.unparse([templateHeaders, ...sample])
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
     const url = window.URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
@@ -332,7 +298,7 @@ export function LeadImportModal({ open, onOpenChange, onImportComplete }: LeadIm
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={handleClose}>
       <DialogContent className="max-w-4xl max-h-[90vh] flex flex-col">
         <DialogHeader className="flex-shrink-0">
           <DialogTitle className="flex items-center gap-2">
@@ -351,27 +317,37 @@ export function LeadImportModal({ open, onOpenChange, onImportComplete }: LeadIm
                 <CardHeader>
                   <CardTitle className="text-lg">Upload CSV File</CardTitle>
                   <CardDescription>
-                    Upload a CSV file containing your leads. Our system will automatically detect and map fields.
+                    Upload a CSV file containing your leads. The system will automatically detect and map fields.
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <div className="border-2 border-dashed border-gray-200 rounded-lg p-6 text-center hover:border-gray-300 transition-colors">
                     <Input
+                      ref={fileInputRef}
                       type="file"
-                      accept=".csv"
+                      accept=".csv,text/csv"
                       onChange={handleFileUpload}
                       className="hidden"
                       id="csv-upload"
+                      disabled={parsing}
                     />
                     <Label htmlFor="csv-upload" className="cursor-pointer">
                       <div className="space-y-2">
-                        <FileSpreadsheet className="h-12 w-12 mx-auto text-gray-400" />
-                        <p className="text-sm font-medium">Click to upload CSV file</p>
-                        <p className="text-xs text-gray-500">Maximum file size: 10MB</p>
+                        {parsing ? (
+                          <Loader2 className="h-12 w-12 mx-auto text-gray-400 animate-spin" />
+                        ) : (
+                          <FileSpreadsheet className="h-12 w-12 mx-auto text-gray-400" />
+                        )}
+                        <p className="text-sm font-medium">
+                          {parsing ? 'Parsing CSV…' : 'Click to upload CSV file'}
+                        </p>
+                        <p className="text-xs text-gray-500">
+                          Maximum file size: {Math.round(MAX_IMPORT_FILE_SIZE / 1024 / 1024)} MB
+                        </p>
                       </div>
                     </Label>
                   </div>
-                  
+
                   <div className="flex items-center justify-center gap-2">
                     <Button variant="outline" size="sm" onClick={downloadTemplate}>
                       <Download className="h-4 w-4 mr-2" />
@@ -387,9 +363,9 @@ export function LeadImportModal({ open, onOpenChange, onImportComplete }: LeadIm
                 </CardHeader>
                 <CardContent>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                    {standardFields.map(field => (
-                      <Badge key={field.key} variant={field.required ? "default" : "outline"}>
-                        {field.label} {field.required && "*"}
+                    {STANDARD_FIELDS.map((f) => (
+                      <Badge key={f.key} variant={f.required ? 'default' : 'outline'}>
+                        {f.label} {f.required && '*'}
                       </Badge>
                     ))}
                   </div>
@@ -405,7 +381,7 @@ export function LeadImportModal({ open, onOpenChange, onImportComplete }: LeadIm
                 <CardHeader>
                   <CardTitle className="text-lg">Field Mapping</CardTitle>
                   <CardDescription>
-                    Map your CSV columns to our system fields. Auto-mapping has been applied based on column names.
+                    Map your CSV columns to the system fields. Auto-mapping has been applied based on column names.
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4 flex flex-col">
@@ -420,15 +396,18 @@ export function LeadImportModal({ open, onOpenChange, onImportComplete }: LeadIm
                             </p>
                           </div>
                           <div className="w-64">
-                            <Select value={field.mappedName} onValueChange={(value) => updateFieldMapping(index, value)}>
+                            <Select
+                              value={field.mappedName || 'unmapped'}
+                              onValueChange={(v) => updateFieldMapping(index, v)}
+                            >
                               <SelectTrigger>
                                 <SelectValue placeholder="Select field to map to" />
                               </SelectTrigger>
                               <SelectContent>
                                 <SelectItem value="unmapped">Don't map</SelectItem>
-                                {standardFields.map(stdField => (
-                                  <SelectItem key={stdField.key} value={stdField.key}>
-                                    {stdField.label} {stdField.required && "*"}
+                                {STANDARD_FIELDS.map((sf) => (
+                                  <SelectItem key={sf.key} value={sf.key}>
+                                    {sf.label} {sf.required && '*'}
                                   </SelectItem>
                                 ))}
                               </SelectContent>
@@ -451,8 +430,8 @@ export function LeadImportModal({ open, onOpenChange, onImportComplete }: LeadIm
                         Validation Errors
                       </h4>
                       <ul className="mt-2 text-sm text-red-700 list-disc list-inside">
-                        {errors.map((error, index) => (
-                          <li key={`error-${index}`}>{error}</li>
+                        {errors.map((e, i) => (
+                          <li key={i}>{e}</li>
                         ))}
                       </ul>
                     </div>
@@ -507,27 +486,12 @@ export function LeadImportModal({ open, onOpenChange, onImportComplete }: LeadIm
               <Card>
                 <CardHeader>
                   <CardTitle className="text-lg">Importing Leads</CardTitle>
-                  <CardDescription>
-                    Please wait while we import your leads...
-                  </CardDescription>
+                  <CardDescription>Please wait while the leads are imported.</CardDescription>
                 </CardHeader>
                 <CardContent>
-                  <div className="space-y-4">
-                    <div className="w-full bg-gray-200 rounded-full h-2">
-                      <div 
-                        className="bg-blue-600 h-2 rounded-full transition-all duration-300"
-                        style={{ width: `${importProgress}%` }}
-                      />
-                    </div>
-                    <p className="text-center text-sm text-gray-600">
-                      {importProgress < 100 ? `Importing... ${Math.round(importProgress)}%` : 'Import Complete!'}
-                    </p>
-                    {importProgress === 100 && (
-                      <div className="flex items-center justify-center text-green-600">
-                        <CheckCircle className="h-5 w-5 mr-2" />
-                        Successfully imported {mappedLeads.length} leads
-                      </div>
-                    )}
+                  <div className="flex items-center justify-center gap-2 text-gray-600">
+                    <Loader2 className="h-5 w-5 animate-spin" />
+                    Importing {mappedLeads.length} leads...
                   </div>
                 </CardContent>
               </Card>
@@ -536,25 +500,19 @@ export function LeadImportModal({ open, onOpenChange, onImportComplete }: LeadIm
         </div>
 
         <DialogFooter className="flex-shrink-0 pt-4 border-t">
-          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={step === 'importing'}>
+          <Button variant="outline" onClick={() => handleClose(false)} disabled={step === 'importing'}>
             Cancel
           </Button>
-          
+
           {step === 'mapping' && (
             <Button onClick={processMapping}>
               Continue to Preview
             </Button>
           )}
-          
+
           {step === 'preview' && (
             <Button onClick={executeImport} className="bg-green-600 hover:bg-green-700">
               Import {mappedLeads.length} Leads
-            </Button>
-          )}
-          
-          {step === 'upload' && file && (
-            <Button onClick={() => analyzeFile}>
-              Analyze File
             </Button>
           )}
         </DialogFooter>

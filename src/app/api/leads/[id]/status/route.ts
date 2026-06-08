@@ -2,42 +2,57 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { invalidateCache } from '@/lib/cache'
 import { parseLeadMetadata } from '@/lib/lead-metadata'
+import { updateStatusSchema } from '@/lib/leads-validation'
+import { createLeadHistory } from '@/lib/lead-history'
 
-// Update lead status
-export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+/** Update lead status. Records an entry in the lead history. */
+export async function PATCH(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
   try {
     const { id } = await params
-    const { status } = await request.json()
-    
-    // Check if lead exists
-    const existingLead = await db.lead.findUnique({
-      where: { id }
-    })
-    
-    if (!existingLead) {
+    const userId = request.headers.get('x-user-id') || undefined
+
+    const json = await request.json()
+    const parsed = updateStatusSchema.safeParse(json)
+    if (!parsed.success) {
       return NextResponse.json(
-        { error: 'Lead not found' },
-        { status: 404 }
+        { error: 'Invalid input', details: parsed.error.flatten() },
+        { status: 400 }
       )
     }
-    
-    // Update the lead status
+    const { status } = parsed.data
+
+    const existingLead = await db.lead.findUnique({ where: { id } })
+    if (!existingLead) {
+      return NextResponse.json({ error: 'Lead not found' }, { status: 404 })
+    }
+
     const shouldSetContactedAt = status === 'CONTACTED' && !existingLead.contactedAt
     const updatedLead = await db.lead.update({
       where: { id },
       data: {
-        status: status,
+        status,
         contactedAt: shouldSetContactedAt ? new Date() : existingLead.contactedAt,
-        updatedAt: new Date()
+        updatedAt: new Date(),
       },
-      include: {
-        assignedTo: true
-      }
+      include: { assignedTo: true },
+    })
+
+    // Audit log: status change
+    await createLeadHistory({
+      leadId: id,
+      employeeId: userId || null,
+      action: 'STATUS_CHANGED',
+      oldValue: JSON.stringify({ status: existingLead.status }),
+      newValue: JSON.stringify({ status }),
+      notes: `Status changed from ${existingLead.status} to ${status}`,
     })
 
     invalidateCache('leads', existingLead.companyId)
+    invalidateCache('pool', existingLead.companyId)
 
-    // Transform the updated lead to match expected format
     const metadataValues = parseLeadMetadata(updatedLead.metadata)
     const transformedLead = {
       id: updatedLead.id,
@@ -47,7 +62,9 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       loanAmount: updatedLead.loanAmount,
       status: updatedLead.status,
       priority: updatedLead.priority,
-      assignedTo: updatedLead.assignedTo ? `${updatedLead.assignedTo.firstName} ${updatedLead.assignedTo.lastName}` : 'Unassigned',
+      assignedTo: updatedLead.assignedTo
+        ? `${updatedLead.assignedTo.firstName} ${updatedLead.assignedTo.lastName}`
+        : 'Unassigned',
       assignedToId: updatedLead.assignedToId,
       assignedAt: updatedLead.assignedAt,
       contactedAt: updatedLead.contactedAt,
@@ -60,15 +77,12 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       lastName: updatedLead.lastName,
       notes: updatedLead.notes || '',
       notesStatus: metadataValues.notesStatus,
-      followUpDate: metadataValues.followUpDate
+      followUpDate: metadataValues.followUpDate,
     }
 
     return NextResponse.json(transformedLead)
   } catch (error) {
     console.error('Error updating lead status:', error)
-    return NextResponse.json(
-      { error: 'Failed to update lead status' },
-      { status: 500 }
-    )
+    return NextResponse.json({ error: 'Failed to update lead status' }, { status: 500 })
   }
 }
