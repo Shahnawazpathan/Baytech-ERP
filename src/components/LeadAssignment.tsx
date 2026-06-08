@@ -96,13 +96,13 @@ const LeadAssignmentComponent: React.FC<LeadAssignmentProps> = ({
   };
 
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
       <Select 
         value={selectedEmployeeId} 
         onValueChange={setSelectedEmployeeId}
         disabled={isAssigning || disabled}
       >
-        <SelectTrigger className="w-[180px]">
+        <SelectTrigger className="w-full sm:w-[180px]">
           <SelectValue placeholder="Assign to...">
             {selectedEmployeeId 
               ? `${employees.find(e => e.id === selectedEmployeeId)?.firstName} ${employees.find(e => e.id === selectedEmployeeId)?.lastName}`

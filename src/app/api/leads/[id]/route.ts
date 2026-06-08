@@ -98,6 +98,11 @@ export async function PUT(
       notes: updatedLead.notes,
       notesStatus: metadataValues.notesStatus,
       followUpDate: metadataValues.followUpDate,
+      dnc: metadataValues.dnc,
+      whatsappOptIn: metadataValues.whatsappOptIn,
+      lastDisposition: metadataValues.lastDisposition,
+      lastCallAt: metadataValues.lastCallAt,
+      callAttempts: metadataValues.callAttempts,
     }
 
     return NextResponse.json(transformedLead)
@@ -148,6 +153,11 @@ export async function GET(
       notes: lead.notes,
       notesStatus: metadataValues.notesStatus,
       followUpDate: metadataValues.followUpDate,
+      dnc: metadataValues.dnc,
+      whatsappOptIn: metadataValues.whatsappOptIn,
+      lastDisposition: metadataValues.lastDisposition,
+      lastCallAt: metadataValues.lastCallAt,
+      callAttempts: metadataValues.callAttempts,
     }
 
     return NextResponse.json(transformedLead)

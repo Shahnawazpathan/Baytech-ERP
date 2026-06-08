@@ -120,6 +120,11 @@ export async function GET(request: NextRequest) {
         notes: lead.notes || '',
         notesStatus: metadata.notesStatus,
         followUpDate: metadata.followUpDate,
+        dnc: metadata.dnc,
+        whatsappOptIn: metadata.whatsappOptIn,
+        lastDisposition: metadata.lastDisposition,
+        lastCallAt: metadata.lastCallAt,
+        callAttempts: metadata.callAttempts,
       }
     })
 
@@ -203,6 +208,11 @@ export async function POST(request: NextRequest) {
       notes: lead.notes || '',
       notesStatus: metadataValues.notesStatus,
       followUpDate: metadataValues.followUpDate,
+      dnc: metadataValues.dnc,
+      whatsappOptIn: metadataValues.whatsappOptIn,
+      lastDisposition: metadataValues.lastDisposition,
+      lastCallAt: metadataValues.lastCallAt,
+      callAttempts: metadataValues.callAttempts,
     }
 
     invalidateCache('leads', lead.companyId)

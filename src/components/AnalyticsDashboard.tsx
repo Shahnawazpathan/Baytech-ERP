@@ -245,7 +245,7 @@ Average Credit Score: ${leadsList.length ? Math.round(leadsList.reduce((sum, lea
         </div>
         <div className="flex flex-wrap gap-2">
           <Select value={analyticsDateRange} onValueChange={setAnalyticsDateRange}>
-            <SelectTrigger className="w-[180px]">
+            <SelectTrigger className="w-full sm:w-[180px]">
               <SelectValue placeholder="Select range" />
             </SelectTrigger>
             <SelectContent>
@@ -333,7 +333,7 @@ Average Credit Score: ${leadsList.length ? Math.round(leadsList.reduce((sum, lea
               <CardDescription>Daily lead activity and conversions</CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="h-80">
+              <div className="h-64 min-w-0 sm:h-80">
                 <ResponsiveContainer width="100%" height="100%">
                   <AreaChart data={analyticsData.trends}>
                     <defs>

@@ -466,12 +466,12 @@ export function EmployeeManagement({
   return (
     <div className="space-y-6">
       {/* Employee Management Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h2 className="text-2xl font-bold text-gray-900">Employee Management</h2>
           <p className="text-sm text-gray-500">Manage your workforce and organizational structure</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex w-full flex-wrap gap-2 sm:w-auto">
           <Button
             variant="outline"
             onClick={handleExportEmployees}
@@ -492,7 +492,7 @@ export function EmployeeManagement({
       </div>
 
       {/* Employee Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium">Total Employees</CardTitle>
@@ -537,24 +537,24 @@ export function EmployeeManagement({
       {/* Employee List */}
       <Card>
         <CardHeader>
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
             <div>
               <CardTitle>Employee Directory</CardTitle>
               <CardDescription>View and manage all employees</CardDescription>
             </div>
-            <div className="flex gap-2">
-              <div className="relative">
+            <div className="grid w-full grid-cols-1 gap-2 sm:grid-cols-2 lg:flex lg:w-auto">
+              <div className="relative sm:col-span-2 lg:col-span-1">
                 <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
                 <Input
                   type="text"
                   placeholder="Search employees..."
                   value={employeeFilter.search}
                   onChange={(e) => setEmployeeFilter({...employeeFilter, search: e.target.value})}
-                  className="pl-10 pr-4 py-2 border border-gray-300 rounded-md text-sm w-64"
+                  className="w-full border border-gray-300 py-2 pl-10 pr-4 text-sm lg:w-64"
                 />
               </div>
               <Select value={employeeFilter.department} onValueChange={(value) => setEmployeeFilter({...employeeFilter, department: value})}>
-                <SelectTrigger className="w-40">
+                <SelectTrigger className="w-full lg:w-40">
                   <SelectValue placeholder="Department" />
                 </SelectTrigger>
                 <SelectContent>
@@ -567,7 +567,7 @@ export function EmployeeManagement({
                 </SelectContent>
               </Select>
               <Select value={employeeFilter.status} onValueChange={(value) => setEmployeeFilter({...employeeFilter, status: value})}>
-                <SelectTrigger className="w-32">
+                <SelectTrigger className="w-full lg:w-32">
                   <SelectValue placeholder="Status" />
                 </SelectTrigger>
                 <SelectContent>
@@ -611,8 +611,8 @@ export function EmployeeManagement({
               ))}
             </div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full">
+            <div className="max-w-full overflow-x-auto overscroll-x-contain">
+              <table className="min-w-[980px] w-full">
                 <thead>
                   <tr className="border-b">
                     <th className="text-left p-3">Employee</th>
@@ -700,11 +700,11 @@ export function EmployeeManagement({
           )}
           {/* Pagination Controls */}
           {filteredEmployees.length > itemsPerPage && (
-            <div className="flex items-center justify-between px-4 py-3 border-t">
+            <div className="flex flex-col gap-3 border-t px-1 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-4">
               <div className="text-sm text-gray-500">
                 Showing {((employeePage - 1) * itemsPerPage) + 1} to {Math.min(employeePage * itemsPerPage, filteredEmployees.length)} of {filteredEmployees.length} employees
               </div>
-              <div className="flex gap-2">
+              <div className="flex max-w-full gap-2 overflow-x-auto pb-1">
                 <Button
                   variant="outline"
                   size="sm"
@@ -743,8 +743,8 @@ export function EmployeeManagement({
       {/* Add Employee Modal */}
       {showAddEmployeeModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-            <div className="p-6">
+          <div className="max-h-[calc(100dvh-1rem)] w-full max-w-2xl overflow-y-auto rounded-lg bg-white shadow-xl">
+            <div className="p-4 sm:p-6">
               <div className="flex justify-between items-center mb-4">
                 <h3 className="text-xl font-semibold">
                   {editingEmployee ? 'Edit Employee' : 'Add New Employee'}

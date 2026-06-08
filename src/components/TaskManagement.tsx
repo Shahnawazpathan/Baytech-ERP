@@ -358,7 +358,7 @@ export function TaskManagement({ companyId = 'default-company', userId, userRole
   return (
     <div className="space-y-6">
       {/* Task Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium">Total Tasks</CardTitle>
@@ -408,7 +408,7 @@ export function TaskManagement({ companyId = 'default-company', userId, userRole
       {/* Task Management Header */}
       <Card>
         <CardHeader>
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <CardTitle className="flex items-center gap-2">
                 <CheckSquare className="h-5 w-5" />
@@ -429,8 +429,8 @@ export function TaskManagement({ companyId = 'default-company', userId, userRole
 
         <CardContent>
           {/* Filters */}
-          <div className="flex flex-wrap gap-4 mb-6">
-            <div className="relative flex-1 min-w-[200px]">
+          <div className="mb-6 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-[minmax(220px,1fr)_160px_160px_160px]">
+            <div className="relative sm:col-span-2 xl:col-span-1">
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
               <Input
                 placeholder="Search tasks..."
@@ -441,7 +441,7 @@ export function TaskManagement({ companyId = 'default-company', userId, userRole
             </div>
 
             <Select value={filters.status} onValueChange={(value) => setFilters({...filters, status: value})}>
-              <SelectTrigger className="w-40">
+              <SelectTrigger className="w-full">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -454,7 +454,7 @@ export function TaskManagement({ companyId = 'default-company', userId, userRole
             </Select>
 
             <Select value={filters.priority} onValueChange={(value) => setFilters({...filters, priority: value})}>
-              <SelectTrigger className="w-40">
+              <SelectTrigger className="w-full">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -467,7 +467,7 @@ export function TaskManagement({ companyId = 'default-company', userId, userRole
             </Select>
 
             <Select value={filters.assignedTo} onValueChange={(value) => setFilters({...filters, assignedTo: value})}>
-              <SelectTrigger className="w-40">
+              <SelectTrigger className="w-full">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -490,8 +490,8 @@ export function TaskManagement({ companyId = 'default-company', userId, userRole
             <div className="space-y-4">
               {filteredTasks.map((task) => (
                 <Card key={task.id} className="p-4">
-                  <div className="flex items-start justify-between">
-                    <div className="flex-1">
+                  <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                    <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2 mb-2">
                         <h4 className="font-medium">{task.title}</h4>
                         {task.dueDate && isOverdue(task.dueDate) && task.status !== 'DONE' && (
@@ -539,7 +539,7 @@ export function TaskManagement({ companyId = 'default-company', userId, userRole
                       )}
                     </div>
 
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
                       <Badge className={getPriorityColor(task.priority)}>
                         <Flag className="h-3 w-3 mr-1" />
                         {task.priority}
@@ -549,7 +549,7 @@ export function TaskManagement({ companyId = 'default-company', userId, userRole
                         value={task.status}
                         onValueChange={(value) => handleUpdateTaskStatus(task.id, value as Task['status'])}
                       >
-                        <SelectTrigger className="w-32">
+                        <SelectTrigger className="w-36">
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
@@ -624,7 +624,7 @@ export function TaskManagement({ companyId = 'default-company', userId, userRole
               />
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div>
                 <Label htmlFor="task-priority">Priority</Label>
                 <Select value={newTask.priority} onValueChange={(value) => setNewTask({...newTask, priority: value as any})}>
@@ -655,7 +655,7 @@ export function TaskManagement({ companyId = 'default-company', userId, userRole
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div>
                 <Label htmlFor="task-assignee">Assign To *</Label>
                 <Select value={newTask.assignedToId} onValueChange={(value) => setNewTask({...newTask, assignedToId: value})}>

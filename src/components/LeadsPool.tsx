@@ -347,7 +347,7 @@ export function LeadsPool({ user, onLeadClaimed }: LeadsPoolProps) {
               <p className="text-gray-500">No leads available in the pool</p>
             </div>
           ) : (
-            <ScrollArea className="h-[600px] pr-4">
+            <ScrollArea className="h-[min(600px,70dvh)] pr-1 sm:pr-4">
               <div className="space-y-4">
                 {filteredLeads.map((lead) => (
                   <Card key={lead.id} className="border-2 hover:border-blue-300 transition-colors">
@@ -355,14 +355,14 @@ export function LeadsPool({ user, onLeadClaimed }: LeadsPoolProps) {
                       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                         {/* Lead Info */}
                         <div className="flex-1 space-y-2">
-                          <div className="flex items-start justify-between">
-                            <div>
+                          <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                            <div className="min-w-0">
                               <h3 className="font-semibold text-lg text-gray-900">
                                 {lead.name}
                               </h3>
                               <p className="text-sm text-gray-500">#{lead.leadNumber}</p>
                             </div>
-                            <div className="flex gap-2">
+                            <div className="flex flex-wrap gap-2">
                               <Badge className={getPriorityColor(lead.priority)}>
                                 {lead.priority}
                               </Badge>

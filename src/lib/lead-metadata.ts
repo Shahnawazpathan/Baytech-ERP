@@ -1,6 +1,11 @@
 export type LeadMetadata = {
   notesStatus?: string | null
   followUpDate?: string | null
+  dnc?: boolean
+  whatsappOptIn?: boolean
+  lastDisposition?: string | null
+  lastCallAt?: string | null
+  callAttempts?: number
 }
 
 type LeadMetadataRecord = Record<string, unknown>
@@ -22,7 +27,12 @@ export const parseLeadMetadata = (metadata?: string | null): LeadMetadata => {
   const parsed = parseMetadataObject(metadata)
   return {
     notesStatus: typeof parsed.notesStatus === 'string' ? parsed.notesStatus : null,
-    followUpDate: typeof parsed.followUpDate === 'string' ? parsed.followUpDate : null
+    followUpDate: typeof parsed.followUpDate === 'string' ? parsed.followUpDate : null,
+    dnc: parsed.dnc === true,
+    whatsappOptIn: parsed.whatsappOptIn !== false,
+    lastDisposition: typeof parsed.lastDisposition === 'string' ? parsed.lastDisposition : null,
+    lastCallAt: typeof parsed.lastCallAt === 'string' ? parsed.lastCallAt : null,
+    callAttempts: typeof parsed.callAttempts === 'number' ? parsed.callAttempts : 0,
   }
 }
 

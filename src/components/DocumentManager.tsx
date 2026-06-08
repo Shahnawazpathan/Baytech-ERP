@@ -262,7 +262,7 @@ export function DocumentManager({ companyId = 'default' }: DocumentManagerProps)
   return (
     <div className="space-y-6">
       {/* Document Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium">Total Documents</CardTitle>
@@ -303,7 +303,7 @@ export function DocumentManager({ companyId = 'default' }: DocumentManagerProps)
       {/* Document Management */}
       <Card>
         <CardHeader>
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <CardTitle className="flex items-center gap-2">
                 <FolderOpen className="h-5 w-5" />
@@ -322,8 +322,8 @@ export function DocumentManager({ companyId = 'default' }: DocumentManagerProps)
         
         <CardContent>
           {/* Filters */}
-          <div className="flex gap-4 mb-6">
-            <div className="relative flex-1">
+          <div className="mb-6 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-[minmax(220px,1fr)_160px_130px_130px]">
+            <div className="relative sm:col-span-2 xl:col-span-1">
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
               <Input
                 placeholder="Search documents..."
@@ -334,7 +334,7 @@ export function DocumentManager({ companyId = 'default' }: DocumentManagerProps)
             </div>
             
             <Select value={filters.category} onValueChange={(value) => setFilters({...filters, category: value})}>
-              <SelectTrigger className="w-40">
+              <SelectTrigger className="w-full">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -346,7 +346,7 @@ export function DocumentManager({ companyId = 'default' }: DocumentManagerProps)
             </Select>
 
             <Select value={filters.type} onValueChange={(value) => setFilters({...filters, type: value})}>
-              <SelectTrigger className="w-32">
+              <SelectTrigger className="w-full">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -359,7 +359,7 @@ export function DocumentManager({ companyId = 'default' }: DocumentManagerProps)
             </Select>
 
             <Select value={filters.isPrivate} onValueChange={(value) => setFilters({...filters, isPrivate: value})}>
-              <SelectTrigger className="w-32">
+              <SelectTrigger className="w-full">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -374,13 +374,13 @@ export function DocumentManager({ companyId = 'default' }: DocumentManagerProps)
           <div className="space-y-4">
             {filteredDocuments.map((doc) => (
               <Card key={doc.id} className="p-4">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-4 flex-1">
+                <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="flex min-w-0 items-start gap-4 flex-1">
                     <div className="flex-shrink-0">
                       {getFileIcon(doc.type)}
                     </div>
                     
-                    <div className="flex-1">
+                    <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2 mb-1">
                         <h4 className="font-medium">{doc.name}</h4>
                         {doc.isPrivate && (
@@ -392,7 +392,7 @@ export function DocumentManager({ companyId = 'default' }: DocumentManagerProps)
                         {doc.description || 'No description available'}
                       </p>
                       
-                      <div className="flex items-center gap-4 text-xs text-gray-500">
+                      <div className="flex flex-wrap items-center gap-3 text-xs text-gray-500">
                         <span className="flex items-center gap-1">
                           <User className="h-3 w-3" />
                           {doc.uploadedBy}
@@ -417,7 +417,7 @@ export function DocumentManager({ companyId = 'default' }: DocumentManagerProps)
                     </div>
                   </div>
                   
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 self-end sm:self-auto">
                     <Button variant="outline" size="sm" onClick={() => handleDownloadDocument(doc)}>
                       <Download className="h-4 w-4" />
                     </Button>

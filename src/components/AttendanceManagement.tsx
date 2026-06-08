@@ -209,7 +209,7 @@ export function AttendanceManagement({
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="flex items-center justify-between">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div className="text-3xl font-bold text-green-900">{stats.present}</div>
               <div className="text-right">
                 <div className="text-sm font-semibold text-green-700">{stats.presentPercentage}%</div>
@@ -362,8 +362,8 @@ export function AttendanceManagement({
                   <CardContent className="p-4">
                     <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                       {/* Employee Info */}
-                      <div className="flex items-center gap-4 flex-1">
-                        <Avatar className="h-12 w-12">
+                      <div className="flex min-w-0 items-center gap-3 flex-1 sm:gap-4">
+                        <Avatar className="h-10 w-10 shrink-0 sm:h-12 sm:w-12">
                           <AvatarFallback className="bg-gradient-to-br from-blue-500 to-purple-600 text-white font-semibold">
                             {(record.name || 'U').split(' ').map((n: string) => n[0]).join('')}
                           </AvatarFallback>
@@ -375,7 +375,7 @@ export function AttendanceManagement({
                       </div>
 
                       {/* Time Info */}
-                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 flex-1">
+                      <div className="grid flex-1 grid-cols-2 gap-4 md:grid-cols-4">
                         <div>
                           <p className="text-xs text-gray-500 mb-1">Check In</p>
                           <p className="font-medium text-sm flex items-center gap-1">

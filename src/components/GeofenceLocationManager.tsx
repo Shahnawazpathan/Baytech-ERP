@@ -386,7 +386,7 @@ export function GeofenceLocationManager({ companyId = 'default-company' }: Geofe
                 required
               />
             </div>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div>
                 <Label htmlFor="latitude">Latitude *</Label>
                 <Input

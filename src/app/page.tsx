@@ -45,10 +45,12 @@ const GeofenceAttendance = lazy(() => import('@/components/GeofenceAttendance').
 const GeofenceLocationManager = lazy(() => import('@/components/GeofenceLocationManager').then(mod => ({ default: mod.GeofenceLocationManager })))
 const TaskManagement = lazy(() => import('@/components/TaskManagement').then(mod => ({ default: mod.TaskManagement })))
 const AttendanceManagement = lazy(() => import('@/components/AttendanceManagement').then(mod => ({ default: mod.AttendanceManagement })))
+const CallingWorkspace = lazy(() => import('@/components/CallingWorkspace').then(mod => ({ default: mod.CallingWorkspace })))
 import {
   Users,
   Building2,
   Phone,
+  PhoneCall,
   Calendar,
   Bell,
   TrendingUp,
@@ -1961,7 +1963,7 @@ export default function Home() {
 
   return (
     <ProtectedRoute>
-      <div className="flex min-h-screen bg-gray-50 transition-colors duration-200">
+      <div className="flex min-h-screen min-h-dvh bg-gray-50 transition-colors duration-200">
 
       {/* Mobile Overlay */}
       {sidebarOpen && (
@@ -2042,6 +2044,17 @@ export default function Home() {
               >
                 <Phone className="h-4 w-4 flex-shrink-0" />
                 {sidebarOpen && <span className="truncate">Leads</span>}
+              </Button>
+            )}
+
+            {canViewLeads && (
+              <Button
+                variant={activeTab === 'dialer' ? 'secondary' : 'ghost'}
+                className={`w-full gap-2 transition-all duration-200 ${!sidebarOpen ? 'justify-center px-2 lg:px-2' : 'justify-start'} hover:scale-105`}
+                onClick={() => handleNavigation('dialer')}
+              >
+                <PhoneCall className="h-4 w-4 flex-shrink-0" />
+                {sidebarOpen && <span className="truncate">Auto Dialer</span>}
               </Button>
             )}
 
@@ -2135,7 +2148,7 @@ export default function Home() {
       </aside>
 
       {/* Main Content */}
-      <div className="flex-1 flex flex-col min-w-0 h-screen overflow-hidden">
+      <div className="flex h-screen h-dvh min-w-0 flex-1 flex-col overflow-hidden">
         {/* Header */}
         <header className="bg-white border-b border-gray-200 px-4 sm:px-6 py-3 sm:py-4 flex-shrink-0 z-30">
           <div className="flex flex-wrap items-center justify-between gap-3 sm:gap-4">
@@ -2157,6 +2170,7 @@ export default function Home() {
                   {activeTab === 'overview' && 'Dashboard'}
                   {activeTab === 'employees' && 'Employee Management'}
                   {activeTab === 'leads' && 'Lead Management'}
+                  {activeTab === 'dialer' && 'Auto Dialer & WhatsApp'}
                   {activeTab === 'leads-pool' && 'Leads Pool'}
                   {activeTab === 'attendance' && 'Attendance Tracking'}
                   {activeTab === 'tasks' && 'Task Management'}
@@ -2280,15 +2294,18 @@ export default function Home() {
         </header>
 
         {/* Dashboard Content */}
-        <main className="flex-1 overflow-y-auto p-4 sm:p-6 pb-24" data-lenis-prevent>
+        <main className="min-w-0 flex-1 overflow-y-auto px-3 py-4 pb-24 sm:p-6" data-lenis-prevent>
           <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-5 sm:space-y-6">
-            <TabsList className="w-full sm:w-auto">
+            <TabsList className="w-full justify-start overflow-x-auto sm:w-auto">
               <TabsTrigger value="overview">Overview</TabsTrigger>
               {(user?.role?.toLowerCase().includes('admin') || user?.role?.toLowerCase().includes('manager') || canViewEmployees) && (
                 <TabsTrigger value="employees">Employees</TabsTrigger>
               )}
               {canViewLeads && (
                 <TabsTrigger value="leads">Leads</TabsTrigger>
+              )}
+              {canViewLeads && (
+                <TabsTrigger value="dialer">Dialer</TabsTrigger>
               )}
               {canViewLeads && (
                 <TabsTrigger value="leads-pool">Leads Pool</TabsTrigger>
@@ -2670,6 +2687,16 @@ export default function Home() {
                 onRefresh={refreshLeads}
                 setShowBulkImportModal={setShowBulkImportModal}
               />
+            </TabsContent>
+
+            <TabsContent value="dialer">
+              <Suspense fallback={
+                <div className="flex items-center justify-center p-12">
+                  <div className="h-8 w-8 animate-spin rounded-full border-b-2 border-gray-900"></div>
+                </div>
+              }>
+                <CallingWorkspace user={user} />
+              </Suspense>
             </TabsContent>
 
             <TabsContent value="attendance">

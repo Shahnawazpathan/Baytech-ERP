@@ -299,7 +299,7 @@ export function LeadImportModal({ open, onOpenChange, onImportComplete }: LeadIm
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="max-w-4xl max-h-[90vh] flex flex-col">
+      <DialogContent className="flex max-h-[calc(100dvh-1rem)] flex-col sm:max-w-4xl">
         <DialogHeader className="flex-shrink-0">
           <DialogTitle className="flex items-center gap-2">
             <Upload className="h-5 w-5" />
@@ -310,7 +310,7 @@ export function LeadImportModal({ open, onOpenChange, onImportComplete }: LeadIm
           </DialogDescription>
         </DialogHeader>
 
-        <div className="flex-1 overflow-y-auto max-h-[calc(90vh-200px)] px-1">
+        <div className="min-h-0 flex-1 overflow-y-auto px-1">
           {step === 'upload' && (
             <div className="space-y-6">
               <Card>
@@ -388,14 +388,14 @@ export function LeadImportModal({ open, onOpenChange, onImportComplete }: LeadIm
                   <div className="flex-1 overflow-y-auto max-h-[30vh] pr-2 -mr-2 -ml-2">
                     <div className="space-y-4 pb-2">
                       {detectedFields.map((field, index) => (
-                        <div key={`field-${index}`} className="flex items-center gap-4 p-3 border rounded-lg">
+                        <div key={`field-${index}`} className="flex flex-col gap-3 rounded-lg border p-3 sm:flex-row sm:items-center sm:gap-4">
                           <div className="flex-1 min-w-0">
                             <p className="font-medium truncate">{field.originalName}</p>
                             <p className="text-sm text-gray-500 truncate">
                               Type: {field.type} | Sample: "{field.sampleValue}"
                             </p>
                           </div>
-                          <div className="w-64">
+                          <div className="w-full sm:w-64">
                             <Select
                               value={field.mappedName || 'unmapped'}
                               onValueChange={(v) => updateFieldMapping(index, v)}
