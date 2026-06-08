@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   CalendarClock,
   CheckCircle2,
@@ -47,11 +47,15 @@ export function CallingWorkspace({ user }: { user: any }) {
   const [sessionActive, setSessionActive] = useState(false)
   const [paused, setPaused] = useState(false)
   const [callStartedAt, setCallStartedAt] = useState<number | null>(null)
+  const [callInProgress, setCallInProgress] = useState(false)
+  const [outcomeRequired, setOutcomeRequired] = useState(false)
   const [elapsed, setElapsed] = useState(0)
   const [disposition, setDisposition] = useState('')
   const [notes, setNotes] = useState('')
   const [callbackAt, setCallbackAt] = useState('')
   const [saving, setSaving] = useState(false)
+  const leftForCall = useRef(false)
+  const pendingCallKey = `baytech-pending-call-${user?.id || 'unknown'}`
 
   const { data, isLoading, refetch } = useQuery({
     queryKey: ['dialer-leads', user?.companyId, user?.id],
@@ -96,29 +100,77 @@ export function CallingWorkspace({ user }: { user: any }) {
     return () => window.clearInterval(timer)
   }, [callStartedAt])
 
+  useEffect(() => {
+    const pending = window.localStorage.getItem(pendingCallKey)
+    if (!pending) return
+    try {
+      const parsed = JSON.parse(pending)
+      setSelectedId(parsed.leadId)
+      setElapsed(parsed.elapsed || 0)
+      setOutcomeRequired(true)
+      setSessionActive(true)
+    } catch {
+      window.localStorage.removeItem(pendingCallKey)
+    }
+  }, [pendingCallKey])
+
+  useEffect(() => {
+    if (!callInProgress) return
+
+    const finishCall = () => {
+      if (!leftForCall.current && Date.now() - (callStartedAt || Date.now()) < 1500) return
+      const duration = callStartedAt ? Math.floor((Date.now() - callStartedAt) / 1000) : elapsed
+      setElapsed(duration)
+      setCallStartedAt(null)
+      setCallInProgress(false)
+      setOutcomeRequired(true)
+      window.localStorage.setItem(pendingCallKey, JSON.stringify({ leadId: selectedId, elapsed: duration }))
+    }
+    const handleVisibility = () => {
+      if (document.visibilityState === 'hidden') leftForCall.current = true
+      if (document.visibilityState === 'visible' && leftForCall.current) finishCall()
+    }
+
+    document.addEventListener('visibilitychange', handleVisibility)
+    window.addEventListener('focus', finishCall)
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibility)
+      window.removeEventListener('focus', finishCall)
+    }
+  }, [callInProgress, callStartedAt, elapsed, pendingCallKey, selectedId])
+
   const resetOutcome = () => {
     setDisposition('')
     setNotes('')
     setCallbackAt('')
     setCallStartedAt(null)
+    setCallInProgress(false)
+    setOutcomeRequired(false)
     setElapsed(0)
+    leftForCall.current = false
   }
 
   const moveNext = () => {
+    if (outcomeRequired || callInProgress) return
     const next = queue[currentIndex + 1] || queue[0]
     setSelectedId(next?.id || '')
     resetOutcome()
   }
 
   const startCall = () => {
-    if (!current || current.dnc || paused) return
+    if (!current || current.dnc || paused || outcomeRequired || callInProgress) return
     setSessionActive(true)
     setPaused(false)
-    setCallStartedAt(Date.now())
+    const startedAt = Date.now()
+    setCallStartedAt(startedAt)
+    setCallInProgress(true)
+    leftForCall.current = false
+    window.localStorage.setItem(pendingCallKey, JSON.stringify({ leadId: current.id, elapsed: 0 }))
     window.location.href = `tel:${cleanPhone(current.phone)}`
   }
 
   const openWhatsApp = () => {
+    if (outcomeRequired || callInProgress) return
     if (!current || current.whatsappOptIn === false) {
       toast({ title: 'WhatsApp unavailable', description: 'This lead has not opted in.', variant: 'destructive' })
       return
@@ -130,6 +182,10 @@ export function CallingWorkspace({ user }: { user: any }) {
   const saveOutcome = async () => {
     if (!current || !disposition) {
       toast({ title: 'Disposition required', description: 'Choose a call outcome before continuing.', variant: 'destructive' })
+      return
+    }
+    if (!notes.trim()) {
+      toast({ title: 'Call notes required', description: 'Add notes before continuing to the next lead.', variant: 'destructive' })
       return
     }
     if (disposition === 'CALLBACK' && !callbackAt) {
@@ -157,10 +213,13 @@ export function CallingWorkspace({ user }: { user: any }) {
       const body = await res.json()
       if (!res.ok) throw new Error(body.error || 'Failed to save outcome')
       toast({ title: 'Outcome saved', description: `${current.name} has been updated.` })
+      window.localStorage.removeItem(pendingCallKey)
+      resetOutcome()
       await refetch()
       queryClient.invalidateQueries({ queryKey: ['leads'] })
       queryClient.invalidateQueries({ queryKey: ['leads_overview'] })
-      moveNext()
+      const next = queue[currentIndex + 1] || queue[0]
+      setSelectedId(next?.id || '')
     } catch (error) {
       toast({
         title: 'Could not save outcome',
@@ -192,7 +251,7 @@ export function CallingWorkspace({ user }: { user: any }) {
   }
 
   return (
-    <div className="grid min-w-0 gap-4 xl:grid-cols-[300px_minmax(0,1fr)_340px]">
+    <div className="grid min-w-0 gap-4 xl:grid-cols-[300px_minmax(0,1fr)]">
       <Card className="hidden xl:block">
         <CardHeader>
           <CardTitle className="flex items-center justify-between text-base">
@@ -206,8 +265,9 @@ export function CallingWorkspace({ user }: { user: any }) {
               {queue.map((lead: any, index: number) => (
                 <button
                   key={lead.id}
+                  disabled={outcomeRequired || callInProgress}
                   onClick={() => { setSelectedId(lead.id); resetOutcome() }}
-                  className={`w-full rounded-lg border p-3 text-left ${lead.id === current.id ? 'border-blue-500 bg-blue-50' : 'hover:bg-muted'}`}
+                  className={`w-full rounded-lg border p-3 text-left disabled:cursor-not-allowed disabled:opacity-50 ${lead.id === current.id ? 'border-blue-500 bg-blue-50' : 'hover:bg-muted'}`}
                 >
                   <div className="flex items-start justify-between gap-2">
                     <span className="font-medium">{lead.name}</span>
@@ -236,39 +296,89 @@ export function CallingWorkspace({ user }: { user: any }) {
               <Badge className="bg-white/10 text-white hover:bg-white/10">{current.priority} priority</Badge>
             </div>
 
-            <div className="my-8 text-center">
-              <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-white/10 ring-8 ring-white/5">
-                <UserRound className="h-9 w-9" />
+            {outcomeRequired ? (
+              <div className="mt-6 rounded-2xl bg-white p-4 text-slate-900 sm:p-6">
+                <div className="mb-5 text-center">
+                  <CheckCircle2 className="mx-auto h-10 w-10 text-emerald-600" />
+                  <h2 className="mt-3 text-xl font-bold">Complete call outcome</h2>
+                  <p className="mt-1 text-sm text-slate-500">
+                    Add disposition and notes for {current.name} to unlock the next call.
+                  </p>
+                  <Badge variant="outline" className="mt-3">Call duration {formatDuration(elapsed)}</Badge>
+                </div>
+
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="main-disposition">Disposition *</Label>
+                    <Select value={disposition} onValueChange={setDisposition}>
+                      <SelectTrigger id="main-disposition"><SelectValue placeholder="Choose outcome" /></SelectTrigger>
+                      <SelectContent>
+                        {dispositions.map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {disposition === 'CALLBACK' && (
+                    <div className="space-y-2">
+                      <Label htmlFor="main-callbackAt">Callback date and time *</Label>
+                      <Input id="main-callbackAt" type="datetime-local" value={callbackAt} onChange={(event) => setCallbackAt(event.target.value)} />
+                    </div>
+                  )}
+
+                  <div className="space-y-2">
+                    <Label htmlFor="main-callNotes">Call notes *</Label>
+                    <Textarea id="main-callNotes" rows={5} value={notes} onChange={(event) => setNotes(event.target.value)} placeholder="Enter what happened on the call..." />
+                  </div>
+
+                  {disposition === 'DO_NOT_CALL' && (
+                    <div className="flex gap-2 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">
+                      <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0" /> This permanently removes the lead from the auto-dial queue.
+                    </div>
+                  )}
+
+                  <Button className="h-12 w-full" disabled={!disposition || !notes.trim() || saving} onClick={saveOutcome}>
+                    {saving ? 'Saving...' : <>Save and unlock next call <ChevronRight className="ml-2 h-4 w-4" /></>}
+                  </Button>
+                </div>
               </div>
-              <h2 className="mt-5 text-3xl font-bold">{current.name}</h2>
-              <p className="mt-2 text-lg text-blue-100">{current.phone}</p>
-              <p className="mt-1 text-sm text-slate-300">{current.propertyAddress || current.source || 'Lead details unavailable'}</p>
-            </div>
+            ) : (
+              <>
+                <div className="my-8 text-center">
+                  <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-white/10 ring-8 ring-white/5">
+                    <UserRound className="h-9 w-9" />
+                  </div>
+                  <h2 className="mt-5 text-3xl font-bold">{current.name}</h2>
+                  <p className="mt-2 text-lg text-blue-100">{current.phone}</p>
+                  <p className="mt-1 text-sm text-slate-300">{current.propertyAddress || current.source || 'Lead details unavailable'}</p>
+                </div>
 
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-              <Button disabled={paused} onClick={startCall} className="col-span-2 h-14 bg-emerald-500 text-base hover:bg-emerald-600 sm:col-span-2">
-                <PhoneCall className="mr-2 h-5 w-5" /> {callStartedAt ? 'Call again' : sessionActive ? 'Call now' : 'Start dialing'}
-              </Button>
-              <Button onClick={openWhatsApp} className="h-14 bg-[#25D366] hover:bg-[#1fb858]">
-                <MessageCircle className="mr-2 h-5 w-5" /> WhatsApp
-              </Button>
-              <Button variant="secondary" onClick={moveNext} className="h-14">
-                <SkipForward className="mr-2 h-5 w-5" /> Skip
-              </Button>
-            </div>
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                  <Button disabled={paused || callInProgress} onClick={startCall} className="col-span-2 h-14 bg-emerald-500 text-base hover:bg-emerald-600 sm:col-span-2">
+                    <PhoneCall className="mr-2 h-5 w-5" /> {callInProgress ? 'Call in progress' : sessionActive ? 'Call now' : 'Start dialing'}
+                  </Button>
+                  <Button disabled={callInProgress} onClick={openWhatsApp} className="h-14 bg-[#25D366] hover:bg-[#1fb858]">
+                    <MessageCircle className="mr-2 h-5 w-5" /> WhatsApp
+                  </Button>
+                  <Button disabled={callInProgress} variant="secondary" onClick={moveNext} className="h-14">
+                    <SkipForward className="mr-2 h-5 w-5" /> Skip
+                  </Button>
+                </div>
 
-            <div className="mt-5 flex items-center justify-between rounded-xl bg-white/10 px-4 py-3 text-sm">
-              <span className="flex items-center gap-2"><Clock3 className="h-4 w-4" /> Call timer {formatDuration(elapsed)}</span>
-              <Button
-                size="sm"
-                variant="ghost"
-                className="text-white hover:bg-white/10 hover:text-white"
-                onClick={() => setPaused(!paused)}
-              >
-                {paused ? <CirclePlay className="mr-2 h-4 w-4" /> : <CirclePause className="mr-2 h-4 w-4" />}
-                {paused ? 'Resume queue' : 'Pause queue'}
-              </Button>
-            </div>
+                <div className="mt-5 flex items-center justify-between rounded-xl bg-white/10 px-4 py-3 text-sm">
+                  <span className="flex items-center gap-2"><Clock3 className="h-4 w-4" /> Call timer {formatDuration(elapsed)}</span>
+                  <Button
+                    disabled={callInProgress}
+                    size="sm"
+                    variant="ghost"
+                    className="text-white hover:bg-white/10 hover:text-white"
+                    onClick={() => setPaused(!paused)}
+                  >
+                    {paused ? <CirclePlay className="mr-2 h-4 w-4" /> : <CirclePause className="mr-2 h-4 w-4" />}
+                    {paused ? 'Resume queue' : 'Pause queue'}
+                  </Button>
+                </div>
+              </>
+            )}
           </CardContent>
         </Card>
 
@@ -290,7 +400,7 @@ export function CallingWorkspace({ user }: { user: any }) {
         </Card>
       </div>
 
-      <Card className="h-fit xl:sticky xl:top-0">
+      <Card className="hidden">
         <CardHeader>
           <CardTitle className="text-base">Post-call outcome</CardTitle>
           <CardDescription>Required before moving to the next lead.</CardDescription>

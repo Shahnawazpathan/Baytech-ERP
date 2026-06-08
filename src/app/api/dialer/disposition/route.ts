@@ -16,7 +16,7 @@ const dispositionSchema = z.object({
     'SALE',
     'DO_NOT_CALL',
   ]),
-  notes: z.string().trim().max(2000).optional().default(''),
+  notes: z.string().trim().min(1, 'Call notes are required').max(2000),
   callbackAt: z.string().datetime().optional().nullable(),
   durationSeconds: z.number().int().nonnegative().optional().default(0),
 })
