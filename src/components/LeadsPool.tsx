@@ -36,7 +36,7 @@ export function LeadsPool({ user, onLeadClaimed }: LeadsPoolProps) {
   const [filteredLeads, setFilteredLeads] = useState<any[]>([])
   const [loading, setLoading] = useState(false)
   const [searchTerm, setSearchTerm] = useState('')
-  const [filterType, setFilterType] = useState('available') // all, unassigned, available, reassigned
+  const [filterType, setFilterType] = useState('available')
   const [priorityFilter, setPriorityFilter] = useState('all')
   const [selectedLead, setSelectedLead] = useState<any>(null)
   const [showClaimDialog, setShowClaimDialog] = useState(false)
@@ -304,10 +304,8 @@ export function LeadsPool({ user, onLeadClaimed }: LeadsPoolProps) {
                 <SelectValue placeholder="Filter by type" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">All Leads</SelectItem>
-                <SelectItem value="unassigned">Unassigned Only</SelectItem>
+                <SelectItem value="all">All Pool Leads</SelectItem>
                 <SelectItem value="available">Available to Claim</SelectItem>
-                <SelectItem value="reassigned">Overdue (No Contact)</SelectItem>
               </SelectContent>
             </Select>
 

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { ASSIGNABLE_EMPLOYEE_ROLE_FILTER } from '@/lib/lead-pool'
 
 export async function POST(request: NextRequest) {
   try {
@@ -452,6 +453,7 @@ async function importLeads(buffer: Buffer, companyId: string) {
             status: 'NEW',
             priority: 'MEDIUM', // Default priority
             assignedToId: assignedEmployee?.id || null,
+            assignedAt: assignedEmployee ? new Date() : null,
             address: rowData.propertyAddress?.trim() || null, // Use property address if available
             companyId
           }
@@ -461,9 +463,12 @@ async function importLeads(buffer: Buffer, companyId: string) {
         await db.leadHistory.create({
           data: {
             leadId: lead.id,
+            employeeId: assignedEmployee?.id || null,
             action: 'IMPORTED',
             newValue: JSON.stringify(lead),
-            notes: 'Imported from CSV file'
+            notes: assignedEmployee
+              ? `Imported from CSV file and assigned to ${assignedEmployee.firstName} ${assignedEmployee.lastName}`
+              : 'Imported from CSV file without assignment'
           }
         });
 
@@ -697,7 +702,8 @@ async function getAvailableEmployee(companyId: string) {
         companyId,
         status: 'ACTIVE',
         isActive: true,
-        autoAssignEnabled: true
+        autoAssignEnabled: true,
+        role: ASSIGNABLE_EMPLOYEE_ROLE_FILTER,
       },
       include: {
         _count: {

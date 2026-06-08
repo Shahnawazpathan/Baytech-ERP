@@ -4,58 +4,34 @@ import { invalidateCache } from '@/lib/cache'
 import { parseLeadMetadata } from '@/lib/lead-metadata'
 import { hasPermission } from '@/lib/rbac'
 import { claimLeadSchema } from '@/lib/leads-validation'
-import { LEAD_RECLAIM_HOURS } from '@/lib/leads-constants'
+import {
+  ASSIGNABLE_EMPLOYEE_ROLE_FILTER,
+  reclaimInactiveLeadsToPool,
+} from '@/lib/lead-pool'
 
 /**
  * Get leads pool.
  * Filters:
- *  - all          : every active lead in the pool
- *  - unassigned   : never assigned
- *  - available    : unassigned OR assigned > LEAD_RECLAIM_HOURS ago without contact
- *  - reassigned   : currently assigned but overdue (eligible for claim)
+ * The pool contains only unassigned, active, NEW, uncontacted leads.
+ * Inactive assigned leads are first reclaimed so assignedToId is always empty
+ * before they are exposed for claiming.
  */
 export async function GET(request: NextRequest) {
   try {
     const companyId = request.headers.get('x-company-id') || 'default-company'
     const { searchParams } = new URL(request.url)
-    const filter = searchParams.get('filter') || 'all'
     const page = parseInt(searchParams.get('page') || '1')
     const limit = parseInt(searchParams.get('limit') || '50')
     const skip = (page - 1) * limit
 
-    const eightHoursAgo = new Date(Date.now() - LEAD_RECLAIM_HOURS * 60 * 60 * 1000)
+    await reclaimInactiveLeadsToPool(companyId)
 
-    const baseWhere = {
+    const whereClause = {
       companyId,
       isActive: true,
       status: 'NEW',
       contactedAt: null,
-      OR: [
-        { assignedToId: null },
-        { assignedAt: { lte: eightHoursAgo } },
-      ],
-    }
-
-    let whereClause: any = baseWhere
-    if (filter === 'unassigned') {
-      whereClause = {
-        companyId,
-        isActive: true,
-        status: 'NEW',
-        contactedAt: null,
-        assignedToId: null,
-      }
-    } else if (filter === 'available') {
-      whereClause = baseWhere
-    } else if (filter === 'reassigned') {
-      whereClause = {
-        companyId,
-        isActive: true,
-        status: 'NEW',
-        contactedAt: null,
-        assignedToId: { not: null },
-        assignedAt: { lte: eightHoursAgo },
-      }
+      assignedToId: null,
     }
 
     const [leads, total] = await Promise.all([
@@ -203,24 +179,24 @@ export async function POST(request: NextRequest) {
       if (!force && lead.contactedAt) {
         return { error: 'Contacted leads cannot be claimed from the pool', status: 400 }
       }
-      if (!force) {
-        const eightHoursAgo = new Date(Date.now() - LEAD_RECLAIM_HOURS * 60 * 60 * 1000)
-        const isUnassigned = !lead.assignedToId
-        const isOverdue = Boolean(lead.assignedAt && lead.assignedAt <= eightHoursAgo)
-        if (!isUnassigned && !isOverdue) {
-          return {
-            error: `Lead is not available yet. Assigned leads become claimable after ${LEAD_RECLAIM_HOURS} hours without contact.`,
-            status: 400,
-          }
+      if (!force && lead.assignedToId) {
+        return {
+          error: 'Lead is not in the pool. Only unassigned leads can be claimed.',
+          status: 400,
         }
       }
 
-      const employee = await tx.employee.findUnique({
-        where: { id: employeeId },
+      const employee = await tx.employee.findFirst({
+        where: {
+          id: employeeId,
+          status: 'ACTIVE',
+          isActive: true,
+          role: ASSIGNABLE_EMPLOYEE_ROLE_FILTER,
+        },
         select: { id: true, firstName: true, lastName: true, email: true, companyId: true },
       })
       if (!employee) {
-        return { error: 'Employee not found', status: 404 }
+        return { error: 'Employee is not eligible to claim leads', status: 400 }
       }
       if (employee.companyId !== lead.companyId) {
         return { error: 'Lead does not belong to this employee company', status: 403 }
@@ -231,14 +207,40 @@ export async function POST(request: NextRequest) {
         ? `${lead.assignedTo.firstName} ${lead.assignedTo.lastName}`
         : 'Unassigned'
 
-      const updatedLead = await tx.lead.update({
-        where: { id: leadId },
-        data: {
-          assignedToId: employeeId,
-          assignedAt: new Date(),
-          updatedAt: new Date(),
-        },
-      })
+      const claimedAt = new Date()
+      if (!force) {
+        const claim = await tx.lead.updateMany({
+          where: {
+            id: leadId,
+            assignedToId: null,
+            status: 'NEW',
+            contactedAt: null,
+            isActive: true,
+          },
+          data: {
+            assignedToId: employeeId,
+            assignedAt: claimedAt,
+            updatedAt: claimedAt,
+          },
+        })
+        if (claim.count === 0) {
+          return { error: 'Lead was already claimed or is no longer available', status: 409 }
+        }
+      } else {
+        await tx.lead.update({
+          where: { id: leadId },
+          data: {
+            assignedToId: employeeId,
+            assignedAt: claimedAt,
+            updatedAt: claimedAt,
+          },
+        })
+      }
+
+      const updatedLead = await tx.lead.findUnique({ where: { id: leadId } })
+      if (!updatedLead) {
+        return { error: 'Lead not found after claim', status: 404 }
+      }
 
       await tx.leadHistory.create({
         data: {

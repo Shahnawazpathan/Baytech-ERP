@@ -48,7 +48,7 @@ export const ACTIVE_LEAD_STATUSES: LeadStatus[] = ['NEW', 'CONTACTED', 'QUALIFIE
 /** Statuses considered "converted" (APPLICATION, APPROVED, REAL). */
 export const CONVERTED_LEAD_STATUSES: LeadStatus[] = ['APPLICATION', 'APPROVED', 'REAL']
 
-/** Statuses that are terminal — should not auto-reassign. */
+/** Statuses that are terminal and should never return to the leads pool. */
 export const TERMINAL_LEAD_STATUSES: LeadStatus[] = ['APPROVED', 'REJECTED', 'CLOSED', 'JUNK', 'REAL']
 
 // ============== CACHE KEYS ==============

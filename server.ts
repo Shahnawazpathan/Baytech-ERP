@@ -16,220 +16,30 @@ const dev = process.env.NODE_ENV !== 'production';
 const currentPort = process.env.PORT ? parseInt(process.env.PORT) : 3007;
 const hostname = '0.0.0.0';
 
-// Function to run auto-assignment job
-async function runAutoAssignment() {
+// Return inactive assigned leads to the shared leads pool.
+async function runLeadPoolReclamation() {
   try {
-    // Import dynamically to avoid Next.js build issues
-    const { db } = await import('@/lib/db');
-    
-    console.log('Starting automatic lead reassignment job...');
-    
-    // Find leads that were assigned more than 8 hours ago but not contacted
-    const eightHoursAgo = new Date(Date.now() - 8 * 60 * 60 * 1000); // 8 hours ago
-
-    const uncontactedLeads = await db.lead.findMany({
-      where: {
-        assignedToId: { not: null }, // Leads that are assigned
-        assignedAt: {
-          not: null,
-          lte: eightHoursAgo // Assigned more than 8 hours ago
-        },
-        contactedAt: null, // Leads that haven't been contacted yet
-        status: { in: ['NEW', 'CONTACTED'] } // Only reassign active leads
-      },
-      include: {
-        assignedTo: {
-          include: {
-            department: true
-          }
-        }
-      }
-    });
-
-    console.log(`Found ${uncontactedLeads.length} leads to reassign`);
-
-    if (uncontactedLeads.length === 0) {
-      console.log('No leads need reassignment');
-      return;
-    }
-
-    // Process each uncontacted lead
-    const results: Array<{
-      leadId: string;
-      status: string;
-      previousAssigneeId?: string;
-      newAssigneeId?: string;
-      error?: string;
-    }> = [];
-    for (const lead of uncontactedLeads) {
-      try {
-        // Find available employees in the same department with the least assigned leads
-        const availableEmployees = await db.employee.findMany({
-          where: {
-            departmentId: lead.assignedTo?.departmentId,
-            status: 'ACTIVE',
-            isActive: true,
-            autoAssignEnabled: true,
-            role: {
-              name: {
-                not: {
-                  contains: 'Administrator'
-                }
-              }
-            }
-          }
-        });
-
-        if (availableEmployees.length === 0) {
-          console.log(`No available employees in department for lead ${lead.id}`);
-          results.push({ leadId: lead.id, status: 'no_available_employees' });
-          continue;
-        }
-
-        // Count leads assigned to each employee
-        const employeeLeadCounts: { [key: string]: number } = {};
-        for (const emp of availableEmployees) {
-          employeeLeadCounts[emp.id] = 0;
-        }
-
-        const assignedLeads = await db.lead.groupBy({
-          by: ['assignedToId'],
-          where: {
-            assignedToId: { in: availableEmployees.map(e => e.id) },
-            status: { in: ['NEW', 'CONTACTED'] }
-          },
-          _count: {
-            id: true
-          }
-        });
-
-        // Update counts based on existing assignments
-        for (const assignment of assignedLeads) {
-          if (assignment.assignedToId) {
-            employeeLeadCounts[assignment.assignedToId] = assignment._count.id;
-          }
-        }
-
-        // Find the employee with the least assigned leads
-        let leastLoadedEmployee = availableEmployees[0];
-        let minLeadCount = employeeLeadCounts[leastLoadedEmployee.id];
-
-        for (const emp of availableEmployees) {
-          const count = employeeLeadCounts[emp.id];
-          if (count < minLeadCount) {
-            minLeadCount = count;
-            leastLoadedEmployee = emp;
-          }
-        }
-
-        if (leastLoadedEmployee.id === lead.assignedToId) {
-          // If the same employee would get the lead again, skip reassignment
-          console.log(`Lead ${lead.id} already assigned to the least loaded employee`);
-          results.push({ leadId: lead.id, status: 'already_least_loaded' });
-          continue;
-        }
-
-        // Reassign the lead to the least loaded employee
-        const previousAssigneeId = lead.assignedToId;
-        const previousAssigneeName = lead.assignedTo ? `${lead.assignedTo.firstName} ${lead.assignedTo.lastName}` : 'Unassigned';
-
-        const updatedLead = await db.lead.update({
-          where: { id: lead.id },
-          data: {
-            assignedToId: leastLoadedEmployee.id,
-            assignedAt: new Date(),
-            updatedAt: new Date()
-          }
-        });
-
-        // Create lead history for reassignment
-        await db.leadHistory.create({
-          data: {
-            leadId: lead.id,
-            employeeId: leastLoadedEmployee.id,
-            action: 'AUTO_REASSIGNED',
-            oldValue: JSON.stringify({ 
-              assignedToId: previousAssigneeId,
-              assignedToName: previousAssigneeName
-            }),
-            newValue: JSON.stringify({ 
-              assignedToId: leastLoadedEmployee.id,
-              assignedToName: `${leastLoadedEmployee.firstName} ${leastLoadedEmployee.lastName}`
-            }),
-            notes: `Auto-reassigned from ${previousAssigneeName} to ${leastLoadedEmployee.firstName} ${leastLoadedEmployee.lastName} after 8 hours without contact`
-          }
-        });
-
-        // Create notification for new assignee
-        await db.notification.create({
-          data: {
-            title: 'Lead Auto-Reassigned',
-            message: `${lead.firstName} ${lead.lastName} has been auto-reassigned to you after 8 hours without contact`,
-            type: 'WARNING',
-            category: 'LEAD',
-            companyId: leastLoadedEmployee.companyId,
-            employeeId: leastLoadedEmployee.id,
-            metadata: JSON.stringify({ 
-              leadId: lead.id, 
-              leadNumber: lead.leadNumber,
-              reason: 'auto_reassigned_no_contact'
-            })
-          }
-        });
-
-        // Create notification for previous assignee
-        if (previousAssigneeId) {
-          await db.notification.create({
-            data: {
-              title: 'Lead Auto-Reassigned',
-              message: `${lead.firstName} ${lead.lastName} has been auto-reassigned to ${leastLoadedEmployee.firstName} ${leastLoadedEmployee.lastName} after 8 hours without contact`,
-              type: 'INFO',
-              category: 'LEAD',
-              companyId: lead.assignedTo?.companyId || 'default-company',
-              employeeId: previousAssigneeId,
-              metadata: JSON.stringify({ 
-                leadId: lead.id, 
-                leadNumber: lead.leadNumber,
-                reason: 'auto_reassigned_no_contact'
-              })
-            }
-          });
-        }
-
-        results.push({
-          leadId: lead.id,
-          status: 'reassigned',
-          previousAssigneeId: previousAssigneeId || undefined,
-          newAssigneeId: leastLoadedEmployee.id
-        });
-
-        console.log(`Lead ${lead.id} reassigned from ${previousAssigneeId} to ${leastLoadedEmployee.id}`);
-
-      } catch (error) {
-        console.error(`Error reassigning lead ${lead.id}:`, error);
-        results.push({ leadId: lead.id, status: 'error', error: (error as Error).message });
-      }
-    }
-
-    console.log(`Completed automatic reassignment job. Reassigned ${results.filter(r => r.status === 'reassigned').length} leads.`);
+    const { reclaimInactiveLeadsToPool } = await import('@/lib/lead-pool');
+    console.log('Starting inactive lead pool reclamation...');
+    const results = await reclaimInactiveLeadsToPool();
+    console.log(`Lead pool reclamation completed. Returned ${results.filter(r => r.status === 'returned_to_pool').length} leads.`);
   } catch (error) {
-    console.error('Error in automatic lead reassignment:', error);
+    console.error('Error in lead pool reclamation:', error);
   }
 }
 
-// Set up the auto-assignment job to run every 2 hours
-function setupAutoAssignmentJob() {
+// Check frequently; only leads inactive for the configured 8-hour window are returned.
+function setupLeadPoolReclamationJob() {
   // Run after 10 seconds (non-blocking server startup)
   setTimeout(() => {
-    runAutoAssignment();
+    runLeadPoolReclamation();
   }, 10000);
 
-  // Then run every 2 hours (7,200,000 ms)
-  const interval = 2 * 60 * 60 * 1000; // 2 hours in milliseconds
-  setInterval(runAutoAssignment, interval);
+  const interval = 5 * 60 * 1000;
+  setInterval(runLeadPoolReclamation, interval);
 
   if (process.env.NODE_ENV === 'development') {
-    console.log('Auto-assignment job scheduled to run every 2 hours');
+    console.log('Lead pool reclamation scheduled to run every 5 minutes');
   }
 }
 
@@ -279,8 +89,7 @@ async function createCustomServer() {
       console.log(`> Ready on http://${hostname}:${currentPort}`);
       console.log(`> Socket.IO server running at ws://${hostname}:${currentPort}/api/socketio`);
       
-      // Set up the auto-assignment job after server starts
-      setupAutoAssignmentJob();
+      setupLeadPoolReclamationJob();
     });
 
   } catch (err) {

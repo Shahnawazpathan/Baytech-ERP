@@ -123,7 +123,7 @@ export function useLead(
 export function useLeadsPool(
   userId: string | undefined,
   companyId: string | undefined,
-  filter: 'all' | 'unassigned' | 'available' | 'reassigned' = 'available',
+  filter: 'all' | 'available' = 'available',
   page: number = 1,
   limit: number = DEFAULT_POOL_PAGE_SIZE
 ): UseQueryResult<PaginatedResponse<LeadPoolItem>, Error> {

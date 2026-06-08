@@ -875,8 +875,9 @@ export function LeadManagement({
                       </td>
                     </tr>
                   ) : paginatedLeads.map((lead: any) => {
-                    // Calculate the 2-hour contact deadline if assigned
-                    const contactDeadline = lead.assignedAt ? new Date(new Date(lead.assignedAt).getTime() + 2 * 60 * 60 * 1000) : null;
+                    // Assigned leads return to the pool after 8 hours without contact or update.
+                    const activityAt = lead.updatedAt || lead.assignedAt;
+                    const contactDeadline = activityAt ? new Date(new Date(activityAt).getTime() + 8 * 60 * 60 * 1000) : null;
                     const isOverdue = contactDeadline && new Date() > contactDeadline && !lead.contactedAt;
 
                     return (

@@ -9,6 +9,7 @@ import {
   deleteLeadsSchema,
 } from '@/lib/leads-validation'
 import { LEADS_CACHE_TTL_MS } from '@/lib/leads-constants'
+import { ASSIGNABLE_EMPLOYEE_ROLE_FILTER } from '@/lib/lead-pool'
 
 export async function GET(request: NextRequest) {
   try {
@@ -245,7 +246,7 @@ export async function PUT(request: NextRequest) {
             status: 'ACTIVE',
             isActive: true,
             autoAssignEnabled: true,
-            role: { name: { not: { contains: 'Administrator' } } },
+            role: ASSIGNABLE_EMPLOYEE_ROLE_FILTER,
           },
           include: {
             _count: {

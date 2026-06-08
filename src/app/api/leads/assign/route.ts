@@ -4,6 +4,7 @@ import { invalidateCache } from '@/lib/cache'
 import { hasPermission } from '@/lib/rbac'
 import { createLeadHistory } from '@/lib/lead-history'
 import { assignLeadSchema, bulkAssignSchema } from '@/lib/leads-validation'
+import { ASSIGNABLE_EMPLOYEE_ROLE_FILTER } from '@/lib/lead-pool'
 
 /** Assign a single lead to an employee. */
 export async function POST(request: NextRequest) {
@@ -47,7 +48,7 @@ export async function POST(request: NextRequest) {
           status: 'ACTIVE',
           isActive: true,
           autoAssignEnabled: true,
-          role: { name: { not: { contains: 'Administrator' } } },
+          role: ASSIGNABLE_EMPLOYEE_ROLE_FILTER,
         },
         select: { id: true, firstName: true, lastName: true, email: true, companyId: true },
       }),
@@ -180,7 +181,7 @@ export async function PUT(request: NextRequest) {
         status: 'ACTIVE',
         isActive: true,
         autoAssignEnabled: true,
-        role: { name: { not: { contains: 'Administrator' } } },
+        role: ASSIGNABLE_EMPLOYEE_ROLE_FILTER,
       },
       select: { id: true, firstName: true, lastName: true, email: true, companyId: true },
     })
