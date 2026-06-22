@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
+import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Input } from '@/components/ui/input'
@@ -410,7 +410,10 @@ export default function Home() {
 
       if (leadsRes.ok) {
         const leadsData = await leadsRes.json()
-        setLeads(normalizeList(leadsData))
+        setLeads(normalizeList(leadsData?.data))
+        await queryClient.invalidateQueries({ queryKey: ['leads'] })
+      } else {
+        throw new Error('Failed to refresh leads')
       }
     } catch (error) {
       toast({
@@ -419,7 +422,7 @@ export default function Home() {
         variant: "destructive",
       })
     }
-  }, [canViewLeads, permissionsLoading, safeUserId, safeCompanyId, normalizeList, toast])
+  }, [canViewLeads, permissionsLoading, safeUserId, safeCompanyId, normalizeList, queryClient, toast])
 
   const refreshData = useCallback(async () => {
     setIsRefreshing(true)
@@ -2109,7 +2112,6 @@ export default function Home() {
             <>
               <div className="flex items-center gap-3 mb-3 overflow-hidden">
                 <Avatar className="flex-shrink-0">
-                  <AvatarImage src="/placeholder-avatar.jpg" />
                   <AvatarFallback>{user?.name?.charAt(0) || 'A'}</AvatarFallback>
                 </Avatar>
                 <div className="flex-1 min-w-0">
@@ -2130,7 +2132,6 @@ export default function Home() {
           ) : (
             <div className="flex flex-col items-center gap-2">
               <Avatar className="w-8 h-8">
-                <AvatarImage src="/placeholder-avatar.jpg" />
                 <AvatarFallback className="text-xs">{user?.name?.charAt(0) || 'A'}</AvatarFallback>
               </Avatar>
               <Button
@@ -2277,7 +2278,6 @@ export default function Home() {
               {/* User Profile */}
               <div className="flex items-center gap-2">
                 <Avatar className="h-8 w-8 sm:h-9 sm:w-9">
-                  <AvatarImage src="/placeholder-avatar.jpg" />
                   <AvatarFallback className="text-xs">{user?.name?.charAt(0) || 'A'}</AvatarFallback>
                 </Avatar>
                 <div className="hidden xl:block">

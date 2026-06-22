@@ -51,6 +51,7 @@ export function LeadManagement({
   const [notesValue, setNotesValue] = useState('');
   const [notesStatus, setNotesStatus] = useState('');
   const [followUpDate, setFollowUpDate] = useState('');
+  const [isSavingNotes, setIsSavingNotes] = useState(false);
   const [newLead, setNewLead] = useState({
     firstName: '',
     lastName: '',
@@ -279,7 +280,7 @@ export function LeadManagement({
   };
 
   const handleUpdateNotes = async () => {
-    if (!notesLead) return;
+    if (!notesLead || isSavingNotes) return;
 
     if (notesStatus === 'FOLLOW_UP' && !followUpDate) {
       toast({
@@ -290,6 +291,7 @@ export function LeadManagement({
       return;
     }
 
+    setIsSavingNotes(true);
     try {
       const response = await fetch(`/api/leads/${notesLead.id}`, {
         method: 'PUT',
@@ -307,26 +309,31 @@ export function LeadManagement({
       })
 
       if (response.ok) {
+        await response.json();
         setShowNotesModal(false);
         setNotesLead(null);
         setNotesValue('');
         setNotesStatus('');
         setFollowUpDate('');
         await onRefresh();
+        await refetchLeads();
 
         toast({
           title: "Success",
           description: "Notes updated successfully",
         });
       } else {
-        throw new Error('Failed to update notes');
+        const error = await response.json().catch(() => null);
+        throw new Error(error?.error || 'Failed to update notes');
       }
     } catch (error) {
       toast({
         title: "Error",
-        description: "Failed to update notes",
+        description: error instanceof Error ? error.message : "Failed to update notes",
         variant: "destructive",
       });
+    } finally {
+      setIsSavingNotes(false);
     }
   };
 
@@ -350,6 +357,7 @@ export function LeadManagement({
 
       if (response.ok) {
         await onRefresh();
+        await refetchLeads();
 
         toast({
           title: "Success",
@@ -495,6 +503,7 @@ export function LeadManagement({
         setSelectedLeads([]);
         setShowDeleteConfirm(false);
         await onRefresh();
+        await refetchLeads();
       } else {
         throw new Error('Failed to delete leads');
       }
@@ -592,6 +601,7 @@ export function LeadManagement({
         setSelectedLeads([]);
         setSelectedEmployeeForAssignment('');
         await onRefresh();
+        await refetchLeads();
       } else {
         const error = await response.json();
         toast({
@@ -1026,7 +1036,7 @@ export function LeadManagement({
 
       {/* Add Lead Modal */}
       {showAddLeadModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="max-h-[calc(100dvh-1rem)] w-full max-w-2xl overflow-y-auto rounded-lg bg-white shadow-xl">
             <div className="p-4 sm:p-6">
               <div className="flex justify-between items-center mb-4">
@@ -1219,7 +1229,7 @@ export function LeadManagement({
 
       {/* Delete Confirmation Modal */}
       {showDeleteConfirm && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-lg shadow-xl max-w-md w-full">
             <div className="p-6">
               <div className="flex items-center gap-3 mb-4">
@@ -1258,7 +1268,7 @@ export function LeadManagement({
 
       {/* Notes Modal */}
       {showNotesModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-lg shadow-xl max-w-md w-full">
             <div className="p-6">
               <div className="flex justify-between items-center mb-4">
@@ -1272,6 +1282,7 @@ export function LeadManagement({
                     setNotesStatus('');
                     setFollowUpDate('');
                   }}
+                  disabled={isSavingNotes}
                 >
                   Close
                 </Button>
@@ -1285,14 +1296,17 @@ export function LeadManagement({
                   onChange={(e) => setNotesValue(e.target.value)}
                   className="w-full min-h-[120px] p-2 border border-gray-300 rounded-md resize-none"
                   placeholder="Add notes for this lead..."
+                  disabled={isSavingNotes}
                 />
               </div>
 
               <div className="space-y-2 mt-4">
                 <Label htmlFor="notes-status">Notes Status</Label>
-                <Select
+                <select
+                  id="notes-status"
                   value={notesStatus || 'NONE'}
-                  onValueChange={(value) => {
+                  onChange={(event) => {
+                    const value = event.target.value;
                     if (value === 'NONE') {
                       setNotesStatus('');
                       setFollowUpDate('');
@@ -1303,17 +1317,14 @@ export function LeadManagement({
                       setFollowUpDate('');
                     }
                   }}
+                  className="h-10 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 shadow-sm outline-none transition-colors focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
+                  disabled={isSavingNotes}
                 >
-                  <SelectTrigger id="notes-status">
-                    <SelectValue placeholder="Select status" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="NONE">No Status</SelectItem>
-                    <SelectItem value="RING">Ring</SelectItem>
-                    <SelectItem value="NOT_CONTACTABLE">Not Contactable</SelectItem>
-                    <SelectItem value="FOLLOW_UP">Follow Up</SelectItem>
-                  </SelectContent>
-                </Select>
+                  <option value="NONE">No Status</option>
+                  <option value="RING">Ring</option>
+                  <option value="NOT_CONTACTABLE">Not Contactable</option>
+                  <option value="FOLLOW_UP">Follow Up</option>
+                </select>
               </div>
 
               {notesStatus === 'FOLLOW_UP' && (
@@ -1324,6 +1335,7 @@ export function LeadManagement({
                     type="date"
                     value={followUpDate}
                     onChange={(e) => setFollowUpDate(e.target.value)}
+                    disabled={isSavingNotes}
                   />
                 </div>
               )}
@@ -1338,11 +1350,13 @@ export function LeadManagement({
                     setNotesStatus('');
                     setFollowUpDate('');
                   }}
+                  disabled={isSavingNotes}
                 >
                   Cancel
                 </Button>
-                <Button onClick={handleUpdateNotes} className="bg-blue-600 hover:bg-blue-700 text-white">
-                  Save Notes
+                <Button onClick={handleUpdateNotes} disabled={isSavingNotes} className="bg-blue-600 hover:bg-blue-700 text-white">
+                  {isSavingNotes && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                  {isSavingNotes ? 'Saving...' : 'Save Notes'}
                 </Button>
               </div>
             </div>

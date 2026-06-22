@@ -1,6 +1,7 @@
 import 'dotenv/config';
 // server.ts - Next.js Standalone + Socket.IO
 import { setupSocket } from '@/lib/socket';
+import fs from 'fs';
 import { createServer } from 'http';
 import { Server } from 'socket.io';
 import next from 'next';
@@ -15,6 +16,18 @@ import { fileURLToPath } from 'url';
 const dev = process.env.NODE_ENV !== 'production';
 const currentPort = process.env.PORT ? parseInt(process.env.PORT) : 3007;
 const hostname = '0.0.0.0';
+
+function clearStaleProductionBuildForDev() {
+  if (!dev) return;
+
+  const nextDir = path.join(process.cwd(), '.next');
+  const productionBuildMarker = path.join(nextDir, 'BUILD_ID');
+
+  if (fs.existsSync(productionBuildMarker)) {
+    console.log('Removing stale production .next output before starting dev server...');
+    fs.rmSync(nextDir, { recursive: true, force: true });
+  }
+}
 
 // Return inactive assigned leads to the shared leads pool.
 async function runLeadPoolReclamation() {
@@ -46,6 +59,8 @@ function setupLeadPoolReclamationJob() {
 // Custom server with Socket.IO integration
 async function createCustomServer() {
   try {
+    clearStaleProductionBuildForDev();
+
     // Create Next.js app
     const nextApp = next({ 
       dev,

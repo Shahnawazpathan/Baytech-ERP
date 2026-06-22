@@ -20,9 +20,6 @@ export function middleware(request: NextRequest) {
     response.headers.set('Cache-Control', cacheControl)
   }
 
-  // Enable compression hints
-  response.headers.set('Content-Encoding', 'gzip')
-
   return response
 }
 
