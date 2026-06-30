@@ -10,10 +10,17 @@ import {
 } from '@/lib/leads-validation'
 import { LEADS_CACHE_TTL_MS } from '@/lib/leads-constants'
 import { ASSIGNABLE_EMPLOYEE_ROLE_FILTER } from '@/lib/lead-pool'
+import { getSessionUser } from '@/lib/auth'
 
 export async function GET(request: NextRequest) {
   try {
-    const companyId = request.headers.get('x-company-id') || 'default-company'
+    const sessionUser = await getSessionUser(request)
+    if (!sessionUser) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+    const companyId = sessionUser.companyId
+    const roleLower = sessionUser.role.toLowerCase()
+    const canSeeCompanyLeads = roleLower.includes('admin') || roleLower.includes('manager')
 
     const { searchParams } = new URL(request.url)
     const page = parseInt(searchParams.get('page') || '1')
@@ -25,7 +32,17 @@ export async function GET(request: NextRequest) {
 
     const skip = (page - 1) * limit
 
-    const cacheKey = createCacheKey('leads', { companyId, page, limit, search, status, priority, assignedTo })
+    const cacheKey = createCacheKey('leads', {
+      companyId,
+      userId: sessionUser.id,
+      scope: canSeeCompanyLeads ? 'company' : 'mine',
+      page,
+      limit,
+      search,
+      status,
+      priority,
+      assignedTo,
+    })
     const cached = cache.get(cacheKey)
     if (cached) {
       return NextResponse.json(cached)
@@ -53,7 +70,9 @@ export async function GET(request: NextRequest) {
       whereClause.priority = priority
     }
 
-    if (assignedTo !== 'ALL') {
+    if (!canSeeCompanyLeads) {
+      whereClause.assignedToId = sessionUser.id
+    } else if (assignedTo !== 'ALL') {
       if (assignedTo === 'unassigned') {
         whereClause.assignedToId = null
       } else {

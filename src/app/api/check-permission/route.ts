@@ -1,15 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { hasPermission } from '@/lib/rbac';
+import { getSessionUser } from '@/lib/auth';
 
 export async function POST(request: NextRequest) {
   try {
-    const userId = request.headers.get('x-user-id');
+    const sessionUser = await getSessionUser(request);
+    const userId = sessionUser?.id;
     const { resource, action } = await request.json();
 
     if (!userId) {
       return NextResponse.json(
-        { hasPermission: false, error: 'User ID is required' },
-        { status: 400 }
+        { hasPermission: false, error: 'Unauthorized' },
+        { status: 401 }
       );
     }
 

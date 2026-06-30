@@ -5,11 +5,13 @@ import { hasPermission } from '@/lib/rbac'
 import { createLeadHistory } from '@/lib/lead-history'
 import { assignLeadSchema, bulkAssignSchema } from '@/lib/leads-validation'
 import { ASSIGNABLE_EMPLOYEE_ROLE_FILTER } from '@/lib/lead-pool'
+import { getSessionUser } from '@/lib/auth'
 
 /** Assign a single lead to an employee. */
 export async function POST(request: NextRequest) {
   try {
-    const userId = request.headers.get('x-user-id')
+    const sessionUser = await getSessionUser(request)
+    const userId = sessionUser?.id
     if (!userId) {
       return NextResponse.json(
         { success: false, error: 'User authentication required' },
@@ -63,7 +65,7 @@ export async function POST(request: NextRequest) {
         { status: 404 }
       )
     }
-    if (lead.companyId !== employee.companyId) {
+    if (lead.companyId !== employee.companyId || lead.companyId !== sessionUser!.companyId) {
       return NextResponse.json(
         { success: false, error: 'Lead and employee belong to different companies' },
         { status: 403 }
@@ -135,7 +137,8 @@ export async function POST(request: NextRequest) {
 /** Bulk-assign leads (one or many employees, with strategy). */
 export async function PUT(request: NextRequest) {
   try {
-    const userId = request.headers.get('x-user-id')
+    const sessionUser = await getSessionUser(request)
+    const userId = sessionUser?.id
     if (!userId) {
       return NextResponse.json(
         { success: false, error: 'User authentication required' },
@@ -204,7 +207,14 @@ export async function PUT(request: NextRequest) {
     }
 
     // Constrain leads to the same company as the employees
-    const companyId = employees[0].companyId
+    const companyId = sessionUser!.companyId
+    const crossCompanyEmployee = employees.some((employee) => employee.companyId !== companyId)
+    if (crossCompanyEmployee) {
+      return NextResponse.json(
+        { success: false, error: 'All employees must belong to your company' },
+        { status: 403 }
+      )
+    }
     const companyLeads = leads.filter((l) => l.companyId === companyId)
     if (companyLeads.length === 0) {
       return NextResponse.json(

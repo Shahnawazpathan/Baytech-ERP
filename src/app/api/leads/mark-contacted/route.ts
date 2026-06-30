@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { invalidateCache } from '@/lib/cache'
 import { hasPermission } from '@/lib/rbac'
 import { markContactedSchema } from '@/lib/leads-validation'
+import { getSessionUser } from '@/lib/auth'
 
 /**
  * Mark a lead as contacted.
@@ -10,7 +11,8 @@ import { markContactedSchema } from '@/lib/leads-validation'
  */
 export async function POST(request: NextRequest) {
   try {
-    const userId = request.headers.get('x-user-id')
+    const sessionUser = await getSessionUser(request)
+    const userId = sessionUser?.id
     if (!userId) {
       return NextResponse.json(
         { success: false, error: 'User authentication required' },
@@ -28,7 +30,9 @@ export async function POST(request: NextRequest) {
     }
     const { leadId } = parsed.data
 
-    const lead = await db.lead.findUnique({ where: { id: leadId } })
+    const lead = await db.lead.findFirst({
+      where: { id: leadId, companyId: sessionUser!.companyId, isActive: true },
+    })
     if (!lead) {
       return NextResponse.json(
         { success: false, error: 'Lead not found' },
@@ -49,16 +53,31 @@ export async function POST(request: NextRequest) {
     }
 
     // Update the lead to mark as contacted and set status to CONTACTED
-    const updatedLead = await db.lead.update({
-      where: { id: leadId },
-      data: {
-        contactedAt: new Date(),
-        status: 'CONTACTED',
-        updatedAt: new Date(),
-      },
+    const now = new Date()
+    const updatedLead = await db.$transaction(async (tx) => {
+      const update = await tx.lead.updateMany({
+        where: {
+          id: leadId,
+          companyId: sessionUser!.companyId,
+          isActive: true,
+          assignedToId: lead.assignedToId,
+        },
+        data: {
+          contactedAt: now,
+          status: 'CONTACTED',
+          updatedAt: now,
+        },
+      })
+
+      if (update.count === 0) {
+        throw new Error('Lead changed before it could be marked contacted')
+      }
+
+      return tx.lead.findUnique({ where: { id: leadId } })
     })
 
     invalidateCache('leads', lead.companyId)
+    invalidateCache('pool', lead.companyId)
 
     return NextResponse.json({
       success: true,

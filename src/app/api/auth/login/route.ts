@@ -1,21 +1,51 @@
 import { NextRequest } from 'next/server';
+import { NextResponse } from 'next/server';
 import bcrypt from 'bcrypt';
 import { db } from '@/lib/db';
+import { createSessionToken, setSessionCookie } from '@/lib/auth';
+
+export const runtime = 'nodejs';
+
+const loginAttempts = new Map<string, { count: number; resetAt: number }>();
+const MAX_ATTEMPTS = 8;
+const WINDOW_MS = 15 * 60 * 1000;
+
+function checkRateLimit(key: string) {
+  const now = Date.now();
+  const entry = loginAttempts.get(key);
+
+  if (!entry || entry.resetAt <= now) {
+    loginAttempts.set(key, { count: 1, resetAt: now + WINDOW_MS });
+    return true;
+  }
+
+  entry.count += 1;
+  return entry.count <= MAX_ATTEMPTS;
+}
 
 export async function POST(request: NextRequest) {
   try {
     const { email, password } = await request.json();
+    const normalizedEmail = typeof email === 'string' ? email.trim().toLowerCase() : '';
+    const clientIp = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'local';
 
-    if (!email || !password) {
+    if (!normalizedEmail || !password) {
       return Response.json(
         { error: 'Email and password are required' },
         { status: 400 }
       );
     }
 
+    if (!checkRateLimit(`${clientIp}:${normalizedEmail}`)) {
+      return Response.json(
+        { error: 'Too many login attempts. Please try again later.' },
+        { status: 429 }
+      );
+    }
+
     // Find the employee by email
     const employee = await db.employee.findUnique({
-      where: { email },
+      where: { email: normalizedEmail },
       include: {
         company: true,
         department: true,
@@ -50,7 +80,7 @@ export async function POST(request: NextRequest) {
     // Return user data (excluding password)
     const { password: _, ...userWithoutPassword } = employee;
 
-    return Response.json({
+    const response = NextResponse.json({
       user: {
         id: userWithoutPassword.id,
         employeeId: userWithoutPassword.employeeId,
@@ -66,6 +96,13 @@ export async function POST(request: NextRequest) {
       },
       success: true,
     });
+    setSessionCookie(response, createSessionToken({
+      userId: employee.id,
+      companyId: employee.companyId,
+      roleId: employee.roleId,
+    }));
+
+    return response;
   } catch (error) {
     console.error('Login error:', error);
     return Response.json(

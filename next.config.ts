@@ -2,7 +2,6 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   /* config options here */
-  output: 'standalone',
   outputFileTracingRoot: process.cwd(),
 
   // Performance optimizations
@@ -41,24 +40,8 @@ const nextConfig: NextConfig = {
     scrollRestoration: true,
   },
 
-  // Add environment variables for build time
-  env: {
-    TURSO_DATABASE_URL: process.env.TURSO_DATABASE_URL || 'libsql://baytech-shahnawazpathan.aws-ap-south-1.turso.io',
-    TURSO_AUTH_TOKEN: process.env.TURSO_AUTH_TOKEN || 'eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJpYXQiOjE3NjI0OTM1OTIsImlkIjoiZmJlMjM5MzktYzc4OC00OWQzLWEzYzEtNjU5YTIyZDNhZTBjIiwicmlkIjoiYzNjY2Y4MDctYmVjOS00ZWNmLWJhZDItNzQ1NjkwMjJkZWYwIn0.iONfkGJQnBcIDl0ncthJnRktWkUBNV9sr2km2eKHEgd0UzNtdSE709py9CgA4CDozdEYvQgct90zw4H9pFqSDw',
-  },
-  serverExternalPackages: [
-    '@libsql/client',
-    '@prisma/adapter-libsql',
-    '@prisma/client',
-    '@prisma/engines',
-    'nodemailer',
-  ],
-  outputFileTracingIncludes: {
-    '/api/**/*': ['./node_modules/@libsql/client/http/**/*'],
-  },
-  outputFileTracingExcludes: {
-    '/api/**/*': ['./node_modules/@libsql/darwin-arm64/**/*', './node_modules/@libsql/linux-x64/**/*', './node_modules/@libsql/win32-x64/**/*'],
-  },
+  // Keep secrets server-side. Next's `env` option inlines values into bundles.
+  serverExternalPackages: ['@prisma/client', '@prisma/adapter-libsql', '@libsql/client', 'nodemailer'],
   webpack: (config, { dev, isServer }) => {
     if (dev) {
       // Optimize webpack watch for better HMR performance
@@ -67,36 +50,6 @@ const nextConfig: NextConfig = {
         poll: false, // Use native file watching for better performance
         aggregateTimeout: 300, // Delay rebuild after first change
       };
-    }
-
-    // Add loaders only for necessary file types
-    config.module = config.module || {};
-    config.module.rules = config.module.rules || [];
-
-    // Only keep .node file loader for Prisma bindings
-    config.module.rules.push({
-      test: /\.node$/,
-      use: 'node-loader',
-    });
-
-    // Handle Prisma native bindings - exclude from webpack bundling
-    if (isServer) {
-      // Externalize Prisma native bindings on server side
-      config.externals = config.externals || [];
-      config.externals.push({
-        '.prisma/client/index-browser': '@prisma/client/index-browser',
-        '@prisma/client': 'commonjs @prisma/client',
-        '@prisma/engines': 'commonjs @prisma/engines',
-      });
-
-      // Ignore platform-specific binaries that webpack tries to include
-      config.plugins = config.plugins || [];
-      config.plugins.push(
-        new (require('webpack').IgnorePlugin)({
-          resourceRegExp: /^\.\/darwin-arm64$|^\.\/darwin-x64$|^\.\/linux-arm64$|^\.\/linux-x64$|^\.\/win32-x64$/,
-          contextRegExp: /@prisma\/client/,
-        })
-      );
     }
 
     // Only on client side, ignore server packages

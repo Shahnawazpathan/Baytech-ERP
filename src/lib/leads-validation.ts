@@ -61,7 +61,7 @@ export const bulkAssignSchema = z.object({
 /** Zod schema for claiming a lead from the pool. */
 export const claimLeadSchema = z.object({
   leadId: z.string().min(1),
-  employeeId: z.string().min(1),
+  employeeId: z.string().min(1).optional(),
   force: z.boolean().optional().default(false),
 })
 

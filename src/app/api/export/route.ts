@@ -1,12 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { getSessionUser } from '@/lib/auth'
 
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json()
-    const { type, companyId, filters = {} } = body
+    const sessionUser = await getSessionUser(request)
+    if (!sessionUser) {
+      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
+    }
 
-    if (!type || !companyId) {
+    const body = await request.json()
+    const { type, filters = {} } = body
+    const companyId = sessionUser.companyId
+    const roleLower = sessionUser.role.toLowerCase()
+    const canExportCompanyData = roleLower.includes('admin') || roleLower.includes('manager')
+
+    if (!type) {
       return NextResponse.json(
         { success: false, error: 'Missing required parameters' },
         { status: 400 }
@@ -18,14 +27,23 @@ export async function POST(request: NextRequest) {
 
     switch (type) {
       case 'employees':
+        if (!canExportCompanyData) {
+          return NextResponse.json(
+            { success: false, error: 'Insufficient permissions to export employees' },
+            { status: 403 }
+          )
+        }
         data = await exportEmployees(companyId, filters)
         filename = 'employees_export.xlsx'
         break
       case 'leads':
-        data = await exportLeads(companyId, filters)
+        data = await exportLeads(companyId, filters, canExportCompanyData ? undefined : sessionUser.id)
         filename = 'leads_export.xlsx'
         break
       case 'attendance':
+        if (!canExportCompanyData) {
+          filters.employeeId = sessionUser.id
+        }
         data = await exportAttendance(companyId, filters)
         filename = 'attendance_export.xlsx'
         break
@@ -116,7 +134,7 @@ async function exportEmployees(companyId: string, filters: any) {
 }
 
 // Lead export function
-async function exportLeads(companyId: string, filters: any) {
+async function exportLeads(companyId: string, filters: any, employeeScopeId?: string) {
   try {
     const where: any = { companyId, isActive: true }
     
@@ -128,7 +146,9 @@ async function exportLeads(companyId: string, filters: any) {
       where.priority = filters.priority
     }
     
-    if (filters.assignedToId) {
+    if (employeeScopeId) {
+      where.assignedToId = employeeScopeId
+    } else if (filters.assignedToId) {
       where.assignedToId = filters.assignedToId
     }
     

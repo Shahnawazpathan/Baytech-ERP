@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { getSessionUser } from '@/lib/auth'
 
 export async function GET(request: NextRequest) {
   try {
-    const companyId = request.headers.get('x-company-id') || 'default-company'
-    const userId = request.headers.get('x-user-id')
+    const sessionUser = await getSessionUser(request)
+    const companyId = sessionUser?.companyId
+    const userId = sessionUser?.id
 
     if (!userId) {
       return NextResponse.json(
@@ -143,10 +145,11 @@ export async function POST(request: NextRequest) {
       dueDate,
       assignedToId,
       tags,
-      companyId
+      companyId: _companyId
     } = body
 
-    const userId = request.headers.get('x-user-id')
+    const sessionUser = await getSessionUser(request)
+    const userId = sessionUser?.id
 
     if (!userId) {
       return NextResponse.json(
@@ -194,6 +197,13 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    if (assignee.companyId !== sessionUser!.companyId) {
+      return NextResponse.json(
+        { success: false, error: 'Assignee must belong to your company' },
+        { status: 403 }
+      )
+    }
+
     const assigneeRole = assignee.role.name
     const assigneeRoleLower = assigneeRole.toLowerCase()
 
@@ -223,7 +233,7 @@ export async function POST(request: NextRequest) {
         dueDate: dueDate ? new Date(dueDate) : null,
         assignedToId,
         assignedById: userId,
-        companyId: companyId || 'default-company',
+        companyId: sessionUser!.companyId,
         tags: tags ? JSON.stringify(tags) : null,
         status: 'TODO'
       },
@@ -255,7 +265,7 @@ export async function POST(request: NextRequest) {
         message: `${creator.firstName} ${creator.lastName} assigned you a new task: ${title}`,
         type: 'INFO',
         category: 'TASK',
-        companyId: companyId || 'default-company',
+        companyId: sessionUser!.companyId,
         employeeId: assignedToId,
         metadata: JSON.stringify({ taskId: task.id })
       }

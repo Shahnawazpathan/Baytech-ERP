@@ -45,12 +45,10 @@ const GeofenceAttendance = lazy(() => import('@/components/GeofenceAttendance').
 const GeofenceLocationManager = lazy(() => import('@/components/GeofenceLocationManager').then(mod => ({ default: mod.GeofenceLocationManager })))
 const TaskManagement = lazy(() => import('@/components/TaskManagement').then(mod => ({ default: mod.TaskManagement })))
 const AttendanceManagement = lazy(() => import('@/components/AttendanceManagement').then(mod => ({ default: mod.AttendanceManagement })))
-const CallingWorkspace = lazy(() => import('@/components/CallingWorkspace').then(mod => ({ default: mod.CallingWorkspace })))
 import {
   Users,
   Building2,
   Phone,
-  PhoneCall,
   Calendar,
   Bell,
   TrendingUp,
@@ -2052,17 +2050,6 @@ export default function Home() {
 
             {canViewLeads && (
               <Button
-                variant={activeTab === 'dialer' ? 'secondary' : 'ghost'}
-                className={`w-full gap-2 transition-all duration-200 ${!sidebarOpen ? 'justify-center px-2 lg:px-2' : 'justify-start'} hover:scale-105`}
-                onClick={() => handleNavigation('dialer')}
-              >
-                <PhoneCall className="h-4 w-4 flex-shrink-0" />
-                {sidebarOpen && <span className="truncate">Auto Dialer</span>}
-              </Button>
-            )}
-
-            {canViewLeads && (
-              <Button
                 variant={activeTab === 'leads-pool' ? 'secondary' : 'ghost'}
                 className={`w-full gap-2 transition-all duration-200 ${!sidebarOpen ? 'justify-center px-2 lg:px-2' : 'justify-start'} hover:scale-105`}
                 onClick={() => handleNavigation('leads-pool')}
@@ -2171,7 +2158,6 @@ export default function Home() {
                   {activeTab === 'overview' && 'Dashboard'}
                   {activeTab === 'employees' && 'Employee Management'}
                   {activeTab === 'leads' && 'Lead Management'}
-                  {activeTab === 'dialer' && 'Auto Dialer & WhatsApp'}
                   {activeTab === 'leads-pool' && 'Leads Pool'}
                   {activeTab === 'attendance' && 'Attendance Tracking'}
                   {activeTab === 'tasks' && 'Task Management'}
@@ -2303,9 +2289,6 @@ export default function Home() {
               )}
               {canViewLeads && (
                 <TabsTrigger value="leads">Leads</TabsTrigger>
-              )}
-              {canViewLeads && (
-                <TabsTrigger value="dialer">Dialer</TabsTrigger>
               )}
               {canViewLeads && (
                 <TabsTrigger value="leads-pool">Leads Pool</TabsTrigger>
@@ -2687,16 +2670,6 @@ export default function Home() {
                 onRefresh={refreshLeads}
                 setShowBulkImportModal={setShowBulkImportModal}
               />
-            </TabsContent>
-
-            <TabsContent value="dialer">
-              <Suspense fallback={
-                <div className="flex items-center justify-center p-12">
-                  <div className="h-8 w-8 animate-spin rounded-full border-b-2 border-gray-900"></div>
-                </div>
-              }>
-                <CallingWorkspace user={user} />
-              </Suspense>
             </TabsContent>
 
             <TabsContent value="attendance">

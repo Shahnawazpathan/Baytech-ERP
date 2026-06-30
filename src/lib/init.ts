@@ -155,8 +155,7 @@ export async function initializeSystem() {
     
     for (const resource of permissionResources) {
       for (const action of permissionActions) {
-        // Skip DELETE for some resources that shouldn't be deletable in basic setup
-        if (resource === 'employee' && action === 'DELETE') continue
+        // Skip DELETE for resources that shouldn't be deletable in basic setup
         if (resource === 'company' && action === 'DELETE') continue
         
         try {

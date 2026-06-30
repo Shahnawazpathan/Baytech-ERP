@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { hasPermission } from '@/lib/rbac'
+import { invalidateCache } from '@/lib/cache'
+import { getSessionUser } from '@/lib/auth'
 
 // Update an employee
 export async function PUT(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -99,13 +101,14 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
 // Delete an employee
 export async function DELETE(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const userId = request.headers.get('x-user-id');
+    const sessionUser = await getSessionUser(request)
+    const userId = sessionUser?.id
     const { id } = await params;
 
-    if (!userId || !(await hasPermission(userId, 'employee', 'DELETE'))) {
+    if (!sessionUser || !userId) {
       return NextResponse.json(
-        { error: 'Insufficient permissions to delete employee' },
-        { status: 403 }
+        { error: 'Unauthorized' },
+        { status: 401 }
       )
     }
 
@@ -114,14 +117,25 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
       include: { role: true }
     });
 
-    if (requestingUser?.role?.name !== 'Administrator') {
+    const isAdministrator = requestingUser?.role?.name.toLowerCase().includes('admin') || sessionUser.email === 'admin@baytech.com'
+    const canDelete = await hasPermission(userId, 'employee', 'DELETE')
+
+    if (!isAdministrator && !canDelete) {
       return NextResponse.json(
         { error: 'Only administrators can delete employees' },
         { status: 403 }
       )
     }
 
-    const existingEmployee = await db.employee.findUnique({ where: { id } });
+    const existingEmployee = await db.employee.findFirst({
+      where: {
+        id,
+        companyId: sessionUser.companyId,
+      },
+      include: {
+        role: true,
+      },
+    });
     if (!existingEmployee) {
       return NextResponse.json({ error: 'Employee not found' }, { status: 404 })
     }
@@ -130,7 +144,40 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
       return NextResponse.json({ error: 'Cannot delete your own account' }, { status: 400 })
     }
 
-    await db.employee.delete({ where: { id } });
+    if (existingEmployee.status === 'TERMINATED' || !existingEmployee.isActive) {
+      return NextResponse.json({ success: true, message: 'Employee is already deleted' })
+    }
+
+    await db.$transaction(async (tx) => {
+      await tx.employee.update({
+        where: { id },
+        data: {
+          isActive: false,
+          status: 'TERMINATED',
+          autoAssignEnabled: false,
+          terminationDate: new Date(),
+          updatedAt: new Date(),
+        },
+      })
+
+      await tx.lead.updateMany({
+        where: {
+          assignedToId: id,
+          companyId: sessionUser.companyId,
+          status: 'NEW',
+          contactedAt: null,
+        },
+        data: {
+          assignedToId: null,
+          assignedAt: null,
+          updatedAt: new Date(),
+        },
+      })
+    })
+
+    invalidateCache('employees', existingEmployee.companyId)
+    invalidateCache('leads', existingEmployee.companyId)
+    invalidateCache('pool', existingEmployee.companyId)
 
     return NextResponse.json({ success: true, message: 'Employee deleted successfully' })
   } catch (error) {

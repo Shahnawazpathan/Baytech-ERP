@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { getSessionUser } from '@/lib/auth'
 
 export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -57,7 +58,8 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
   try {
     const { id } = await params;
     const body = await request.json()
-    const userId = request.headers.get('x-user-id')
+    const sessionUser = await getSessionUser(request)
+    const userId = sessionUser?.id
 
     if (!userId) {
       return NextResponse.json(
@@ -75,6 +77,13 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
     })
 
     if (!existingTask) {
+      return NextResponse.json(
+        { success: false, error: 'Task not found' },
+        { status: 404 }
+      )
+    }
+
+    if (existingTask.companyId !== sessionUser!.companyId) {
       return NextResponse.json(
         { success: false, error: 'Task not found' },
         { status: 404 }
@@ -185,7 +194,8 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
 export async function DELETE(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params;
-    const userId = request.headers.get('x-user-id')
+    const sessionUser = await getSessionUser(request)
+    const userId = sessionUser?.id
 
     if (!userId) {
       return NextResponse.json(
@@ -200,6 +210,13 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
     })
 
     if (!task) {
+      return NextResponse.json(
+        { success: false, error: 'Task not found' },
+        { status: 404 }
+      )
+    }
+
+    if (task.companyId !== sessionUser!.companyId) {
       return NextResponse.json(
         { success: false, error: 'Task not found' },
         { status: 404 }

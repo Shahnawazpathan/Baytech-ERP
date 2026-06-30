@@ -40,6 +40,9 @@ export interface Lead {
 
 export interface LeadPoolItem extends Lead {
   canBeTaken: boolean
+  poolAgeHours?: number
+  priorityRank?: number
+  availableReason?: string
 }
 
 export interface PaginatedResponse<T> {
@@ -98,7 +101,7 @@ export interface UpdateLeadInput {
 
 export interface ClaimLeadInput {
   leadId: string
-  employeeId: string
+  employeeId?: string
   force?: boolean
 }
 

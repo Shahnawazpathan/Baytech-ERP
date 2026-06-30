@@ -3,11 +3,16 @@ import { db } from '@/lib/db'
 import { hasPermission } from '@/lib/rbac'
 import { cache, createCacheKey, invalidateCache } from '@/lib/cache'
 import bcrypt from 'bcrypt'
+import { getSessionUser } from '@/lib/auth'
 
 export async function GET(request: NextRequest) {
   try {
-    const userId = request.headers.get('x-user-id')
-    const companyId = request.headers.get('x-company-id') || 'default-company'
+    const sessionUser = await getSessionUser(request)
+    if (!sessionUser) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+    const userId = sessionUser.id
+    const companyId = sessionUser.companyId
 
     // Parse pagination parameters
     const { searchParams } = new URL(request.url)
@@ -23,14 +28,12 @@ export async function GET(request: NextRequest) {
     }
 
     // Check permission to READ employees
-    if (userId) {
-      const canRead = await hasPermission(userId, 'employee', 'READ')
-      if (!canRead) {
-        return NextResponse.json(
-          { error: 'Insufficient permissions to view employees' },
-          { status: 403 }
-        )
-      }
+    const canRead = await hasPermission(userId, 'employee', 'READ')
+    if (!canRead) {
+      return NextResponse.json(
+        { error: 'Insufficient permissions to view employees' },
+        { status: 403 }
+      )
     }
 
     let whereClause: any = {
@@ -41,21 +44,19 @@ export async function GET(request: NextRequest) {
     };
 
     // If it's not an admin, only show employees from same department or subordinates
-    if (userId) {
-      const requestingUser = await db.employee.findUnique({
-        where: { id: userId },
-        include: { role: true }
-      });
+    const requestingUser = await db.employee.findUnique({
+      where: { id: userId },
+      include: { role: true }
+    });
 
-      // If user is not an admin, only return their own record or subordinates
-      if (requestingUser?.role?.name !== 'Administrator') {
-        whereClause = {
-          ...whereClause,
-          OR: [
-            { id: userId }, // Own record
-            { managerId: userId } // Direct reports
-          ]
-        }
+    // If user is not an admin, only return their own record or subordinates
+    if (!requestingUser?.role?.name.toLowerCase().includes('admin')) {
+      whereClause = {
+        ...whereClause,
+        OR: [
+          { id: userId }, // Own record
+          { managerId: userId } // Direct reports
+        ]
       }
     }
 
@@ -146,7 +147,8 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const userId = request.headers.get('x-user-id');
+    const sessionUser = await getSessionUser(request)
+    const userId = sessionUser?.id
     const body = await request.json()
     
     // Check permission to CREATE employees
@@ -187,7 +189,7 @@ export async function POST(request: NextRequest) {
         position: body.position,
         departmentId: body.departmentId,
         roleId: body.roleId,
-        companyId: body.companyId,
+        companyId: sessionUser!.companyId,
         hireDate: new Date(body.hireDate),
         address: body.address,
         status: 'ACTIVE',

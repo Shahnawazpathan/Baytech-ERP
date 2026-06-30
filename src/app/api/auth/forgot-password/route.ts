@@ -1,13 +1,17 @@
 import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { createTransport } from 'nodemailer'
+import { randomBytes } from 'crypto'
+
+export const runtime = 'nodejs'
 
 export async function POST(request: NextRequest) {
   try {
     const { email } = await request.json()
+    const normalizedEmail = typeof email === 'string' ? email.trim().toLowerCase() : ''
 
     // Validate the email
-    if (!email) {
+    if (!normalizedEmail) {
       return Response.json({
         success: false,
         error: 'Email is required'
@@ -17,7 +21,7 @@ export async function POST(request: NextRequest) {
     // Check if the user exists in the database
     const user = await db.employee.findUnique({
       where: {
-        email: email
+        email: normalizedEmail
       }
     })
 
@@ -37,7 +41,7 @@ export async function POST(request: NextRequest) {
       secure: process.env.SMTP_SECURE === 'true', // true for 465, false for other ports
       auth: {
         user: process.env.EMAIL_USER || 'info@baytech-uae.com',
-        pass: process.env.EMAIL_PASS || 'Info2025@',
+        pass: process.env.EMAIL_PASS,
       },
       tls: {
         // Do not fail on invalid certs
@@ -46,19 +50,28 @@ export async function POST(request: NextRequest) {
     })
 
     // Generate a random token for password reset
-    const resetToken = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15)
+    if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
+      console.error('Password reset email is not configured')
+      return Response.json({
+        success: true,
+        message: 'If an account with this email exists, a password reset link has been sent to your email.'
+      })
+    }
+
+    const resetToken = randomBytes(32).toString('base64url')
 
     // Set token to expire in 1 hour
     const expiresAt = new Date()
     expiresAt.setHours(expiresAt.getHours() + 1)
 
     // Create the reset link
-    const resetLink = `https://baytech-erp.vercel.app/reset-password?token=${resetToken}`
+    const appUrl = process.env.APP_URL || request.nextUrl.origin
+    const resetLink = `${appUrl.replace(/\/$/, '')}/reset-password?token=${resetToken}`
 
     // Store the reset token in the database
     await db.passwordResetToken.create({
       data: {
-        email: email,
+        email: normalizedEmail,
         token: resetToken,
         expiresAt: expiresAt
       }
@@ -67,7 +80,7 @@ export async function POST(request: NextRequest) {
     // Email content
     const mailOptions = {
       from: process.env.EMAIL_USER || 'info@baytech-uae.com',
-      to: email,
+      to: normalizedEmail,
       subject: 'Password Reset Request - Baytech ERP',
       html: `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">

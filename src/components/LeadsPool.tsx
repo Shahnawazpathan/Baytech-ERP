@@ -36,7 +36,6 @@ export function LeadsPool({ user, onLeadClaimed }: LeadsPoolProps) {
   const [filteredLeads, setFilteredLeads] = useState<any[]>([])
   const [loading, setLoading] = useState(false)
   const [searchTerm, setSearchTerm] = useState('')
-  const [filterType, setFilterType] = useState('available')
   const [priorityFilter, setPriorityFilter] = useState('all')
   const [selectedLead, setSelectedLead] = useState<any>(null)
   const [showClaimDialog, setShowClaimDialog] = useState(false)
@@ -50,10 +49,10 @@ export function LeadsPool({ user, onLeadClaimed }: LeadsPoolProps) {
   }
 
   // Fetch leads pool
-  const fetchLeadsPool = async (filterOverride = filterType) => {
+  const fetchLeadsPool = async () => {
     try {
       setLoading(true)
-      const response = await fetch(`/api/leads/pool?filter=${filterOverride}`, {
+      const response = await fetch('/api/leads/pool?filter=available', {
         headers: {
           'x-user-id': user?.id || '',
           'x-company-id': user?.companyId || 'default-company'
@@ -102,10 +101,10 @@ export function LeadsPool({ user, onLeadClaimed }: LeadsPoolProps) {
     setFilteredLeads(filtered)
   }, [searchTerm, priorityFilter, leads])
 
-  // Fetch on mount and when filter changes
+  // Fetch on mount
   useEffect(() => {
     fetchLeadsPool()
-  }, [filterType])
+  }, [])
 
   // Handle claim lead
   const handleClaimLead = async () => {
@@ -183,8 +182,7 @@ export function LeadsPool({ user, onLeadClaimed }: LeadsPoolProps) {
         title: "Leads Imported to Pool",
         description: `Successfully imported ${result.imported} unassigned leads`,
       })
-      setFilterType('available')
-      await fetchLeadsPool('available')
+      await fetchLeadsPool()
       if (onLeadClaimed) onLeadClaimed()
     } catch (error) {
       toast({
@@ -233,7 +231,7 @@ export function LeadsPool({ user, onLeadClaimed }: LeadsPoolProps) {
         <div>
           <h2 className="text-2xl font-bold text-gray-900">Leads Pool</h2>
           <p className="text-sm text-gray-500">
-            Claim available leads from the shared pool
+            Claim untouched, unassigned leads from the shared queue
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -286,7 +284,7 @@ export function LeadsPool({ user, onLeadClaimed }: LeadsPoolProps) {
           <CardTitle className="text-lg">Filters</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {/* Search */}
             <div className="relative">
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
@@ -297,17 +295,6 @@ export function LeadsPool({ user, onLeadClaimed }: LeadsPoolProps) {
                 className="pl-10"
               />
             </div>
-
-            {/* Type Filter */}
-            <Select value={filterType} onValueChange={setFilterType}>
-              <SelectTrigger>
-                <SelectValue placeholder="Filter by type" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Pool Leads</SelectItem>
-                <SelectItem value="available">Available to Claim</SelectItem>
-              </SelectContent>
-            </Select>
 
             {/* Priority Filter */}
             <Select value={priorityFilter} onValueChange={setPriorityFilter}>
@@ -343,6 +330,9 @@ export function LeadsPool({ user, onLeadClaimed }: LeadsPoolProps) {
             <div className="text-center py-12">
               <Users className="h-12 w-12 mx-auto text-gray-300 mb-4" />
               <p className="text-gray-500">No leads available in the pool</p>
+              <p className="text-sm text-gray-400 mt-1">
+                New imports, unassigned leads, and untouched reclaimed leads will appear here.
+              </p>
             </div>
           ) : (
             <ScrollArea className="h-[min(600px,70dvh)] pr-1 sm:pr-4">
@@ -411,7 +401,14 @@ export function LeadsPool({ user, onLeadClaimed }: LeadsPoolProps) {
                             <span>
                               Created: {new Date(lead.createdAt).toLocaleDateString()}
                             </span>
+                            {typeof lead.poolAgeHours === 'number' && (
+                              <span>· In queue {lead.poolAgeHours}h</span>
+                            )}
                           </div>
+
+                          {lead.availableReason && (
+                            <p className="text-xs text-gray-500">{lead.availableReason}</p>
+                          )}
                         </div>
 
                         {/* Action Button */}

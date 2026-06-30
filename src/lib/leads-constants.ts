@@ -7,6 +7,9 @@
 /** Hours an assigned lead can sit uncontacted before being eligible for pool reclamation. */
 export const LEAD_RECLAIM_HOURS = 8
 
+/** Maximum leads returned by the shared pool endpoint. Keeps the real-time queue responsive. */
+export const MAX_POOL_PAGE_SIZE = 100
+
 /** Default pagination size for the leads table. */
 export const DEFAULT_LEADS_PAGE_SIZE = 10
 
@@ -38,6 +41,14 @@ export type LeadStatus = typeof LEAD_STATUSES[number]
 
 export const LEAD_PRIORITIES = ['LOW', 'MEDIUM', 'HIGH', 'URGENT'] as const
 export type LeadPriority = typeof LEAD_PRIORITIES[number]
+
+/** Business priority order for queueing. Higher value should be shown first. */
+export const LEAD_PRIORITY_WEIGHT: Record<LeadPriority, number> = {
+  LOW: 1,
+  MEDIUM: 2,
+  HIGH: 3,
+  URGENT: 4,
+}
 
 export const NOTES_STATUSES = ['RING', 'NOT_CONTACTABLE', 'FOLLOW_UP'] as const
 export type NotesStatus = typeof NOTES_STATUSES[number]

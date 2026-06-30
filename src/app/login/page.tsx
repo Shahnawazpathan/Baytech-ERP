@@ -8,7 +8,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Eye, EyeOff } from 'lucide-react'
-import Link from 'next/link'
+import { useAuth } from '@/hooks/use-auth'
 
 export default function LoginPage() {
   const [email, setEmail] = useState('')
@@ -17,6 +17,7 @@ export default function LoginPage() {
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState('')
   const router = useRouter()
+  const { login } = useAuth()
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -24,26 +25,12 @@ export default function LoginPage() {
     setError('')
 
     try {
-      // Call the login API
-      const response = await fetch('/api/auth/login', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ email, password }),
-      })
+      const loggedIn = await login(email, password)
 
-      const data = await response.json()
-
-      if (response.ok && data.success) {
-        // Store authentication state
-        localStorage.setItem('isAuthenticated', 'true')
-        localStorage.setItem('user', JSON.stringify(data.user))
-
-        // Use window.location for full page reload to reinitialize auth context
-        window.location.href = '/'
+      if (loggedIn) {
+        router.push('/')
       } else {
-        setError(data.error || 'Invalid email or password')
+        setError('Invalid email or password')
       }
     } catch (err) {
       setError('Login failed. Please try again.')

@@ -33,15 +33,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     // Check authentication status on mount
-    const checkAuth = () => {
+    const checkAuth = async () => {
       try {
-        const auth = localStorage.getItem('isAuthenticated')
-        const userData = localStorage.getItem('user')
-        
-        if (auth === 'true' && userData) {
-          const parsedUser = JSON.parse(userData)
-          setUser(parsedUser)
+        const response = await fetch('/api/auth/me', { credentials: 'include' })
+
+        if (response.ok) {
+          const data = await response.json()
+          setUser(data.user)
           setIsAuthenticated(true)
+          localStorage.setItem('user', JSON.stringify(data.user))
+          localStorage.setItem('isAuthenticated', 'true')
+        } else {
+          localStorage.removeItem('isAuthenticated')
+          localStorage.removeItem('user')
         }
       } catch (error) {
         console.error('Error checking authentication:', error)
@@ -61,6 +65,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         headers: {
           'Content-Type': 'application/json',
         },
+        credentials: 'include',
         body: JSON.stringify({ email, password }),
       })
 
@@ -86,6 +91,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   const logout = () => {
+    fetch('/api/auth/logout', { method: 'POST', credentials: 'include' }).catch(() => {})
     localStorage.removeItem('isAuthenticated')
     localStorage.removeItem('user')
     setUser(null)

@@ -54,7 +54,8 @@ export const cache = new SimpleCache();
 
 // Run cleanup every 5 minutes
 if (typeof setInterval !== 'undefined') {
-  setInterval(() => cache.cleanup(), 5 * 60 * 1000);
+  const cleanupTimer = setInterval(() => cache.cleanup(), 5 * 60 * 1000);
+  cleanupTimer.unref?.();
 }
 
 export const createCacheKey = (endpoint: string, params: Record<string, any> = {}): string => {
