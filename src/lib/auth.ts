@@ -27,7 +27,7 @@ export interface SessionUser {
 }
 
 function getSessionSecret() {
-  const secret = process.env.SESSION_SECRET || process.env.NEXTAUTH_SECRET
+  const secret = process.env.SESSION_SECRET || process.env.NEXTAUTH_SECRET || process.env.TURSO_AUTH_TOKEN
 
   if (secret && secret.length >= 32) {
     return secret

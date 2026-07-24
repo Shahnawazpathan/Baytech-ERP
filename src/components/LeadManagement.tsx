@@ -52,6 +52,7 @@ export function LeadManagement({
   const [notesStatus, setNotesStatus] = useState('');
   const [followUpDate, setFollowUpDate] = useState('');
   const [isSavingNotes, setIsSavingNotes] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
   const [newLead, setNewLead] = useState({
     firstName: '',
     lastName: '',
@@ -167,26 +168,72 @@ export function LeadManagement({
     return parsed.toISOString().split('T')[0]
   }
 
-  const handleExportLeads = () => {
-    // Note: For large datasets, server-side export is recommended.
-    // For now, we export the current page.
-    const csvContent = [
-      ['Name', 'Email', 'Phone', 'Property Location', 'Status', 'Priority', 'Assigned To', 'Credit Score', 'Notes Status', 'Notes'],
-      ...paginatedLeads.map((lead: any) => [
-        lead.name, lead.email, lead.phone, lead.propertyAddress, lead.status, lead.priority,
-        lead.assignedTo, lead.creditScore,
-        lead.notesStatus || '',
-        `"${(lead.notes || '').replace(/"/g, '""')}"`
-      ])
-    ].map(row => row.join(',')).join('\n')
+  const handleExportLeads = async () => {
+    setIsExporting(true)
 
-    const blob = new Blob([csvContent], { type: 'text/csv' })
-    const url = window.URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `leads_${new Date().toISOString().split('T')[0]}.csv`
-    a.click()
-    window.URL.revokeObjectURL(url)
+    try {
+      const filters = {
+        search: debouncedLeadSearch,
+        status: leadFilter.status === 'ALL' ? undefined : leadFilter.status,
+        priority: leadFilter.priority === 'ALL' ? undefined : leadFilter.priority,
+        assignedToId: leadFilter.assignedTo === 'ALL' ? undefined : leadFilter.assignedTo,
+      }
+
+      const response = await fetch('/api/export', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type: 'leads', filters }),
+      })
+      const result = await response.json()
+
+      if (!response.ok || !result.success) {
+        throw new Error(result.error || 'Failed to export leads')
+      }
+
+      const records = result.data?.data || []
+      if (records.length === 0) {
+        toast({
+          title: 'No Leads to Export',
+          description: 'No leads match the current filters.',
+        })
+        return
+      }
+
+      const escapeCsvValue = (value: unknown) => {
+        const text = value == null ? '' : String(value)
+        return `"${text.replace(/"/g, '""')}"`
+      }
+      const headers = Object.keys(records[0])
+      const csvContent = [
+        headers.map(escapeCsvValue).join(','),
+        ...records.map((record: Record<string, unknown>) =>
+          headers.map((header) => escapeCsvValue(record[header])).join(',')
+        ),
+      ].join('\n')
+
+      const blob = new Blob([`\uFEFF${csvContent}`], { type: 'text/csv;charset=utf-8' })
+      const url = window.URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `leads_${new Date().toISOString().split('T')[0]}.csv`
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      window.URL.revokeObjectURL(url)
+
+      toast({
+        title: 'Export Successful',
+        description: `Exported all ${records.length} matching leads.`,
+      })
+    } catch (error) {
+      toast({
+        title: 'Export Failed',
+        description: error instanceof Error ? error.message : 'Failed to export leads',
+        variant: 'destructive',
+      })
+    } finally {
+      setIsExporting(false)
+    }
   }
 
   const handleEditLeadClick = async (lead: any) => {
@@ -674,9 +721,14 @@ export function LeadManagement({
           <Button
             variant="outline"
             onClick={handleExportLeads}
+            disabled={isExporting}
           >
-            <Download className="h-4 w-4 mr-2" />
-            Export
+            {isExporting ? (
+              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+            ) : (
+              <Download className="h-4 w-4 mr-2" />
+            )}
+            {isExporting ? 'Exporting...' : 'Export All'}
           </Button>
           {(user?.role === 'Administrator' || user?.role === 'Manager') && (
             <Button

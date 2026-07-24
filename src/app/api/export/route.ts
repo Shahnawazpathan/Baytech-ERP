@@ -138,18 +138,20 @@ async function exportLeads(companyId: string, filters: any, employeeScopeId?: st
   try {
     const where: any = { companyId, isActive: true }
     
-    if (filters.status) {
+    if (filters.status && filters.status !== 'ALL') {
       where.status = filters.status
     }
     
-    if (filters.priority) {
+    if (filters.priority && filters.priority !== 'ALL') {
       where.priority = filters.priority
     }
     
     if (employeeScopeId) {
       where.assignedToId = employeeScopeId
-    } else if (filters.assignedToId) {
-      where.assignedToId = filters.assignedToId
+    } else if (filters.assignedToId && filters.assignedToId !== 'ALL') {
+      where.assignedToId = filters.assignedToId === 'unassigned'
+        ? null
+        : filters.assignedToId
     }
     
     if (filters.dateFrom || filters.dateTo) {
@@ -164,10 +166,10 @@ async function exportLeads(companyId: string, filters: any, employeeScopeId?: st
     
     if (filters.search) {
       where.OR = [
-        { firstName: { contains: filters.search, mode: 'insensitive' } },
-        { lastName: { contains: filters.search, mode: 'insensitive' } },
-        { email: { contains: filters.search, mode: 'insensitive' } },
-        { phone: { contains: filters.search, mode: 'insensitive' } }
+        { firstName: { contains: filters.search } },
+        { lastName: { contains: filters.search } },
+        { email: { contains: filters.search } },
+        { phone: { contains: filters.search } }
       ]
     }
 
