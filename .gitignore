@@ -47,3 +47,8 @@ prompt
 
 server.log
 .env.local
+
+# environment & secrets - never commit
+.env
+.env.*
+!.env.production.example
