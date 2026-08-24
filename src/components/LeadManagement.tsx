@@ -8,6 +8,18 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import { getStatusColor as getStatusColorBase, getPriorityColor as getPriorityColorBase, LEAD_STATUS_ORDER } from '@/lib/ui-helpers';
 import { useToast } from '@/hooks/use-toast';
 import { useDebounce } from '@/hooks/use-debounce';
 import {
@@ -66,6 +78,7 @@ export function LeadManagement({
     priority: 'MEDIUM',
     notes: ''
   });
+  const [formErrors, setFormErrors] = useState<Record<string, string>>({});
 
   // Filter states
   const [leadFilter, setLeadFilter] = useState({
@@ -94,10 +107,7 @@ export function LeadManagement({
         assignedTo: leadFilter.assignedTo
       });
       const res = await fetch(`/api/leads?${searchParams.toString()}`, {
-        headers: {
-          'x-user-id': user?.id || '',
-          'x-company-id': user?.companyId || ''
-        }
+        headers: { 'Content-Type': 'application/json' },
       });
       if (!res.ok) throw new Error('Failed to fetch leads');
       return res.json();
@@ -124,29 +134,8 @@ export function LeadManagement({
     setLeadPage(1)
   }, [debouncedLeadSearch, leadFilter.status, leadFilter.priority, leadFilter.assignedTo]);
 
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'NEW': return 'bg-blue-100 text-blue-800'
-      case 'QUALIFIED': return 'bg-green-100 text-green-800'
-      case 'APPLICATION': return 'bg-yellow-100 text-yellow-800'
-      case 'CONTACTED': return 'bg-purple-100 text-purple-800'
-      case 'APPROVED': return 'bg-teal-100 text-teal-800'
-      case 'REJECTED': return 'bg-red-100 text-red-800'
-      case 'CLOSED': return 'bg-gray-100 text-gray-800'
-      case 'JUNK': return 'bg-gray-100 text-gray-800'
-      case 'REAL': return 'bg-green-100 text-green-800'
-      default: return 'bg-gray-100 text-gray-800'
-    }
-  }
-
-  const getPriorityColor = (priority: string) => {
-    switch (priority) {
-      case 'HIGH': return 'bg-red-100 text-red-800'
-      case 'MEDIUM': return 'bg-yellow-100 text-yellow-800'
-      case 'LOW': return 'bg-green-100 text-green-800'
-      default: return 'bg-gray-100 text-gray-800'
-    }
-  }
+  const getStatusColor = getStatusColorBase;
+  const getPriorityColor = getPriorityColorBase;
 
   const formatNotesStatus = (status?: string) => {
     switch (status) {
@@ -259,11 +248,7 @@ export function LeadManagement({
       try {
         const response = await fetch(`/api/leads/${editingLead.id}`, {
           method: 'PUT',
-          headers: {
-            'Content-Type': 'application/json',
-            'x-user-id': user?.id,
-            'x-company-id': user?.companyId
-          },
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             firstName: newLead.firstName,
             lastName: newLead.lastName,
@@ -342,11 +327,7 @@ export function LeadManagement({
     try {
       const response = await fetch(`/api/leads/${notesLead.id}`, {
         method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-user-id': user?.id,
-          'x-company-id': user?.companyId
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           notes: notesValue,
           notesStatus: notesStatus || null,
@@ -384,21 +365,13 @@ export function LeadManagement({
     }
   };
 
-  const toggleLeadStatus = async (leadId: string, currentStatus: string) => {
-    try {
-      // Define the next status in the pipeline
-      const statusOrder = ['NEW', 'CONTACTED', 'QUALIFIED', 'APPLICATION', 'APPROVED', 'REJECTED', 'CLOSED', 'JUNK', 'REAL'];
-      const currentIndex = statusOrder.indexOf(currentStatus);
-      const nextIndex = (currentIndex + 1) % statusOrder.length;
-      const newStatus = statusOrder[nextIndex];
+  const [pendingJunkTransition, setPendingJunkTransition] = useState<{ leadId: string; nextStatus: string } | null>(null);
 
+  const advanceLeadStatus = async (leadId: string, newStatus: string) => {
+    try {
       const response = await fetch(`/api/leads/${leadId}/status`, {
         method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-user-id': user?.id,
-          'x-company-id': user?.companyId
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: newStatus })
       });
 
@@ -416,23 +389,42 @@ export function LeadManagement({
     } catch (error) {
       toast({
         title: "Error",
-        description: "Failed to update lead status",
+        description: error instanceof Error ? error.message : "Failed to update lead status",
         variant: "destructive",
       });
     }
   };
 
+  // Advancing past CLOSED into JUNK is destructive - confirm first.
+  const toggleLeadStatus = (leadId: string, currentStatus: string) => {
+    const currentIndex = LEAD_STATUS_ORDER.indexOf(currentStatus as any);
+    const nextIndex = (currentIndex + 1) % LEAD_STATUS_ORDER.length;
+    const newStatus = LEAD_STATUS_ORDER[nextIndex];
+    if (newStatus === 'JUNK') {
+      setPendingJunkTransition({ leadId, nextStatus: newStatus });
+      return;
+    }
+    advanceLeadStatus(leadId, newStatus);
+  };
+
+  const validateLeadForm = () => {
+    const errors: Record<string, string> = {};
+    if (!newLead.firstName.trim()) errors.firstName = 'First name is required';
+    if (!newLead.phone.trim()) errors.phone = 'Phone is required';
+    if (newLead.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(newLead.email)) {
+      errors.email = 'Enter a valid email address';
+    }
+    setFormErrors(errors);
+    return Object.keys(errors).length === 0;
+  };
+
   const handleAddLead = async () => {
-    if (newLead.firstName && newLead.phone) {
-      try {
-        const response = await fetch('/api/leads', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'x-user-id': user?.id,
-            'x-company-id': user?.companyId
-          },
-          body: JSON.stringify({
+    if (!validateLeadForm()) return;
+    try {
+      const response = await fetch('/api/leads', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
             firstName: newLead.firstName,
             lastName: newLead.lastName,
             email: newLead.email,
@@ -463,6 +455,7 @@ export function LeadManagement({
             priority: 'MEDIUM',
             notes: ''
           })
+          setFormErrors({})
           setShowAddLeadModal(false)
           await onRefresh() // Refresh lead data
 
@@ -471,22 +464,16 @@ export function LeadManagement({
             description: "Lead added successfully",
           })
         } else {
-          throw new Error('Failed to add lead')
+          const err = await response.json().catch(() => null)
+          throw new Error(err?.error || 'Failed to add lead')
         }
       } catch (error) {
         toast({
           title: "Error",
-          description: "Failed to add lead",
+          description: error instanceof Error ? error.message : "Failed to add lead",
           variant: "destructive",
         })
       }
-    } else {
-      toast({
-        title: "Validation Error",
-        description: "Please fill in all required fields (First Name, Phone)",
-        variant: "destructive",
-      })
-    }
   }
 
   const handleLeadInputChange = (field: string, value: string) => {
@@ -504,8 +491,10 @@ export function LeadManagement({
     setShowBulkImportModal(true)
   }
 
-  // Check if user has delete permissions (Admin or Manager)
-  const canDeleteLeads = user?.role === 'Administrator' || user?.role === 'Manager';
+  // Check if user has delete permissions (Admin or Manager, case-insensitive)
+  const roleLowerLocal = (user?.role || '').toLowerCase();
+  const isManagerOrAdmin = roleLowerLocal.includes('admin') || roleLowerLocal.includes('manager');
+  const canDeleteLeads = isManagerOrAdmin;
 
   // Handle selecting individual leads
   const handleSelectLead = (leadId: string) => {
@@ -534,11 +523,7 @@ export function LeadManagement({
     try {
       const response = await fetch('/api/leads', {
         method: 'DELETE',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-user-id': user?.id,
-          'x-company-id': user?.companyId
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ leadIds: selectedLeads })
       });
 
@@ -575,10 +560,7 @@ export function LeadManagement({
         setLoadingEmployees(true);
         try {
           const response = await fetch(`/api/employees?companyId=${user.companyId}`, {
-            headers: {
-              'x-user-id': user?.id,
-              'x-company-id': user?.companyId
-            }
+            headers: { 'Content-Type': 'application/json' }
           });
           if (response.ok) {
             const data = await response.json();
@@ -628,11 +610,7 @@ export function LeadManagement({
     try {
       const response = await fetch('/api/leads/assign', {
         method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-user-id': user?.id,
-          'x-company-id': user?.companyId
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           leadIds: selectedLeads,
           employeeId: selectedEmployeeForAssignment
@@ -901,6 +879,7 @@ export function LeadManagement({
                       <th className="text-left p-3 w-12">
                         <input
                           type="checkbox"
+                          aria-label="Select all leads on this page"
                           checked={paginatedLeads.length > 0 && selectedLeads.length === paginatedLeads.length}
                           onChange={handleSelectAll}
                           className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500"
@@ -948,6 +927,7 @@ export function LeadManagement({
                           <td className="p-3">
                             <input
                               type="checkbox"
+                              aria-label={`Select lead ${lead.name}`}
                               checked={selectedLeads.includes(lead.id)}
                               onChange={() => handleSelectLead(lead.id)}
                               className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500"
@@ -1060,17 +1040,39 @@ export function LeadManagement({
                   Previous
                 </Button>
                 <div className="flex items-center gap-1">
-                  {Array.from({ length: Math.min(totalLeadPages, 10) }, (_, i) => i + 1).map(page => (
-                    <Button
-                      key={page}
-                      variant={leadPage === page ? "default" : "outline"}
-                      size="sm"
-                      onClick={() => setLeadPage(page)}
-                      className="w-8 h-8 p-0"
-                    >
-                      {page}
-                    </Button>
-                  ))}
+                  {(() => {
+                    const windowSize = 5;
+                    let start = Math.max(1, leadPage - Math.floor(windowSize / 2));
+                    const end = Math.min(totalLeadPages, start + windowSize - 1);
+                    start = Math.max(1, end - windowSize + 1);
+                    const pages: number[] = [];
+                    if (start > 1) {
+                      pages.push(1);
+                      if (start > 2) pages.push(-1); // ellipsis marker
+                    }
+                    for (let p = start; p <= end; p++) pages.push(p);
+                    if (end < totalLeadPages) {
+                      if (end < totalLeadPages - 1) pages.push(-2); // ellipsis marker
+                      pages.push(totalLeadPages);
+                    }
+                    return pages.map(page =>
+                      page === -1 || page === -2 ? (
+                        <span key={`ellipsis-${page}`} className="px-1 text-sm text-gray-400">…</span>
+                      ) : (
+                        <Button
+                          key={page}
+                          variant={leadPage === page ? "default" : "outline"}
+                          size="sm"
+                          onClick={() => setLeadPage(page)}
+                          className="w-8 h-8 p-0"
+                          aria-label={`Go to page ${page}`}
+                          aria-current={leadPage === page ? 'page' : undefined}
+                        >
+                          {page}
+                        </Button>
+                      )
+                    );
+                  })()}
                 </div>
                 <Button
                   variant="outline"
@@ -1086,76 +1088,72 @@ export function LeadManagement({
         </CardContent>
       </Card>
 
-      {/* Add Lead Modal */}
-      {showAddLeadModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="max-h-[calc(100dvh-1rem)] w-full max-w-2xl overflow-y-auto rounded-lg bg-white shadow-xl">
-            <div className="p-4 sm:p-6">
-              <div className="flex justify-between items-center mb-4">
-                <h3 className="text-xl font-semibold">
-                  {editingLead ? 'Edit Lead' : 'Add New Lead'}
-                </h3>
-                <Button
-                  variant="ghost"
-                  onClick={() => {
-                    setShowAddLeadModal(false);
-                    setEditingLead(null);
-                    setNewLead({
-                      firstName: '',
-                      lastName: '',
-                      email: '',
-                      phone: '',
-                      loanAmount: '',
-                      propertyAddress: '',
-                      propertyType: '',
-                      creditScore: '',
-                      source: 'Website',
-                      priority: 'MEDIUM',
-                      notes: ''
-                    });
-                  }}
-                >
-                  Close
-                </Button>
-              </div>
-              
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 py-4">
+      {/* Add/Edit Lead Dialog */}
+      <Dialog open={showAddLeadModal} onOpenChange={(open) => {
+        if (!open) {
+          setShowAddLeadModal(false);
+          setEditingLead(null);
+          setFormErrors({});
+        }
+      }}>
+        <DialogContent className="sm:max-w-[600px] max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>{editingLead ? 'Edit Lead' : 'Add New Lead'}</DialogTitle>
+            <DialogDescription>
+              Fields marked with * are required.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 py-4">
                 <div className="space-y-2">
-                  <Label htmlFor="firstName">First Name *</Label>
+                  <Label htmlFor="lead-firstName">First Name *</Label>
                   <Input
-                    id="firstName"
+                    id="lead-firstName"
                     value={newLead.firstName}
                     onChange={(e) => handleLeadInputChange('firstName', e.target.value)}
                     placeholder="Enter first name"
+                    aria-invalid={!!formErrors.firstName}
                   />
+                  {formErrors.firstName && (
+                    <p className="text-sm text-red-600">{formErrors.firstName}</p>
+                  )}
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="lastName">Last Name</Label>
+                  <Label htmlFor="lead-lastName">Last Name</Label>
                   <Input
-                    id="lastName"
+                    id="lead-lastName"
                     value={newLead.lastName}
                     onChange={(e) => handleLeadInputChange('lastName', e.target.value)}
                     placeholder="Enter last name (optional)"
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="email">Email *</Label>
+                  <Label htmlFor="lead-email">Email</Label>
                   <Input
-                    id="email"
+                    id="lead-email"
                     type="email"
                     value={newLead.email}
                     onChange={(e) => handleLeadInputChange('email', e.target.value)}
                     placeholder="Enter email address"
+                    aria-invalid={!!formErrors.email}
                   />
+                  {formErrors.email && (
+                    <p className="text-sm text-red-600">{formErrors.email}</p>
+                  )}
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="phone">Phone *</Label>
+                  <Label htmlFor="lead-phone">Phone *</Label>
                   <Input
-                    id="phone"
+                    id="lead-phone"
+                    type="tel"
                     value={newLead.phone}
                     onChange={(e) => handleLeadInputChange('phone', e.target.value)}
                     placeholder="Enter phone number"
+                    aria-invalid={!!formErrors.phone}
                   />
+                  {formErrors.phone && (
+                    <p className="text-sm text-red-600">{formErrors.phone}</p>
+                  )}
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="loanAmount">Loan Amount ($)</Label>
@@ -1235,9 +1233,9 @@ export function LeadManagement({
                   </Select>
                 </div>
                 <div className="space-y-2 md:col-span-2">
-                  <Label htmlFor="notes">Notes</Label>
+                  <Label htmlFor="lead-notes">Notes</Label>
                   <textarea
-                    id="notes"
+                    id="lead-notes"
                     value={newLead.notes}
                     onChange={(e) => handleLeadInputChange('notes', e.target.value)}
                     className="w-full p-2 border border-gray-300 rounded-md resize-none"
@@ -1246,99 +1244,86 @@ export function LeadManagement({
                   />
                 </div>
               </div>
-              
-              <div className="flex justify-end gap-2 mt-4">
-                <Button
-                  variant="outline"
-                  onClick={() => {
-                    setShowAddLeadModal(false)
-                    setEditingLead(null)
-                    setNewLead({
-                      firstName: '',
-                      lastName: '',
-                      email: '',
-                      phone: '',
-                      loanAmount: '',
-                      propertyAddress: '',
-                      propertyType: '',
-                      creditScore: '',
-                      source: 'Website',
-                      priority: 'MEDIUM',
-                      notes: ''
-                    })
-                  }}
-                >
-                  Cancel
-                </Button>
-                <Button onClick={editingLead ? handleUpdateLead : handleAddLead} className="bg-blue-600 hover:bg-blue-700 text-white">
-                  {editingLead ? 'Update Lead' : 'Add Lead'}
-                </Button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
 
-      {/* Delete Confirmation Modal */}
-      {showDeleteConfirm && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg shadow-xl max-w-md w-full">
-            <div className="p-6">
-              <div className="flex items-center gap-3 mb-4">
-                <div className="bg-red-100 rounded-full p-3">
-                  <Trash2 className="h-6 w-6 text-red-600" />
-                </div>
-                <div>
-                  <h3 className="text-xl font-semibold text-gray-900">Delete Leads</h3>
-                  <p className="text-sm text-gray-500">This action cannot be undone</p>
-                </div>
-              </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setShowAddLeadModal(false);
+                setEditingLead(null);
+                setFormErrors({});
+              }}
+            >
+              Cancel
+            </Button>
+            <Button onClick={editingLead ? handleUpdateLead : handleAddLead} className="bg-blue-600 hover:bg-blue-700 text-white">
+              {editingLead ? 'Update Lead' : 'Add Lead'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
-              <p className="text-gray-700 mb-6">
-                Are you sure you want to delete {selectedLeads.length} lead{selectedLeads.length !== 1 ? 's' : ''}?
-                This will permanently remove {selectedLeads.length !== 1 ? 'them' : 'it'} from the system.
-              </p>
+      {/* Delete Confirmation */}
+      <AlertDialog open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete {selectedLeads.length} lead{selectedLeads.length !== 1 ? 's' : ''}?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will remove {selectedLeads.length !== 1 ? 'them' : 'it'} from the pipeline. This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDeleteSelected}
+              className="bg-red-600 hover:bg-red-700 text-white"
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
-              <div className="flex justify-end gap-2">
-                <Button
-                  variant="outline"
-                  onClick={() => setShowDeleteConfirm(false)}
-                >
-                  Cancel
-                </Button>
-                <Button
-                  variant="destructive"
-                  onClick={handleDeleteSelected}
-                >
-                  Delete {selectedLeads.length} Lead{selectedLeads.length !== 1 ? 's' : ''}
-                </Button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Junk Status Transition Confirm */}
+      <AlertDialog open={!!pendingJunkTransition} onOpenChange={(open) => !open && setPendingJunkTransition(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Mark lead as JUNK?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This advances the pipeline to JUNK. The lead will no longer appear as active.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                if (pendingJunkTransition) {
+                  advanceLeadStatus(pendingJunkTransition.leadId, pendingJunkTransition.nextStatus);
+                  setPendingJunkTransition(null);
+                }
+              }}
+              className="bg-red-600 hover:bg-red-700 text-white"
+            >
+              Mark as JUNK
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
-      {/* Notes Modal */}
-      {showNotesModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg shadow-xl max-w-md w-full">
-            <div className="p-6">
-              <div className="flex justify-between items-center mb-4">
-                <h3 className="text-xl font-semibold text-gray-900">Lead Notes</h3>
-                <Button
-                  variant="ghost"
-                  onClick={() => {
-                    setShowNotesModal(false);
-                    setNotesLead(null);
-                    setNotesValue('');
-                    setNotesStatus('');
-                    setFollowUpDate('');
-                  }}
-                  disabled={isSavingNotes}
-                >
-                  Close
-                </Button>
-              </div>
+      {/* Notes Dialog */}
+      <Dialog open={showNotesModal} onOpenChange={(open) => {
+        if (!open) {
+          setShowNotesModal(false);
+          setNotesLead(null);
+        }
+      }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Lead Notes</DialogTitle>
+            <DialogDescription>
+              Track call outcomes and schedule follow-ups.
+            </DialogDescription>
+          </DialogHeader>
 
               <div className="space-y-2">
                 <Label htmlFor="lead-notes">Notes</Label>
@@ -1392,29 +1377,17 @@ export function LeadManagement({
                 </div>
               )}
 
-              <div className="flex justify-end gap-2 mt-4">
-                <Button
-                  variant="outline"
-                  onClick={() => {
-                    setShowNotesModal(false);
-                    setNotesLead(null);
-                    setNotesValue('');
-                    setNotesStatus('');
-                    setFollowUpDate('');
-                  }}
-                  disabled={isSavingNotes}
-                >
-                  Cancel
-                </Button>
-                <Button onClick={handleUpdateNotes} disabled={isSavingNotes} className="bg-blue-600 hover:bg-blue-700 text-white">
-                  {isSavingNotes && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-                  {isSavingNotes ? 'Saving...' : 'Save Notes'}
-                </Button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowNotesModal(false)} disabled={isSavingNotes}>
+              Cancel
+            </Button>
+            <Button onClick={handleUpdateNotes} disabled={isSavingNotes} className="bg-blue-600 hover:bg-blue-700 text-white">
+              {isSavingNotes && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              {isSavingNotes ? 'Saving...' : 'Save Notes'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

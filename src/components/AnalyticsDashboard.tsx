@@ -33,10 +33,7 @@ export function AnalyticsDashboard({ safeUserId, safeCompanyId, canViewReports, 
     setLoadingAnalytics(true)
     try {
       const response = await fetch(`/api/reports/analytics?range=${range}`, {
-        headers: {
-          'x-user-id': safeUserId,
-          'x-company-id': safeCompanyId
-        }
+        headers: { 'Content-Type': 'application/json' },
       })
       if (response.ok) {
         const result = await response.json()
@@ -76,17 +73,10 @@ export function AnalyticsDashboard({ safeUserId, safeCompanyId, canViewReports, 
     } catch (error) {
       toast({
         title: "Error",
-        description: "Failed to generate report. Using fallback method.",
+        description: error instanceof Error ? error.message : "Failed to generate report.",
         variant: "destructive",
       });
-      
-      return {
-        id: reports.length + 1,
-        name: `${type} Report - ${new Date().toLocaleDateString()}`,
-        type: type,
-        generatedDate: new Date().toISOString().split('T')[0],
-        status: "COMPLETED"
-      };
+      throw error;
     }
   }
 
@@ -201,7 +191,7 @@ Average Credit Score: ${leadsList.length ? Math.round(leadsList.reduce((sum, lea
   const handleExportReports = async () => {
     try {
       const reportsRes = await fetch('/api/reports', {
-        headers: { 'x-user-id': safeUserId, 'x-company-id': safeCompanyId }
+        headers: { 'Content-Type': 'application/json' },
       });
       if (reportsRes.ok) {
         const reportsData = await reportsRes.json();

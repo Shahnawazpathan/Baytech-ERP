@@ -41,7 +41,8 @@ interface GeofenceAttendanceProps {
 export function GeofenceAttendance({
   onCheckIn,
   onCheckOut,
-  companyId = 'default-company',
+  companyId,
+
   employeeId = 'current-user'
 }: GeofenceAttendanceProps) {
   const { toast } = useToast()
@@ -63,9 +64,7 @@ export function GeofenceAttendance({
       setIsLoadingLocations(true)
       try {
         const response = await fetch('/api/geofence-locations', {
-          headers: {
-            'x-company-id': companyId
-          }
+          
         })
         const data = await response.json()
         if (data.success && data.data) {

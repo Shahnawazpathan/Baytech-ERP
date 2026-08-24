@@ -1,13 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { hasPermission } from '@/lib/rbac'
 import { invalidateCache } from '@/lib/cache'
+import { getSessionUser } from '@/lib/auth'
 
 export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const userId = request.headers.get('x-user-id')
+    const sessionUser = await getSessionUser(request)
+    if (!sessionUser) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
     const { id } = await params
-    const { autoAssignEnabled } = await request.json()
+    const body = await request.json()
+    const autoAssignEnabled = body?.autoAssignEnabled
 
     if (typeof autoAssignEnabled !== 'boolean') {
       return NextResponse.json(
@@ -16,27 +21,17 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       )
     }
 
-    if (!userId || !(await hasPermission(userId, 'employee', 'UPDATE'))) {
+    // Only admins/managers may toggle this, and only within their own company
+    const roleLower = sessionUser.role.toLowerCase()
+    if (!roleLower.includes('admin') && !roleLower.includes('manager')) {
       return NextResponse.json(
         { error: 'Insufficient permissions to update auto-assign' },
         { status: 403 }
       )
     }
 
-    const requestingUser = await db.employee.findUnique({
-      where: { id: userId },
-      include: { role: true }
-    })
-
-    if (requestingUser?.role?.name !== 'Administrator' && requestingUser?.role?.name !== 'Manager') {
-      return NextResponse.json(
-        { error: 'Insufficient permissions to update auto-assign' },
-        { status: 403 }
-      )
-    }
-
-    const existingEmployee = await db.employee.findUnique({
-      where: { id }
+    const existingEmployee = await db.employee.findFirst({
+      where: { id, companyId: sessionUser.companyId },
     })
 
     if (!existingEmployee || !existingEmployee.isActive) {

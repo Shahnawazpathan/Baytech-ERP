@@ -1,6 +1,7 @@
 "use client"
 
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -17,26 +18,28 @@ export default function LoginPage() {
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState('')
   const router = useRouter()
-  const { login } = useAuth()
+  const { login, isAuthenticated, isLoading: authLoading } = useAuth()
+
+  // Already signed in? Skip the form.
+  useEffect(() => {
+    if (!authLoading && isAuthenticated) {
+      router.replace('/')
+    }
+  }, [authLoading, isAuthenticated, router])
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
     setIsLoading(true)
     setError('')
 
-    try {
-      const loggedIn = await login(email, password)
+    const result = await login(email, password)
 
-      if (loggedIn) {
-        router.push('/')
-      } else {
-        setError('Invalid email or password')
-      }
-    } catch (err) {
-      setError('Login failed. Please try again.')
-    } finally {
-      setIsLoading(false)
+    if (result.ok) {
+      router.push('/')
+    } else {
+      setError(result.message || 'Invalid email or password')
     }
+    setIsLoading(false)
   }
 
   return (
@@ -100,6 +103,8 @@ export default function LoginPage() {
                     className="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent"
                     onClick={() => setShowPassword(!showPassword)}
                     disabled={isLoading}
+                    aria-label={showPassword ? 'Hide password' : 'Show password'}
+                    aria-pressed={showPassword}
                   >
                     {showPassword ? (
                       <EyeOff className="h-4 w-4" />
@@ -111,12 +116,12 @@ export default function LoginPage() {
               </div>
               
               <div className="text-center mt-4">
-                <a
+                <Link
                   href="/forgot-password"
                   className="text-sm text-blue-600 hover:underline"
                 >
                   Forgot your password?
-                </a>
+                </Link>
               </div>
               <Button
                 type="submit"

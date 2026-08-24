@@ -100,6 +100,19 @@ export function AttendanceManagement({
     })
   }, [records, debouncedSearch, statusFilter])
 
+  // Pagination for large record lists
+  const attendanceItemsPerPage = 20;
+  const [attendancePage, setAttendancePage] = React.useState(1);
+  React.useEffect(() => {
+    setAttendancePage(1);
+  }, [debouncedSearch, statusFilter]);
+
+  const totalAttendancePages = Math.max(1, Math.ceil(filteredRecords.length / attendanceItemsPerPage));
+  const paginatedAttendanceRecords = useMemo(
+    () => filteredRecords.slice((attendancePage - 1) * attendanceItemsPerPage, attendancePage * attendanceItemsPerPage),
+    [filteredRecords, attendancePage]
+  );
+
   // Get status badge
   const getStatusBadge = (status: string) => {
     switch (status) {
@@ -352,7 +365,7 @@ export function AttendanceManagement({
             </div>
           ) : (
             <div className="space-y-3">
-              {filteredRecords.map((record) => (
+              {paginatedAttendanceRecords.map((record) => (
                 <Card key={record.id} className="border-l-4 hover:shadow-md transition-shadow" style={{
                   borderLeftColor: record.status === 'PRESENT' ? '#10b981' :
                                   record.status === 'LATE' ? '#f59e0b' :
@@ -414,6 +427,38 @@ export function AttendanceManagement({
                   </CardContent>
                 </Card>
               ))}
+            </div>
+          )}
+
+          {/* Pagination Controls */}
+          {filteredRecords.length > attendanceItemsPerPage && (
+            <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="text-sm text-gray-500">
+                Showing {(attendancePage - 1) * attendanceItemsPerPage + 1} to{' '}
+                {Math.min(attendancePage * attendanceItemsPerPage, filteredRecords.length)} of{' '}
+                {filteredRecords.length} records
+              </div>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setAttendancePage((prev) => Math.max(1, prev - 1))}
+                  disabled={attendancePage === 1}
+                >
+                  Previous
+                </Button>
+                <span className="text-sm text-gray-600 px-2">
+                  Page {attendancePage} of {totalAttendancePages}
+                </span>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setAttendancePage((prev) => Math.min(totalAttendancePages, prev + 1))}
+                  disabled={attendancePage === totalAttendancePages}
+                >
+                  Next
+                </Button>
+              </div>
             </div>
           )}
         </CardContent>

@@ -75,10 +75,6 @@ export async function fetchEmployees(
   const response = await apiFetch<any[] | PaginatedResponse<any>>(
     `/api/employees?page=${page}&limit=${limit}`,
     {
-      headers: {
-        'x-user-id': userId,
-        'x-company-id': companyId,
-      },
     }
   );
 
@@ -91,14 +87,11 @@ export async function fetchEmployees(
 export async function fetchLeads(
   companyId: string,
   page: number = 1,
-  limit: number = 1000
+  limit: number = 100
 ): Promise<any[]> {
   const response = await apiFetch<any[] | PaginatedResponse<any>>(
     `/api/leads?page=${page}&limit=${limit}`,
     {
-      headers: {
-        'x-company-id': companyId,
-      },
     }
   );
 

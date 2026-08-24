@@ -11,25 +11,8 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
-import {
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  Legend,
-  ResponsiveContainer,
-  PieChart,
-  Pie,
-  Cell,
-  LineChart,
-  Line,
-  AreaChart,
-  Area
-} from 'recharts'
 import { ProtectedRoute } from '@/components/auth/protected-route'
 import { useAuth } from '@/hooks/use-auth'
 import { useToast } from '@/hooks/use-toast'
@@ -39,15 +22,11 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 
 // Lazy load heavy components for better performance
 const LeadImportModal = lazy(() => import('@/components/LeadImportModal').then(mod => ({ default: mod.LeadImportModal })))
-const LeadAssignment = lazy(() => import('@/components/LeadAssignment').then(mod => ({ default: mod.LeadAssignment })))
 const LeadsPool = lazy(() => import('@/components/LeadsPool').then(mod => ({ default: mod.LeadsPool })))
-const GeofenceAttendance = lazy(() => import('@/components/GeofenceAttendance').then(mod => ({ default: mod.GeofenceAttendance })))
-const GeofenceLocationManager = lazy(() => import('@/components/GeofenceLocationManager').then(mod => ({ default: mod.GeofenceLocationManager })))
 const TaskManagement = lazy(() => import('@/components/TaskManagement').then(mod => ({ default: mod.TaskManagement })))
 const AttendanceManagement = lazy(() => import('@/components/AttendanceManagement').then(mod => ({ default: mod.AttendanceManagement })))
 import {
   Users,
-  Building2,
   Phone,
   Calendar,
   Bell,
@@ -58,23 +37,11 @@ import {
   MapPin,
   DollarSign,
   BarChart3,
-  Upload,
-  Download,
-  FileText,
-  UserPlus,
-  Map,
-  Settings,
   Info,
-  Search,
-  Filter,
   X,
-  Check,
-  Navigation,
   LogOut,
   CheckSquare,
-  FolderOpen,
   Menu,
-  MoreVertical,
   ChevronDown
 } from 'lucide-react'
 import { EmployeeManagement } from '@/components/EmployeeManagement'
@@ -109,47 +76,63 @@ export default function Home() {
     return []
   }, [])
 
+  // Identity is derived from the httpOnly session cookie by the server -
+  // never send user ids from the client.
+  const jsonFetch = useCallback((url: string) =>
+    fetch(url).then(async (r) => {
+      if (!r.ok) {
+        const body = await r.json().catch(() => null)
+        throw new Error(body?.error || `Request failed (${r.status})`)
+      }
+      return r.json()
+    }), [])
+
   // React Query Data Fetching
-  const { data: employeesData, isLoading: employeesLoading } = useQuery({
+  const { data: employeesData, isLoading: employeesLoading, error: employeesError } = useQuery({
     queryKey: ['employees', safeCompanyId],
-    queryFn: () => fetch('/api/employees', { headers: { 'x-user-id': safeUserId, 'x-company-id': safeCompanyId } }).then(r => r.json()),
+    queryFn: () => jsonFetch('/api/employees'),
     enabled: !!safeCompanyId && canViewEmployees && !permissionsLoading,
+    staleTime: 60_000,
   });
   const employees = employeesData ? normalizeList(employeesData) : [];
 
-  const { data: leadsQueryData, isLoading: leadsLoading } = useQuery({
+  // Overview KPIs only need a small window of leads - not the entire table
+  const { data: leadsQueryData, isLoading: leadsLoading, error: leadsError } = useQuery({
     queryKey: ['leads_overview', safeCompanyId],
-    queryFn: () => fetch('/api/leads?limit=1000', { headers: { 'x-user-id': safeUserId, 'x-company-id': safeCompanyId } }).then(r => r.json()),
+    queryFn: () => jsonFetch('/api/leads?limit=200'),
     enabled: !!safeCompanyId && canViewLeads && !permissionsLoading,
+    staleTime: 60_000,
   });
   const leads = leadsQueryData?.data ? normalizeList(leadsQueryData.data) : [];
-  const setLeads = (updater: ((prev: any[]) => any[]) | any[]) => {
-    queryClient.setQueryData(['leads_overview', safeCompanyId], (old: any) => {
-      const prev = old?.data ? normalizeList(old.data) : [];
-      const next = typeof updater === 'function' ? updater(prev) : updater;
-      return { ...old, data: next };
-    });
-  };
-
-  const { data: attendanceData, isLoading: attendanceLoading } = useQuery({
+  const { data: attendanceData, isLoading: attendanceLoading, error: attendanceError } = useQuery({
     queryKey: ['attendance', safeCompanyId],
-    queryFn: () => fetch('/api/attendance', { headers: { 'x-user-id': safeUserId, 'x-company-id': safeCompanyId } }).then(r => r.json()),
+    queryFn: () => jsonFetch('/api/attendance'),
     enabled: !!safeCompanyId && canViewAttendance && !permissionsLoading,
+    staleTime: 30_000,
   });
   const attendanceRecords = attendanceData ? normalizeList(attendanceData) : [];
-  const setAttendanceRecords = (updater: ((prev: any[]) => any[]) | any[]) => {
-    queryClient.setQueryData(['attendance', safeCompanyId], (old: any) => {
-      const prev = Array.isArray(old) ? old : normalizeList(old);
-      const next = typeof updater === 'function' ? updater(prev) : updater;
-      return next;
-    });
-  };
-
-  const { data: notificationsData, isLoading: notificationsLoading } = useQuery({
+  const { data: notificationsData, isLoading: notificationsLoading, error: notificationsError } = useQuery({
     queryKey: ['notifications', safeCompanyId],
-    queryFn: () => fetch('/api/notifications', { headers: { 'x-user-id': safeUserId, 'x-company-id': safeCompanyId } }).then(r => r.json()),
+    queryFn: () => jsonFetch('/api/notifications'),
     enabled: !!safeCompanyId && !permissionsLoading,
+    staleTime: 30_000,
   });
+
+  // Departments and roles via React Query (replaces silent-catch useEffect)
+  const { data: departmentsData } = useQuery({
+    queryKey: ['departments', safeCompanyId],
+    queryFn: () => jsonFetch('/api/departments'),
+    enabled: !!safeCompanyId && !permissionsLoading,
+    staleTime: 5 * 60_000,
+  });
+  const { data: rolesData } = useQuery({
+    queryKey: ['roles', safeCompanyId],
+    queryFn: () => jsonFetch('/api/roles'),
+    enabled: !!safeCompanyId && !permissionsLoading,
+    staleTime: 5 * 60_000,
+  });
+  const departments: any[] = useMemo(() => normalizeList(departmentsData), [departmentsData, normalizeList])
+  const roles: any[] = useMemo(() => normalizeList(rolesData), [rolesData, normalizeList])
   const notifications = notificationsData || [];
   const setNotifications = (updater: ((prev: any[]) => any[]) | any[]) => {
     queryClient.setQueryData(['notifications', safeCompanyId], (old: any) => {
@@ -160,8 +143,9 @@ export default function Home() {
 
   const { data: reportsData } = useQuery({
     queryKey: ['reports', safeCompanyId],
-    queryFn: () => fetch('/api/reports', { headers: { 'x-user-id': safeUserId, 'x-company-id': safeCompanyId } }).then(r => r.json()),
+    queryFn: () => jsonFetch('/api/reports'),
     enabled: !!safeCompanyId && canViewReports && !permissionsLoading,
+    staleTime: 2 * 60_000,
   });
   const reports = reportsData?.success ? reportsData.data || [] : [];
   const setReports = (updater: ((prev: any[]) => any[]) | any[]) => {
@@ -172,10 +156,11 @@ export default function Home() {
     });
   };
 
-  const { data: statsData, isLoading: statsLoading } = useQuery({
+  const { data: statsData, isLoading: statsLoading, error: statsError } = useQuery({
     queryKey: ['stats', safeCompanyId],
-    queryFn: () => fetch('/api/reports/overview-stats', { headers: { 'x-user-id': safeUserId, 'x-company-id': safeCompanyId } }).then(r => r.json()),
+    queryFn: () => jsonFetch('/api/reports/overview-stats'),
     enabled: !!safeCompanyId && canViewReports && !permissionsLoading,
+    staleTime: 2 * 60_000,
   });
 
   const loading = {
@@ -186,6 +171,9 @@ export default function Home() {
     stats: statsLoading
   };
 
+  const firstError = employeesError || leadsError || attendanceError || notificationsError || statsError
+  const dataErrorMessage = firstError instanceof Error ? firstError.message : ''
+
   useEffect(() => {
     if (notificationsData) {
       setUnreadNotifications(notificationsData.filter((n: any) => !n.isRead).length);
@@ -194,15 +182,12 @@ export default function Home() {
 
   const [isRefreshing, setIsRefreshing] = useState(false)
   const roleLower = user?.role?.toLowerCase() || ''
-  const isAdminOnly = roleLower.includes('admin') || user?.email === 'admin@baytech.com'
+  const isAdminOnly = roleLower.includes('admin')
   const isManager = roleLower.includes('manager')
 
   // Helper function to check if user is admin or manager (can set passwords)
   const isAdmin = useCallback(() => {
     if (!user) return false
-    // Check by email
-    if (user.email === 'admin@baytech.com') return true
-    // Check by role (case-insensitive) - Admin or Manager can set passwords
     if (user.role && (user.role.toLowerCase().includes('admin') || user.role.toLowerCase().includes('manager'))) return true
     return false
   }, [user])
@@ -272,42 +257,6 @@ export default function Home() {
     return () => window.removeEventListener('resize', handleResize)
   }, [])
 
-  // Fetch departments and roles when component mounts
-  useEffect(() => {
-    const fetchDepartmentsAndRoles = async () => {
-      try {
-        const [departmentsRes, rolesRes] = await Promise.all([
-          fetch('/api/departments', {
-            headers: {
-              'x-user-id': safeUserId,
-              'x-company-id': safeCompanyId
-            }
-          }),
-          fetch('/api/roles', {
-            headers: {
-              'x-user-id': safeUserId,
-              'x-company-id': safeCompanyId
-            }
-          })
-        ]);
-
-        if (departmentsRes.ok) {
-          const departmentsData = await departmentsRes.json();
-          setDepartments(departmentsData);
-        }
-
-        if (rolesRes.ok) {
-          const rolesData = await rolesRes.json();
-          setRoles(rolesData);
-        }
-      } catch (error) {
-        // Error is handled by toast notification elsewhere
-      }
-    };
-
-    fetchDepartmentsAndRoles();
-  }, [user]);
-  
   // Filter states
   const [employeeFilter, setEmployeeFilter] = useState({
     search: '',
@@ -340,96 +289,41 @@ export default function Home() {
   const [attendancePage, setAttendancePage] = useState(1)
   const itemsPerPage = 10
 
-  // Form states
-  const [showAddEmployeeModal, setShowAddEmployeeModal] = useState(false)
-  const [showAddLeadModal, setShowAddLeadModal] = useState(false)
-  const [showGeofenceAttendance, setShowGeofenceAttendance] = useState(false)
-  const [newEmployee, setNewEmployee] = useState({
-    firstName: '',
-    lastName: '',
-    email: '',
-    phone: '',
-    password: '',
-    confirmPassword: '',
-    position: 'Employee', // Default position
-    countryCode: '+1', // Default to US
-    roleId: '',
-    status: 'ACTIVE',
-    hireDate: new Date().toISOString().split('T')[0]
-  })
-  const [editingEmployee, setEditingEmployee] = useState<any>(null)
-  const [editingLead, setEditingLead] = useState<any>(null)
-  const [editingAttendance, setEditingAttendance] = useState<any>(null)
-  const [departments, setDepartments] = useState<any[]>([])
-  const [roles, setRoles] = useState<any[]>([])
-  const [newLead, setNewLead] = useState({
-    firstName: '',
-    lastName: '',
-    email: '',
-    phone: '',
-    loanAmount: '',
-    propertyAddress: '',
-    propertyType: '',
-    creditScore: '',
-    source: 'Website',
-    priority: 'MEDIUM',
-    notes: ''
-  })
-  
   // Local states
   const [currentLocation, setCurrentLocation] = useState<{ lat: number; lng: number } | null>(null)
   const [checkInStatus, setCheckInStatus] = useState<'idle' | 'checking' | 'success' | 'error'>('idle')
-  const [stats, setStats] = useState({
-    totalLeads: 0,
-    activeLeads: 0,
-    convertedLeads: 0,
-    totalEmployees: 0,
-    presentToday: 0,
-    conversionRate: 0
-  })
 
   // Analytics state
   const [initialized, setInitialized] = useState(false)
 
-  // Fetch data from API using parallel requests
+  // Targeted invalidation: only refetch the queries this page owns.
   const fetchData = useCallback(async () => {
-    await queryClient.invalidateQueries();
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ['employees'] }),
+      queryClient.invalidateQueries({ queryKey: ['leads_overview'] }),
+      queryClient.invalidateQueries({ queryKey: ['attendance'] }),
+      queryClient.invalidateQueries({ queryKey: ['notifications'] }),
+      queryClient.invalidateQueries({ queryKey: ['stats'] }),
+      queryClient.invalidateQueries({ queryKey: ['reports'] }),
+    ]);
   }, [queryClient])
 
   const refreshLeads = useCallback(async () => {
-    if (!canViewLeads || permissionsLoading) return
-    try {
-      const leadsRes = await fetch('/api/leads?limit=1000', {
-        headers: {
-          'x-user-id': safeUserId,
-          'x-company-id': safeCompanyId
-        }
-      })
-
-      if (leadsRes.ok) {
-        const leadsData = await leadsRes.json()
-        setLeads(normalizeList(leadsData?.data))
-        await queryClient.invalidateQueries({ queryKey: ['leads'] })
-      } else {
-        throw new Error('Failed to refresh leads')
-      }
-    } catch (error) {
-      toast({
-        title: "Error",
-        description: "Failed to refresh leads. Please try again.",
-        variant: "destructive",
-      })
-    }
-  }, [canViewLeads, permissionsLoading, safeUserId, safeCompanyId, normalizeList, queryClient, toast])
+    await queryClient.invalidateQueries({ queryKey: ['leads'] })
+    await queryClient.invalidateQueries({ queryKey: ['leads_overview'] })
+  }, [queryClient])
 
   const refreshData = useCallback(async () => {
     setIsRefreshing(true)
-    await fetchData()
-    setIsRefreshing(false)
-    toast({
-      title: "Data Refreshed",
-      description: "All data has been updated successfully.",
-    })
+    try {
+      await fetchData()
+      toast({
+        title: "Data Refreshed",
+        description: "All data has been updated successfully.",
+      })
+    } finally {
+      setIsRefreshing(false)
+    }
   }, [fetchData, toast])
 
   // Mark notification as read
@@ -445,12 +339,16 @@ export default function Home() {
         setNotifications(prev => prev.map(n =>
           n.id === notificationId ? { ...n, isRead: true } : n
         ))
-        setUnreadNotifications(prev => prev - 1)
+        setUnreadNotifications(prev => Math.max(0, prev - 1))
       }
     } catch (error) {
-      // Error handling would go here if needed
+      toast({
+        title: "Error",
+        description: "Failed to mark notification as read",
+        variant: "destructive",
+      })
     }
-  }, [])
+  }, [toast, setNotifications])
 
   // Mark all notifications as read
   const markAllNotificationsAsRead = useCallback(async () => {
@@ -466,9 +364,13 @@ export default function Home() {
         setUnreadNotifications(0)
       }
     } catch (error) {
-      // Error handling would go here if needed
+      toast({
+        title: "Error",
+        description: "Failed to mark notifications as read",
+        variant: "destructive",
+      })
     }
-  }, [])
+  }, [toast, setNotifications])
 
   // Function to specifically fetch reports data
   const fetchReportsData = useCallback(async () => {
@@ -477,57 +379,12 @@ export default function Home() {
 
 
 
-  // Initial data fetch (run once when permissions are ready)
+  // React Query handles fetching per-key with staleTime; no global
+  // invalidate-everything on mount or on every tab switch.
   useEffect(() => {
     if (permissionsLoading) return
-    const loadInitial = async () => {
-      try {
-        await Promise.all([fetchData(), fetchReportsData()])
-      } finally {
-        setInitialized(true)
-      }
-    }
-    loadInitial()
-  }, [fetchData, fetchReportsData, permissionsLoading])
-
-  // Refresh data when tab changes (skip first render to avoid duplicate calls)
-  useEffect(() => {
-    if (!initialized || permissionsLoading) return
-
-    if (activeTab === 'overview') {
-      fetchData()
-      fetchReportsData()
-      return
-    }
-
-    if (activeTab === 'analytics') {
-      fetchReportsData()
-      return
-    }
-
-    const refreshTabData = async () => {
-      setIsRefreshing(true)
-      try {
-        await queryClient.invalidateQueries();
-      } catch (error) {
-        // Error handled by existing toasts
-      } finally {
-        setIsRefreshing(false)
-      }
-    }
-    
-    refreshTabData()
-  }, [
-    activeTab,
-    canViewAttendance,
-    canViewEmployees,
-    canViewLeads,
-    fetchData,
-    fetchReportsData,
-    initialized,
-    user?.companyId,
-    user?.id
-  ])
+    setInitialized(true)
+  }, [permissionsLoading])
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -670,30 +527,6 @@ export default function Home() {
     }))
   }, [attendanceList])
 
-  // Paginated data for better performance with large lists
-  const paginatedEmployees = useMemo(() => {
-    const startIndex = (employeePage - 1) * itemsPerPage
-    const endIndex = startIndex + itemsPerPage
-    return filteredEmployees.slice(startIndex, endIndex)
-  }, [filteredEmployees, employeePage, itemsPerPage])
-
-  const paginatedLeads = useMemo(() => {
-    const startIndex = (leadPage - 1) * itemsPerPage
-    const endIndex = startIndex + itemsPerPage
-    return filteredLeads.slice(startIndex, endIndex)
-  }, [filteredLeads, leadPage, itemsPerPage])
-
-  const paginatedAttendance = useMemo(() => {
-    const startIndex = (attendancePage - 1) * itemsPerPage
-    const endIndex = startIndex + itemsPerPage
-    return filteredAttendance.slice(startIndex, endIndex)
-  }, [filteredAttendance, attendancePage, itemsPerPage])
-
-  // Total pages for pagination
-  const totalEmployeePages = Math.ceil(filteredEmployees.length / itemsPerPage)
-  const totalLeadPages = Math.ceil(filteredLeads.length / itemsPerPage)
-  const totalAttendancePages = Math.ceil(filteredAttendance.length / itemsPerPage)
-
   // Reset pagination when filters change
   useEffect(() => {
     setEmployeePage(1)
@@ -707,377 +540,13 @@ export default function Home() {
     setAttendancePage(1)
   }, [debouncedAttendanceSearch, attendanceFilter.department, attendanceFilter.status])
 
-  // Employee Management Functions
-  const handleAddEmployee = useCallback(async () => {
-    if (newEmployee.firstName && newEmployee.email && newEmployee.roleId) {
-      // If current user is admin, validate password fields
-      if (isAdmin() && newEmployee.password && newEmployee.password !== newEmployee.confirmPassword) {
-        toast({
-          title: "Error",
-          description: "Passwords do not match",
-          variant: "destructive",
-        })
-        return;
-      }
-
-      if (isAdmin() && !newEmployee.password) {
-        toast({
-          title: "Error",
-          description: "Please set a password for the new employee",
-          variant: "destructive",
-        })
-        return;
-      }
-
-      try {
-        const fullPhoneNumber = `${newEmployee.countryCode}${newEmployee.phone}`;
-        const response = await fetch('/api/employees', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'x-user-id': safeUserId,
-            'x-company-id': safeCompanyId
-          },
-          body: JSON.stringify({
-            firstName: newEmployee.firstName,
-            lastName: newEmployee.lastName,
-            email: newEmployee.email,
-            phone: fullPhoneNumber,
-            password: newEmployee.password,
-            position: newEmployee.position,
-            departmentId: departments.length > 0 ? departments[0].id : "", // Default to first department
-            roleId: newEmployee.roleId,
-            companyId: user?.companyId,
-            status: newEmployee.status,
-            hireDate: new Date(newEmployee.hireDate).toISOString()
-          })
-        })
-
-        if (response.ok) {
-          const createdEmployee = await response.json()
-
-          setNewEmployee({
-            firstName: '',
-            lastName: '',
-            email: '',
-            phone: '',
-            password: '',
-            confirmPassword: '',
-            position: 'Employee',
-            countryCode: '+1',
-            roleId: '',
-            status: 'ACTIVE',
-            hireDate: new Date().toISOString().split('T')[0]
-          })
-          setShowAddEmployeeModal(false)
-
-          // Refresh data to get the latest list with proper permissions
-          await fetchData()
-
-          // Emit real-time event for employee update
-          if (socket) {
-            socket.emit('employee_update', {
-              employeeId: createdEmployee.id,
-              companyId: user?.companyId,
-              action: 'added',
-              updatedBy: user?.name || 'System'
-            });
-          }
-
-          toast({
-            title: "Success",
-            description: "Employee added successfully",
-          })
-        } else {
-          const errorData = await response.json();
-          throw new Error(errorData.error || 'Failed to add employee');
-        }
-      } catch (error: any) {
-        toast({
-          title: "Error",
-          description: error.message || "Failed to add employee",
-          variant: "destructive",
-        })
-      }
-    } else {
-      toast({
-        title: "Validation Error",
-        description: "Please fill in all required fields (First Name, Email, Role)",
-        variant: "destructive",
-      })
-    }
-  }, [newEmployee, isAdmin, user?.id, user?.companyId, user?.name, departments, socket, fetchData, toast])
-
-  const handleExportEmployees = useCallback(() => {
-    const csvContent = [
-      ['Name', 'Email', 'Phone', 'Position', 'Department', 'Status', 'Hire Date'],
-      ...filteredEmployees.map(emp => [
-        emp.name, emp.email, emp.phone, emp.position, emp.department, emp.status, emp.hireDate
-      ])
-    ].map(row => row.join(',')).join('\n')
-
-    const blob = new Blob([csvContent], { type: 'text/csv' })
-    const url = window.URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `employees_${new Date().toISOString().split('T')[0]}.csv`
-    a.click()
-    window.URL.revokeObjectURL(url)
-  }, [filteredEmployees])
-
-  // Function to handle editing an employee
-  const handleEditEmployeeClick = useCallback(async (employee: any) => {
-    setEditingEmployee(employee);
-    // Parse phone number to extract country code and number
-    let countryCode = '+1'; // Default
-    let phone = employee.phone || '';
-    
-    if (employee.phone) {
-      // Simple parsing: look for common country codes at the beginning
-      const phoneStr = employee.phone.toString();
-      if (phoneStr.startsWith('+')) {
-        // Find the country code part (e.g., +1, +44, etc.)
-        const codeMatch = phoneStr.match(/^(\+\d{1,4})/);
-        if (codeMatch) {
-          countryCode = codeMatch[1];
-          phone = phoneStr.substring(codeMatch[1].length);
-        } else {
-          phone = phoneStr;
-        }
-      } else {
-        // If no explicit country code, default to +1
-        phone = phoneStr;
-      }
-    }
-    
-    setNewEmployee({
-      firstName: employee.firstName || employee.name.split(' ')[0],
-      lastName: employee.lastName || employee.name.split(' ').slice(1).join(' ') || '',
-      email: employee.email,
-      phone: phone,
-      password: '', // Initialize as empty for editing
-      confirmPassword: '', // Initialize as empty for editing
-      position: employee.position || 'Employee',
-      countryCode: countryCode,
-      roleId: employee.roleId || '',
-      status: employee.status,
-      hireDate: employee.hireDate ? new Date(employee.hireDate).toISOString().split('T')[0] : new Date().toISOString().split('T')[0]
-    });
-    setShowAddEmployeeModal(true);
-  }, [])
-
-  // Function to update an employee
-  const handleUpdateEmployee = useCallback(async () => {
-    if (editingEmployee && newEmployee.firstName && newEmployee.email && newEmployee.roleId) {
-      // If current user is admin and password is being updated, validate password fields
-      if (isAdmin() && newEmployee.password && newEmployee.password !== newEmployee.confirmPassword) {
-        toast({
-          title: "Error",
-          description: "Passwords do not match",
-          variant: "destructive",
-        })
-        return;
-      }
-
-      try {
-        const fullPhoneNumber = `${newEmployee.countryCode}${newEmployee.phone}`;
-        const response = await fetch(`/api/employees/${editingEmployee.id}`, {
-          method: 'PUT',
-          headers: {
-            'Content-Type': 'application/json',
-            'x-user-id': safeUserId,
-            'x-company-id': safeCompanyId
-          },
-          body: JSON.stringify({
-            firstName: newEmployee.firstName,
-            lastName: newEmployee.lastName,
-            email: newEmployee.email,
-            phone: fullPhoneNumber,
-            password: newEmployee.password || undefined, // Only update password if provided
-            position: newEmployee.position,
-            departmentId: editingEmployee.departmentId || editingEmployee.department,
-            roleId: newEmployee.roleId,
-            companyId: user?.companyId,
-            status: newEmployee.status,
-            hireDate: new Date(newEmployee.hireDate).toISOString()
-          })
-        })
-
-        if (response.ok) {
-          setEditingEmployee(null);
-          setNewEmployee({
-            firstName: '',
-            lastName: '',
-            email: '',
-            phone: '',
-            password: '',
-            confirmPassword: '',
-            position: 'Employee',
-            countryCode: '+1',
-            roleId: '',
-            status: 'ACTIVE',
-            hireDate: new Date().toISOString().split('T')[0]
-          });
-          setShowAddEmployeeModal(false);
-
-          // Refresh data to get the latest list with proper permissions
-          await fetchData();
-
-          // Emit real-time event for employee update
-          if (socket) {
-            socket.emit('employee_update', {
-              employeeId: editingEmployee.id,
-              companyId: user?.companyId,
-              action: 'updated',
-              updatedBy: user?.name || 'System'
-            });
-          }
-
-          toast({
-            title: "Success",
-            description: "Employee updated successfully",
-          });
-        } else {
-          throw new Error('Failed to update employee');
-        }
-      } catch (error) {
-        toast({
-          title: "Error",
-          description: "Failed to update employee",
-          variant: "destructive",
-        });
-      }
-    }
-  }, [editingEmployee, newEmployee, isAdmin, user?.id, user?.companyId, user?.name, socket, fetchData, toast]);
-
-  // Function to toggle employee status (activate/deactivate)
-  const toggleEmployeeStatus = async (employeeId: string, currentStatus: string) => {
-    try {
-      const newStatus = currentStatus === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE';
-      const response = await fetch(`/api/employees/${employeeId}/status`, {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-user-id': safeUserId,
-          'x-company-id': safeCompanyId
-        },
-        body: JSON.stringify({ status: newStatus })
-      });
-
-      if (response.ok) {
-        // Refresh data to get the latest list with proper permissions
-        await fetchData();
-
-        // Emit real-time event for employee status update
-        if (socket) {
-          socket.emit('employee_update', {
-            employeeId,
-            companyId: user?.companyId,
-            action: `marked as ${newStatus.toLowerCase()}`,
-            updatedBy: user?.name || 'System'
-          });
-        }
-
-        toast({
-          title: "Success",
-          description: `Employee ${newStatus.toLowerCase()} successfully`,
-        });
-      } else {
-        throw new Error('Failed to update employee status');
-      }
-    } catch (error) {
-      toast({
-        title: "Error",
-        description: "Failed to update employee status",
-        variant: "destructive",
-      });
-    }
-  };
-
-  const handleImportEmployees = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0]
-    if (file) {
-      const reader = new FileReader()
-      reader.onload = async (e) => {
-        try {
-          const text = e.target?.result as string
-          const lines = text.split('\n')
-          const importedEmployees = lines.slice(1).filter(line => line.trim()).map((line, index) => {
-            const [name, email, phone, position, department] = line.split(',').map(item => item.trim())
-            return {
-              id: employees.length + index + 1,
-              name, email, phone, position, department,
-              status: "ACTIVE",
-              hireDate: new Date().toISOString().split('T')[0],
-              address: ""
-            }
-          })
-
-          // Here you would send the data to the API
-          for (const emp of importedEmployees) {
-            await fetch('/api/employees', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                firstName: emp.name.split(' ')[0] || emp.name,
-                lastName: emp.name.split(' ').slice(1).join(' ') || '',
-                email: emp.email,
-                phone: emp.phone,
-                position: emp.position,
-                departmentId: emp.department, // This would need to be the actual department ID
-                roleId: 'default-role', // Default role ID
-                companyId: user?.companyId,
-                hireDate: new Date().toISOString()
-              })
-            })
-          }
-
-          fetchData() // Refresh data after import
-          toast({
-            title: "Import Success",
-            description: `Successfully imported ${importedEmployees.length} employees`,
-          })
-        } catch (error) {
-          toast({
-            title: "Import Error",
-            description: "Failed to import employees",
-            variant: "destructive",
-          })
-        }
-      }
-      reader.readAsText(file)
-    }
-  }
-
   // Lead Management Functions
-  const handleExportLeads = () => {
-    const csvContent = [
-      ['Name', 'Email', 'Phone', 'Property Location', 'Status', 'Priority', 'Assigned To', 'Credit Score'],
-      ...filteredLeads.map(lead => [
-        lead.name, lead.email, lead.phone, lead.propertyAddress, lead.status, lead.priority,
-        lead.assignedTo, lead.creditScore
-      ])
-    ].map(row => row.join(',')).join('\n')
-
-    const blob = new Blob([csvContent], { type: 'text/csv' })
-    const url = window.URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `leads_${new Date().toISOString().split('T')[0]}.csv`
-    a.click()
-    window.URL.revokeObjectURL(url)
-  }
-
   const handleBulkImportComplete = async (importedLeads: any[]) => {
     try {
       // Use the bulk import endpoint with auto-assignment
       const response = await fetch('/api/leads', {
         method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-user-id': safeUserId,
-          'x-company-id': safeCompanyId
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           leads: importedLeads,
           autoAssign: true, // Enable automatic assignment
@@ -1109,392 +578,6 @@ export default function Home() {
       });
       throw error;
     }
-  }
-
-  // Function to handle editing a lead
-  const handleEditLeadClick = async (lead: any) => {
-    setEditingLead(lead);
-    setNewLead({
-      firstName: lead.firstName || lead.name?.split(' ')[0] || '',
-      lastName: lead.lastName || lead.name?.split(' ').slice(1).join(' ') || '',
-      email: lead.email,
-      phone: lead.phone,
-      loanAmount: lead.loanAmount?.toString() || '',
-      propertyAddress: lead.propertyAddress || '',
-      propertyType: lead.propertyType || '',
-      creditScore: lead.creditScore?.toString() || '',
-      source: lead.source || 'Website',
-      priority: lead.priority || 'MEDIUM',
-      notes: lead.notes || ''
-    });
-    setShowAddLeadModal(true);
-  };
-
-  // Function to update a lead
-  const handleUpdateLead = async () => {
-    if (editingLead && newLead.firstName && newLead.phone) {
-      try {
-        const response = await fetch(`/api/leads/${editingLead.id}`, {
-          method: 'PUT',
-          headers: {
-            'Content-Type': 'application/json',
-            'x-user-id': safeUserId,
-            'x-company-id': safeCompanyId
-          },
-          body: JSON.stringify({
-            firstName: newLead.firstName,
-            lastName: newLead.lastName,
-            email: newLead.email,
-            phone: newLead.phone,
-            loanAmount: parseInt(newLead.loanAmount) || 0,
-            status: editingLead.status, // Keep current status
-            priority: newLead.priority,
-            assignedToId: editingLead.assignedToId, // Keep current assignment
-            propertyAddress: newLead.propertyAddress,
-            creditScore: parseInt(newLead.creditScore) || 0,
-            source: newLead.source,
-            companyId: user?.companyId,
-            notes: newLead.notes
-          })
-        })
-
-        if (response.ok) {
-          const updatedLead = await response.json()
-          setLeads(leads.map(lead => 
-            lead.id === updatedLead.id ? updatedLead : lead
-          ))
-          setEditingLead(null);
-          setNewLead({
-            firstName: '',
-            lastName: '',
-            email: '',
-            phone: '',
-            loanAmount: '',
-            propertyAddress: '',
-            propertyType: '',
-            creditScore: '',
-            source: 'Website',
-            priority: 'MEDIUM',
-            notes: ''
-          });
-          setShowAddLeadModal(false);
-          
-          // Emit real-time event for lead update
-          if (socket) {
-            socket.emit('lead_update', {
-              leadId: updatedLead.id,
-              companyId: user?.companyId,
-              action: 'updated',
-              updatedBy: user?.name || 'System'
-            });
-          }
-          
-          toast({
-            title: "Success",
-            description: "Lead updated successfully",
-          });
-        } else {
-          throw new Error('Failed to update lead');
-        }
-      } catch (error) {
-        toast({
-          title: "Error",
-          description: "Failed to update lead",
-          variant: "destructive",
-        });
-      }
-    }
-  };
-
-  // Function to toggle lead status
-  const toggleLeadStatus = async (leadId: string, currentStatus: string) => {
-    try {
-      // Define the next status in the pipeline
-      const statusOrder = ['NEW', 'CONTACTED', 'QUALIFIED', 'APPLICATION', 'APPROVED', 'REJECTED', 'CLOSED', 'JUNK', 'REAL'];
-      const currentIndex = statusOrder.indexOf(currentStatus);
-      const nextIndex = (currentIndex + 1) % statusOrder.length;
-      const newStatus = statusOrder[nextIndex];
-      
-      const response = await fetch(`/api/leads/${leadId}/status`, {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-user-id': safeUserId,
-          'x-company-id': safeCompanyId
-        },
-        body: JSON.stringify({ status: newStatus })
-      });
-
-      if (response.ok) {
-        const updatedLead = await response.json();
-        setLeads(leads.map(lead => 
-          lead.id === leadId ? updatedLead : lead
-        ));
-        
-        // Emit real-time event for lead status update
-        if (socket) {
-          socket.emit('lead_update', {
-            leadId,
-            companyId: user?.companyId,
-            action: `status changed to ${newStatus}`,
-            updatedBy: user?.name || 'System'
-          });
-        }
-        
-        toast({
-          title: "Success",
-          description: `Lead status updated to ${newStatus}`,
-        });
-      } else {
-        throw new Error('Failed to update lead status');
-      }
-    } catch (error) {
-      toast({
-        title: "Error",
-        description: "Failed to update lead status",
-        variant: "destructive",
-      });
-    }
-  };
-
-  // Function to assign lead to an employee
-  const assignLeadToEmployee = async (leadId: string, employeeId: string, notes?: string) => {
-    try {
-      const response = await fetch('/api/leads/assign', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-user-id': safeUserId,
-          'x-company-id': safeCompanyId
-        },
-        body: JSON.stringify({
-          leadId,
-          employeeId,
-          notes: notes || `Lead assigned to ${employees.find(e => e.id === employeeId)?.firstName} ${employees.find(e => e.id === employeeId)?.lastName}`
-        })
-      });
-
-      if (response.ok) {
-        const result = await response.json();
-        // Update the local state
-        setLeads(leads.map(lead => 
-          lead.id === leadId ? result.data : lead
-        ));
-        
-        // Emit real-time event for lead assignment
-        if (socket) {
-          socket.emit('lead_update', {
-            leadId,
-            companyId: user?.companyId,
-            action: `assigned to ${employeeId}`,
-            updatedBy: user?.name || 'System'
-          });
-        }
-        
-        return true;
-      } else {
-        throw new Error('Failed to assign lead');
-      }
-    } catch (error) {
-      console.error('Error assigning lead:', error);
-      return false;
-    }
-  };
-
-  // Function to mark a lead as contacted
-  const markLeadAsContacted = async (leadId: string) => {
-    try {
-      const response = await fetch('/api/leads/mark-contacted', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-user-id': safeUserId,
-          'x-company-id': safeCompanyId
-        },
-        body: JSON.stringify({
-          leadId
-        })
-      });
-
-      if (response.ok) {
-        const result = await response.json();
-        // Update the local state
-        setLeads(leads.map(lead => 
-          lead.id === leadId ? result.data : lead
-        ));
-        
-        // Emit real-time event for lead contact
-        if (socket) {
-          socket.emit('lead_update', {
-            leadId,
-            companyId: user?.companyId,
-            action: 'marked as contacted',
-            updatedBy: user?.name || 'System'
-          });
-        }
-        
-        toast({
-          title: "Success",
-          description: "Lead marked as contacted successfully",
-        });
-        
-        return true;
-      } else {
-        throw new Error('Failed to mark lead as contacted');
-      }
-    } catch (error) {
-      console.error('Error marking lead as contacted:', error);
-      toast({
-        title: "Error",
-        description: "Failed to mark lead as contacted",
-        variant: "destructive",
-      });
-      return false;
-    }
-  };
-
-  const handleImportLeads = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0]
-    if (file) {
-      const reader = new FileReader()
-      reader.onload = async (e) => {
-        try {
-          const text = e.target?.result as string
-          const lines = text.split('\n')
-          const importedLeads = lines.slice(1).filter(line => line.trim()).map((line, index) => {
-            const [name, email, phone, loanAmount, status, priority] = line.split(',').map(item => item.trim())
-            return {
-              id: leads.length + index + 1,
-              name, email, phone,
-              loanAmount: parseInt(loanAmount) || 0,
-              status: status || "NEW",
-              priority: priority || "MEDIUM",
-              assignedTo: "Unassigned",
-              propertyAddress: "",
-              creditScore: 0
-            }
-          })
-
-          // Send data to API
-          for (const lead of importedLeads) {
-            await fetch('/api/leads', {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                'x-user-id': safeUserId,
-                'x-company-id': safeCompanyId
-              },
-              body: JSON.stringify({
-                ...lead,
-                firstName: lead.name?.split(' ')[0] || '',
-                lastName: lead.name?.split(' ').slice(1).join(' ') || '',
-                companyId: user?.companyId
-              })
-            })
-          }
-
-          fetchData() // Refresh data after import
-          toast({
-            title: "Import Success",
-            description: `Successfully imported ${importedLeads.length} leads`,
-          })
-        } catch (error) {
-          toast({
-            title: "Import Error",
-            description: "Failed to import leads",
-            variant: "destructive",
-          })
-        }
-      }
-      reader.readAsText(file)
-    }
-  }
-
-  // Lead Form Functions
-  const handleAddLead = async () => {
-    if (newLead.firstName && newLead.phone) {
-      try {
-        const response = await fetch('/api/leads', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'x-user-id': safeUserId,
-            'x-company-id': safeCompanyId
-          },
-          body: JSON.stringify({
-            firstName: newLead.firstName,
-            lastName: newLead.lastName,
-            email: newLead.email,
-            phone: newLead.phone,
-            loanAmount: parseInt(newLead.loanAmount) || 0,
-            status: "NEW",
-            priority: newLead.priority,
-            assignedToId: null, // Initially unassigned
-            propertyAddress: newLead.propertyAddress,
-            creditScore: parseInt(newLead.creditScore) || 0,
-            source: newLead.source,
-            companyId: user?.companyId
-          })
-        })
-
-        if (response.ok) {
-          const createdLead = await response.json()
-          setLeads([...leads, createdLead])
-          setNewLead({
-            firstName: '',
-            lastName: '',
-            email: '',
-            phone: '',
-            loanAmount: '',
-            propertyAddress: '',
-            propertyType: '',
-            creditScore: '',
-            source: 'Website',
-            priority: 'MEDIUM',
-            notes: ''
-          })
-          setShowAddLeadModal(false)
-          fetchData() // Refresh data
-          
-          // Emit real-time event for lead update
-          if (socket) {
-            socket.emit('lead_update', {
-              leadId: createdLead.id,
-              companyId: user?.companyId,
-              action: 'created',
-              updatedBy: user?.name || 'System'
-            });
-          }
-          
-          toast({
-            title: "Success",
-            description: "Lead added successfully",
-          })
-        } else {
-          throw new Error('Failed to add lead')
-        }
-      } catch (error) {
-        toast({
-          title: "Error",
-          description: "Failed to add lead",
-          variant: "destructive",
-        })
-      }
-    } else {
-      toast({
-        title: "Validation Error",
-        description: "Please fill in all required fields (First Name, Last Name, Email, Phone)",
-        variant: "destructive",
-        duration: 4000,
-      })
-    }
-  }
-
-  const handleLeadInputChange = (field: string, value: string) => {
-    setNewLead(prev => ({
-      ...prev,
-      [field]: value
-    }))
   }
 
   // Attendance Management Functions
@@ -1539,17 +622,10 @@ export default function Home() {
       
       const response = await fetch('/api/attendance/check-in', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-user-id': safeUserId,
-          'x-company-id': safeCompanyId,
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          employeeId: safeUserId,
-          companyId: safeCompanyId,
           latitude: location?.lat ?? null,
           longitude: location?.lng ?? null,
-          address: location ? 'Office Location' : 'Location not shared',
           notes: ''
         })
       })
@@ -1609,17 +685,10 @@ export default function Home() {
       
       const response = await fetch('/api/attendance/check-out', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-user-id': safeUserId,
-          'x-company-id': safeCompanyId,
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          employeeId: safeUserId,
-          companyId: safeCompanyId,
           latitude: location?.lat ?? null,
           longitude: location?.lng ?? null,
-          address: location ? 'Office Location' : 'Location not shared',
           notes: ''
         })
       })
@@ -1661,110 +730,6 @@ export default function Home() {
     }
   }
 
-  // Function to handle editing an attendance record
-  const handleEditAttendanceClick = async (attendance: any) => {
-    setEditingAttendance(attendance);
-  };
-
-  // Function to update an attendance record
-  const handleUpdateAttendance = async (attendanceId: string, updatedData: any) => {
-    try {
-      const response = await fetch(`/api/attendance/${attendanceId}`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-user-id': safeUserId,
-          'x-company-id': safeCompanyId
-        },
-        body: JSON.stringify(updatedData)
-      });
-
-      if (response.ok) {
-        const updatedAttendance = await response.json();
-        
-        // Update the local state
-        setAttendanceRecords(attendanceRecords.map(record => 
-          record.id === attendanceId ? updatedAttendance : record
-        ));
-        
-        // Emit real-time event for attendance update
-        if (socket) {
-          socket.emit('attendance_update', {
-            employeeId: updatedAttendance.employeeId,
-            companyId: user?.companyId,
-            action: 'attendance updated',
-            updatedBy: user?.name || 'System'
-          });
-        }
-        
-        toast({
-          title: "Success",
-          description: "Attendance record updated successfully",
-        });
-      } else {
-        throw new Error('Failed to update attendance');
-      }
-    } catch (error) {
-      toast({
-        title: "Error",
-        description: "Failed to update attendance record",
-        variant: "destructive",
-      });
-    }
-  };
-
-  // Function to delete an attendance record
-  const handleDeleteAttendance = async (attendanceId: string) => {
-    if (!window.confirm('Are you sure you want to delete this attendance record?')) {
-      return;
-    }
-    
-    try {
-      const response = await fetch(`/api/attendance/${attendanceId}`, {
-        method: 'DELETE',
-        headers: {
-          'x-user-id': safeUserId,
-          'x-company-id': safeCompanyId
-        }
-      });
-
-      if (response.ok) {
-        // Update the local state
-        setAttendanceRecords(attendanceRecords.filter(record => record.id !== attendanceId));
-        
-        toast({
-          title: "Success",
-          description: "Attendance record deleted successfully",
-        });
-      } else {
-        throw new Error('Failed to delete attendance');
-      }
-    } catch (error) {
-      toast({
-        title: "Error",
-        description: "Failed to delete attendance record",
-        variant: "destructive",
-      });
-    }
-  };
-
-  const handleExportAttendance = () => {
-    const csvContent = [
-      ['Name', 'Department', 'Check In', 'Check Out', 'Status', 'Location'],
-      ...filteredAttendance.map(record => [
-        record.name, record.department, record.checkIn, record.checkOut, record.status, record.location
-      ])
-    ].map(row => row.join(',')).join('\n')
-
-    const blob = new Blob([csvContent], { type: 'text/csv' })
-    const url = window.URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `attendance_${new Date().toISOString().split('T')[0]}.csv`
-    a.click()
-    window.URL.revokeObjectURL(url)
-  }
-
   const handleNavigation = (section: string) => {
     setActiveTab(section)
     // Smooth scroll to top when changing tabs
@@ -1775,13 +740,8 @@ export default function Home() {
     }
   }
 
-  const handleNotificationsClick = (e?: React.MouseEvent) => {
-    e?.preventDefault();
-    // Don't navigate anymore, we'll show notifications in a popover
-  }
-
-  const handleAddEmployeeClick = () => {
-    setShowAddEmployeeModal(true)
+  const handleLeadClick = () => {
+    setActiveTab('leads')
   }
 
   const handleNotificationClick = (notification: any) => {
@@ -1793,39 +753,18 @@ export default function Home() {
     })
   }
 
-  const handleLeadClick = (lead: any) => {
-    setActiveTab('leads')
-  }
-
-  const handleAttendanceClick = (attendance: any) => {
-    setActiveTab('attendance')
-  }
-
-  const handleAddLeadClick = () => {
-    setShowAddLeadModal(true)
-  }
-
   const handleBulkImportClick = () => {
     setShowBulkImportModal(true)
-  }
-
-  const handleGeofenceAttendanceClick = () => {
-    setShowGeofenceAttendance(!showGeofenceAttendance)
   }
 
   const handleAttendanceCheckIn = async (data: any) => {
     try {
       const response = await fetch('/api/attendance/check-in', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          employeeId: user?.id,
-          companyId: user?.companyId,
           latitude: data.latitude,
           longitude: data.longitude,
-          address: data.locationName,
           notes: 'Geofence check-in'
         })
       })
@@ -1856,15 +795,10 @@ export default function Home() {
     try {
       const response = await fetch('/api/attendance/check-out', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          employeeId: user?.id,
-          companyId: user?.companyId,
           latitude: data.latitude,
           longitude: data.longitude,
-          address: data.locationName,
           notes: 'Geofence check-out'
         })
       })
@@ -1891,65 +825,14 @@ export default function Home() {
     }
   }
 
-  const handleCheckInClick = () => {
-    handleCheckIn()
-  }
-
-  const handleViewEmployeeDetails = (employee: any) => {
-    toast({
-      title: "Edit Employee",
-      description: `${employee.name} - Position: ${employee.position}, Department: ${employee.department}`,
-      duration: 4000,
-    })
-  }
-
-  const handleViewEmployeeClick = (employee: any) => {
-    toast({
-      title: "Employee Details",
-      description: `Name: ${employee.name}, Email: ${employee.email}, Position: ${employee.position}, Department: ${employee.department}, Status: ${employee.status}`,
-      duration: 6000,
-    })
-  }
-
-  const handleViewLeadDetails = (lead: any) => {
-    toast({
-      title: "Edit Lead",
-      description: `${lead.name} - Property: ${lead.propertyAddress || 'N/A'}, Status: ${lead.status}`,
-      duration: 4000,
-    })
-  }
-
-  const handleViewLeadClick = (lead: any) => {
-    toast({
-      title: "Lead Details",
-      description: `Name: ${lead.name}, Property: ${lead.propertyAddress || 'N/A'}, Status: ${lead.status}, Priority: ${lead.priority}, Assigned to: ${lead.assignedTo}`,
-      duration: 6000,
-    })
-  }
-
-  const handleViewAttendanceClick = (attendance: any) => {
-    toast({
-      title: "Attendance Record",
-      description: `Name: ${attendance.name}, Check-in: ${attendance.checkIn}, Check-out: ${attendance.checkOut}, Status: ${attendance.status}, Location: ${attendance.location}`,
-      duration: 6000,
-    })
-  }
-
-  const handleViewAttendanceDetails = (attendance: any) => {
-    toast({
-      title: "Edit Attendance",
-      description: `${attendance.name} - Check-in: ${attendance.checkIn}, Status: ${attendance.status}`,
-      duration: 4000,
-    })
-  }
-
-  const handleLogout = () => {
-    logout()
+  const handleLogout = async () => {
+    await logout()
+    // Full navigation so middleware sees the cleared cookie
     window.location.href = '/login'
   }
 
   // Loading indicators
-  if (loading.stats && activeTab === 'overview' && stats.totalLeads === 0) {
+  if (loading.stats && activeTab === 'overview') {
     return (
       <ProtectedRoute>
         <div className="flex items-center justify-center h-screen">
@@ -2232,10 +1115,20 @@ export default function Home() {
                           notifications.map((notification) => (
                             <div 
                               key={notification.id} 
-                              className={`p-4 cursor-pointer hover:bg-gray-50 transition-colors ${!notification.isRead ? 'bg-blue-50' : ''}`}
+                              role="button"
+                              tabIndex={0}
+                              aria-label={`${notification.title}. ${notification.isRead ? '' : 'Unread.'}`}
+                              className={`p-4 cursor-pointer hover:bg-gray-50 transition-colors focus:outline-none focus:bg-gray-100 ${!notification.isRead ? 'bg-blue-50' : ''}`}
                               onClick={async () => {
                                 await handleNotificationClick(notification);
-                                setNotificationPopoverOpen(false); // Close the popover after clicking
+                                setNotificationPopoverOpen(false);
+                              }}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter' || e.key === ' ') {
+                                  e.preventDefault();
+                                  handleNotificationClick(notification);
+                                  setNotificationPopoverOpen(false);
+                                }
                               }}
                             >
                               <div className="flex justify-between">
@@ -2243,7 +1136,10 @@ export default function Home() {
                                   {notification.title}
                                 </h4>
                                 {!notification.isRead && (
-                                  <span className="h-2 w-2 bg-blue-500 rounded-full flex-shrink-0 mt-1.5"></span>
+                                  <>
+                                    <span className="h-2 w-2 bg-blue-500 rounded-full flex-shrink-0 mt-1.5" aria-hidden="true"></span>
+                                    <span className="sr-only">Unread</span>
+                                  </>
                                 )}
                               </div>
                               <p className="text-sm text-gray-600 mt-1">
@@ -2328,9 +1224,9 @@ export default function Home() {
                 {canViewLeads && (
                   <Button
                     className="w-full"
-                    onClick={() => setShowAddLeadModal(true)}
+                    onClick={() => handleNavigation('leads')}
                   >
-                    <UserPlus className="h-4 w-4 mr-2" />
+                    <Phone className="h-4 w-4 mr-2" />
                     New Lead
                   </Button>
                 )}
@@ -2501,8 +1397,16 @@ export default function Home() {
                             dashboardLeads.slice(0, 4).map((lead) => (
                               <div
                                 key={lead.id}
-                                className="flex items-center justify-between p-3 border rounded-lg cursor-pointer hover:bg-gray-50 transition-colors"
-                                onClick={() => handleLeadClick(lead)}
+                                role="button"
+                                tabIndex={0}
+                                className="flex items-center justify-between p-3 border rounded-lg cursor-pointer hover:bg-gray-50 transition-colors focus:outline-none focus:bg-gray-100"
+                                onClick={() => handleLeadClick()}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter' || e.key === ' ') {
+                                    e.preventDefault();
+                                    handleLeadClick();
+                                  }
+                                }}
                               >
                                 <div className="flex items-center gap-3">
                                   <Avatar>
@@ -2623,9 +1527,17 @@ export default function Home() {
                       ) : (
                         notifications.map((notification) => (
                           <div 
-                            key={notification.id} 
-                            className="flex items-start gap-3 p-3 border rounded-lg cursor-pointer hover:bg-gray-50 transition-colors"
+                            key={notification.id}
+                            role="button"
+                            tabIndex={0}
+                            className="flex items-start gap-3 p-3 border rounded-lg cursor-pointer hover:bg-gray-50 transition-colors focus:outline-none focus:bg-gray-100"
                             onClick={() => handleNotificationClick(notification)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter' || e.key === ' ') {
+                                e.preventDefault();
+                                handleNotificationClick(notification);
+                              }
+                            }}
                           >
                             <div className="flex-shrink-0 mt-1">
                               {notification.type === 'info' && <Info className="h-4 w-4 text-blue-500" />}
@@ -2719,389 +1631,6 @@ export default function Home() {
           </Tabs>
         </main>
       </div>
-
-      {/* Add Employee Modal */}
-      <Dialog open={showAddEmployeeModal} onOpenChange={setShowAddEmployeeModal}>
-        <DialogContent className="sm:max-w-[600px] max-w-2xl">
-          <DialogHeader>
-            <DialogTitle className="text-xl font-semibold">
-              {editingEmployee ? 'Edit Employee' : 'Add New Employee'}
-            </DialogTitle>
-            <DialogDescription>
-              {editingEmployee 
-                ? 'Update employee details below.' 
-                : 'Fill in the employee information to create a new record.'}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 py-4 max-h-[70vh] overflow-y-auto">
-            <div className="space-y-2">
-              <Label htmlFor="firstName" className="text-sm font-medium">
-                First Name *
-              </Label>
-              <Input
-                id="firstName"
-                value={newEmployee.firstName}
-                onChange={(e) => setNewEmployee({...newEmployee, firstName: e.target.value})}
-                placeholder="Enter first name"
-                className="h-10"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="lastName" className="text-sm font-medium">
-                Last Name
-              </Label>
-              <Input
-                id="lastName"
-                value={newEmployee.lastName}
-                onChange={(e) => setNewEmployee({...newEmployee, lastName: e.target.value})}
-                placeholder="Enter last name"
-                className="h-10"
-              />
-            </div>
-            <div className="space-y-2 md:col-span-2">
-              <Label htmlFor="email" className="text-sm font-medium">
-                Email *
-              </Label>
-              <Input
-                id="email"
-                type="email"
-                value={newEmployee.email}
-                onChange={(e) => setNewEmployee({...newEmployee, email: e.target.value})}
-                placeholder="Enter email address"
-                className="h-10"
-              />
-            </div>
-            <div className="space-y-2 md:col-span-2">
-              <Label htmlFor="phone" className="text-sm font-medium">
-                Phone Number
-              </Label>
-              <div className="flex gap-2">
-                <Select value={newEmployee.countryCode} onValueChange={(value) => setNewEmployee({...newEmployee, countryCode: value})}>
-                  <SelectTrigger className="w-[100px] h-10">
-                    <SelectValue placeholder="Code" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="+1">🇺🇸 +1</SelectItem>
-                    <SelectItem value="+44">🇬🇧 +44</SelectItem>
-                    <SelectItem value="+91">🇮🇳 +91</SelectItem>
-                    <SelectItem value="+86">🇨🇳 +86</SelectItem>
-                    <SelectItem value="+49">🇩🇪 +49</SelectItem>
-                    <SelectItem value="+33">🇫🇷 +33</SelectItem>
-                    <SelectItem value="+81">🇯🇵 +81</SelectItem>
-                    <SelectItem value="+55">🇧🇷 +55</SelectItem>
-                    <SelectItem value="+7">🇷🇺 +7</SelectItem>
-                    <SelectItem value="+234">🇳🇬 +234</SelectItem>
-                    <SelectItem value="+971">🇦🇪 +971</SelectItem>
-                    <SelectItem value="+966">🇸🇦 +966</SelectItem>
-                  </SelectContent>
-                </Select>
-                <Input
-                  id="phone"
-                  value={newEmployee.phone}
-                  onChange={(e) => setNewEmployee({...newEmployee, phone: e.target.value})}
-                  placeholder="Enter phone number"
-                  className="flex-1 h-10"
-                />
-              </div>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="roleId" className="text-sm font-medium">
-                Role
-              </Label>
-              <Select value={newEmployee.roleId} onValueChange={(value) => setNewEmployee({...newEmployee, roleId: value})}>
-                <SelectTrigger className="h-10">
-                  <SelectValue placeholder="Select role" />
-                </SelectTrigger>
-                <SelectContent>
-                  {roles.map((role) => (
-                    <SelectItem key={role.id} value={role.id}>
-                      {role.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="status" className="text-sm font-medium">
-                Status
-              </Label>
-              <Select value={newEmployee.status} onValueChange={(value) => setNewEmployee({...newEmployee, status: value})}>
-                <SelectTrigger className="h-10">
-                  <SelectValue placeholder="Select status" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="ACTIVE">Active</SelectItem>
-                  <SelectItem value="INACTIVE">Inactive</SelectItem>
-                  <SelectItem value="ON_LEAVE">On Leave</SelectItem>
-                  <SelectItem value="TERMINATED">Terminated</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="position" className="text-sm font-medium">
-                Position
-              </Label>
-              <Select value={newEmployee.position} onValueChange={(value) => setNewEmployee({...newEmployee, position: value})}>
-                <SelectTrigger className="h-10">
-                  <SelectValue placeholder="Select position" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="Employee">Employee</SelectItem>
-                  <SelectItem value="Manager">Manager</SelectItem>
-                  <SelectItem value="Admin">Admin</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2 md:col-span-2">
-              <Label htmlFor="hireDate" className="text-sm font-medium">
-                Hire Date *
-              </Label>
-              <Input
-                id="hireDate"
-                type="date"
-                value={newEmployee.hireDate}
-                onChange={(e) => setNewEmployee({...newEmployee, hireDate: e.target.value})}
-                className="h-10"
-              />
-            </div>
-            {isAdmin() && (
-              <>
-                <div className="space-y-2 md:col-span-2">
-                  <Label htmlFor="password" className="text-sm font-medium">
-                    Password *
-                  </Label>
-                  <Input
-                    id="password"
-                    type="password"
-                    value={newEmployee.password}
-                    onChange={(e) => setNewEmployee({...newEmployee, password: e.target.value})}
-                    placeholder="Enter password for new employee"
-                    className="h-10"
-                  />
-                </div>
-                <div className="space-y-2 md:col-span-2">
-                  <Label htmlFor="confirmPassword" className="text-sm font-medium">
-                    Confirm Password *
-                  </Label>
-                  <Input
-                    id="confirmPassword"
-                    type="password"
-                    value={newEmployee.confirmPassword}
-                    onChange={(e) => setNewEmployee({...newEmployee, confirmPassword: e.target.value})}
-                    placeholder="Confirm password"
-                    className="h-10"
-                  />
-                </div>
-              </>
-            )}
-          </div>
-          <DialogFooter className="flex sm:justify-between">
-            <Button 
-              type="button"
-              variant="outline"
-              onClick={() => {
-                setShowAddEmployeeModal(false);
-                setEditingEmployee(null);
-                setNewEmployee({
-                  firstName: '',
-                  lastName: '',
-                  email: '',
-                  phone: '',
-                  password: '',
-                  confirmPassword: '',
-                  position: 'Employee',
-                  countryCode: '+1',
-                  roleId: '',
-                  status: 'ACTIVE',
-                  hireDate: new Date().toISOString().split('T')[0]
-                });
-              }}
-              className="w-full sm:w-auto"
-            >
-              Cancel
-            </Button>
-            <Button 
-              type="button"
-              onClick={editingEmployee ? handleUpdateEmployee : handleAddEmployee}
-              className="w-full sm:w-auto bg-blue-600 hover:bg-blue-700 text-white"
-            >
-              {editingEmployee ? 'Update Employee' : 'Create Employee'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Add Lead Modal */}
-      <Dialog open={showAddLeadModal} onOpenChange={setShowAddLeadModal}>
-        <DialogContent className="sm:max-w-[600px] max-h-[80vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>{editingLead ? 'Edit Lead' : 'Add New Lead'}</DialogTitle>
-            <DialogDescription>
-              {editingLead ? 'Update the lead information below.' : 'Enter the lead information below. All fields marked with * are required.'}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 py-4">
-            <div className="space-y-2">
-              <Label htmlFor="firstName">First Name *</Label>
-              <Input
-                id="firstName"
-                value={newLead.firstName}
-                onChange={(e) => handleLeadInputChange('firstName', e.target.value)}
-                placeholder="Enter first name"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="lastName">Last Name *</Label>
-              <Input
-                id="lastName"
-                value={newLead.lastName}
-                onChange={(e) => handleLeadInputChange('lastName', e.target.value)}
-                placeholder="Enter last name"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="email">Email *</Label>
-              <Input
-                id="email"
-                type="email"
-                value={newLead.email}
-                onChange={(e) => handleLeadInputChange('email', e.target.value)}
-                placeholder="Enter email address"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="phone">Phone *</Label>
-              <Input
-                id="phone"
-                value={newLead.phone}
-                onChange={(e) => handleLeadInputChange('phone', e.target.value)}
-                placeholder="Enter phone number"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="loanAmount">Loan Amount ($)</Label>
-              <Input
-                id="loanAmount"
-                type="number"
-                value={newLead.loanAmount}
-                onChange={(e) => handleLeadInputChange('loanAmount', e.target.value)}
-                placeholder="Enter loan amount"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="creditScore">Credit Score</Label>
-              <Input
-                id="creditScore"
-                type="number"
-                value={newLead.creditScore}
-                onChange={(e) => handleLeadInputChange('creditScore', e.target.value)}
-                min="300"
-                max="850"
-                placeholder="Enter credit score"
-              />
-            </div>
-            <div className="space-y-2 md:col-span-2">
-              <Label htmlFor="propertyAddress">Property Address</Label>
-              <Input
-                id="propertyAddress"
-                value={newLead.propertyAddress}
-                onChange={(e) => handleLeadInputChange('propertyAddress', e.target.value)}
-                placeholder="Enter property address"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="propertyType">Property Type</Label>
-              <Select value={newLead.propertyType} onValueChange={(value) => handleLeadInputChange('propertyType', value)}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select property type" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="single-family">Single Family</SelectItem>
-                  <SelectItem value="condo">Condo</SelectItem>
-                  <SelectItem value="townhouse">Townhouse</SelectItem>
-                  <SelectItem value="multi-family">Multi-Family</SelectItem>
-                  <SelectItem value="commercial">Commercial</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="source">Lead Source</Label>
-              <Select value={newLead.source} onValueChange={(value) => handleLeadInputChange('source', value)}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="Website">Website</SelectItem>
-                  <SelectItem value="Referral">Referral</SelectItem>
-                  <SelectItem value="Social Media">Social Media</SelectItem>
-                  <SelectItem value="Email Campaign">Email Campaign</SelectItem>
-                  <SelectItem value="Phone Call">Phone Call</SelectItem>
-                  <SelectItem value="Walk-in">Walk-in</SelectItem>
-                  <SelectItem value="Other">Other</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="priority">Priority</Label>
-              <Select value={newLead.priority} onValueChange={(value) => handleLeadInputChange('priority', value)}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="LOW">Low</SelectItem>
-                  <SelectItem value="MEDIUM">Medium</SelectItem>
-                  <SelectItem value="HIGH">High</SelectItem>
-                  <SelectItem value="URGENT">Urgent</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2 md:col-span-2">
-              <Label htmlFor="notes">Notes</Label>
-              <textarea
-                id="notes"
-                value={newLead.notes}
-                onChange={(e) => handleLeadInputChange('notes', e.target.value)}
-                className="w-full p-2 border border-gray-300 rounded-md resize-none"
-                rows={3}
-                placeholder="Additional notes about this lead..."
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => {
-              setShowAddLeadModal(false)
-              setEditingLead(null)
-              setNewLead({
-                firstName: '',
-                lastName: '',
-                email: '',
-                phone: '',
-                loanAmount: '',
-                propertyAddress: '',
-                propertyType: '',
-                creditScore: '',
-                source: 'Website',
-                priority: 'MEDIUM',
-                notes: ''
-              })
-            }}>
-              Cancel
-            </Button>
-            <Button onClick={editingLead ? handleUpdateLead : handleAddLead} className={editingLead ? "" : "bg-blue-600 hover:bg-blue-700"}>
-              {editingLead ? (
-                <>
-                  Update Lead
-                </>
-              ) : (
-                <>
-                  <UserPlus className="h-4 w-4 mr-2" />
-                  Add Lead
-                </>
-              )}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
       {/* Bulk Lead Import Modal */}
       <LeadImportModal 

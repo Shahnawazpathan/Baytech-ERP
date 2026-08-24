@@ -1,13 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { cache, createCacheKey } from '@/lib/cache'
+import { getSessionUser } from '@/lib/auth'
 
 // Cache for 2 minutes to improve performance
 const CACHE_TTL = 120000
 
 export async function GET(request: NextRequest) {
   try {
-    const companyId = request.headers.get('x-company-id') || 'default-company'
+    const sessionUser = await getSessionUser(request)
+    if (!sessionUser) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+    const companyId = sessionUser.companyId
 
     // Check cache first
     const cacheKey = createCacheKey('overview-stats', { companyId })
@@ -17,7 +22,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json(cachedStats, {
         headers: {
           'X-Cache': 'HIT',
-          'Cache-Control': 'public, max-age=120, stale-while-revalidate=240'
+          'Cache-Control': 'private, max-age=120, stale-while-revalidate=240'
         }
       })
     }

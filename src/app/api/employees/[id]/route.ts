@@ -1,74 +1,99 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { hasPermission } from '@/lib/rbac'
+import { hasPermission, invalidateUserPermissions } from '@/lib/rbac'
 import { invalidateCache } from '@/lib/cache'
 import { getSessionUser } from '@/lib/auth'
 
 // Update an employee
 export async function PUT(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const userId = request.headers.get('x-user-id');
+    const sessionUser = await getSessionUser(request)
+    if (!sessionUser) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+    const userId = sessionUser.id
+    const companyId = sessionUser.companyId
     const { id } = await params;
     const body = await request.json()
-    
+
     // Check permission to UPDATE employees
-    if (!userId || !(await hasPermission(userId, 'employee', 'UPDATE'))) {
+    if (!(await hasPermission(userId, 'employee', 'UPDATE'))) {
       return NextResponse.json(
         { error: 'Insufficient permissions to update employee' },
         { status: 403 }
       )
     }
-    
-    // Check if employee exists
-    const existingEmployee = await db.employee.findUnique({
-      where: { id }
+
+    // Check if employee exists (scoped to caller's company)
+    const existingEmployee = await db.employee.findFirst({
+      where: { id, companyId },
+      include: { role: true },
     })
-    
+
     if (!existingEmployee) {
       return NextResponse.json(
         { error: 'Employee not found' },
         { status: 404 }
       )
     }
-    
-    // Additional check: only allow updating if user is admin or updating their own record
-    if (userId) {
-      const requestingUser = await db.employee.findUnique({
-        where: { id: userId },
-        include: { role: true }
-      });
-      
-      // If not admin, only allow updating own record
-      if (requestingUser?.role?.name !== 'Administrator' && userId !== id) {
-        return NextResponse.json(
-          { error: 'Cannot update other employee records' },
-          { status: 403 }
-        )
+
+    // Prevent privilege escalation: role/department must belong to the same company.
+    // Only Administrators may change someone's role.
+    if (body.roleId || body.departmentId) {
+      const [role, department] = await Promise.all([
+        body.roleId ? db.role.findFirst({ where: { id: body.roleId, companyId } }) : null,
+        body.departmentId ? db.department.findFirst({ where: { id: body.departmentId, companyId } }) : null,
+      ])
+      if (body.roleId && !role) {
+        return NextResponse.json({ error: 'Invalid role for this company' }, { status: 400 })
+      }
+      if (body.departmentId && !department) {
+        return NextResponse.json({ error: 'Invalid department for this company' }, { status: 400 })
+      }
+
+      if (
+        (body.roleId && body.roleId !== existingEmployee.roleId) ||
+        (body.status && body.status !== existingEmployee.status)
+      ) {
+        const isAdministrator = !!existingEmployee.role?.name.toLowerCase().includes('admin')
+        if (!isAdministrator) {
+          return NextResponse.json(
+            { error: 'Only administrators can change roles or status' },
+            { status: 403 }
+          )
+        }
       }
     }
-    
+
     // Update the employee
     const updatedEmployee = await db.employee.update({
       where: { id },
       data: {
-        firstName: body.firstName,
-        lastName: body.lastName,
-        email: body.email,
-        phone: body.phone,
-        position: body.position,
-        departmentId: body.departmentId,
-        roleId: body.roleId,
-        address: body.address,
-        status: body.status,
-        hireDate: new Date(body.hireDate),
+        ...(typeof body.firstName === 'string' && { firstName: body.firstName }),
+        ...(typeof body.lastName === 'string' && { lastName: body.lastName }),
+        ...(typeof body.email === 'string' && { email: body.email }),
+        ...(typeof body.phone === 'string' && { phone: body.phone }),
+        ...(typeof body.position === 'string' && { position: body.position }),
+        ...(body.roleId && { roleId: body.roleId }),
+        ...(body.departmentId && { departmentId: body.departmentId }),
+        ...(typeof body.address === 'string' && { address: body.address }),
+        ...(typeof body.status === 'string' && { status: body.status }),
+        ...(body.hireDate && !isNaN(Date.parse(body.hireDate)) && { hireDate: new Date(body.hireDate) }),
         updatedAt: new Date(),
-        ...(body.autoAssignEnabled !== undefined && { autoAssignEnabled: body.autoAssignEnabled })
+        ...(body.autoAssignEnabled !== undefined && { autoAssignEnabled: Boolean(body.autoAssignEnabled) })
       },
       include: {
         department: true,
         role: true
       }
     })
+
+    // Permission cache must be invalidated immediately when a role changes,
+    // otherwise revoked/elevated privileges linger for up to 5 minutes.
+    if (body.roleId && body.roleId !== existingEmployee.roleId) {
+      invalidateUserPermissions(id)
+      invalidateCache('employees', companyId)
+    }
 
     // Transform the updated employee to match expected format
     const transformedEmployee = {
@@ -117,7 +142,7 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
       include: { role: true }
     });
 
-    const isAdministrator = requestingUser?.role?.name.toLowerCase().includes('admin') || sessionUser.email === 'admin@baytech.com'
+    const isAdministrator = !!requestingUser?.role?.name.toLowerCase().includes('admin')
     const canDelete = await hasPermission(userId, 'employee', 'DELETE')
 
     if (!isAdministrator && !canDelete) {
@@ -189,61 +214,31 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
 // Get a single employee
 export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const userId = request.headers.get('x-user-id');
+    const sessionUser = await getSessionUser(request)
+    if (!sessionUser) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+    const userId = sessionUser.id
+    const companyId = sessionUser.companyId
     const { id } = await params;
 
     // Check permission to READ employees
-    if (userId) {
-      const canRead = await hasPermission(userId, 'employee', 'READ')
-      if (!canRead) {
-        return NextResponse.json(
-          { error: 'Insufficient permissions to view employee' },
-          { status: 403 }
-        )
-      }
+    const canRead = await hasPermission(userId, 'employee', 'READ')
+    if (!canRead) {
+      return NextResponse.json(
+        { error: 'Insufficient permissions to view employee' },
+        { status: 403 }
+      )
     }
-    
-    let includeClause = {
-      department: true,
-      role: true
-    };
-    
-    // Fetch employee
-    let employee: any = null;
-    
-    if (userId) {
-      const requestingUser = await db.employee.findUnique({
-        where: { id: userId },
-        include: { role: true }
-      });
-      
-      // If user is admin, can see any employee
-      if (requestingUser?.role?.name === 'Administrator') {
-        employee = await db.employee.findUnique({
-          where: { id },
-          include: includeClause
-        });
-      } else {
-        // Otherwise, can only see own record
-        if (userId === id) {
-          employee = await db.employee.findUnique({
-            where: { id },
-            include: includeClause
-          });
-        } else {
-          return NextResponse.json(
-            { error: 'Insufficient permissions to view this employee' },
-            { status: 403 }
-          );
-        }
-      }
-    } else {
-      // If no user ID provided, only show public information
-      employee = await db.employee.findUnique({
-        where: { id },
-        include: includeClause
-      });
-    }
+
+    // Fetch employee scoped to caller's company
+    const employee: any = await db.employee.findFirst({
+      where: { id, companyId },
+      include: {
+        department: true,
+        role: true,
+      },
+    })
 
     if (!employee) {
       return NextResponse.json(

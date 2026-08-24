@@ -1,5 +1,5 @@
 import { db } from '@/lib/db';
-import { cache, createCacheKey } from '@/lib/cache';
+import { cache, createCacheKey, invalidateCache } from '@/lib/cache';
 
 const prisma = db;
 
@@ -124,4 +124,24 @@ export async function getUserPermissions(userId: string) {
 export function invalidateUserPermissions(userId: string) {
   const cacheKey = createCacheKey('user-permissions', { userId });
   cache.delete(cacheKey);
+}
+
+/**
+ * Invalidate cached permissions for every user holding a given role.
+ * Call this whenever a role's permission set is modified.
+ * Also clears the employees list cache which embeds role names.
+ */
+export async function invalidateRolePermissions(roleId: string) {
+  const holders = await prisma.employee.findMany({
+    where: { roleId },
+    select: { id: true, companyId: true },
+  });
+
+  for (const holder of holders) {
+    invalidateUserPermissions(holder.id);
+  }
+
+  if (holders[0]?.companyId) {
+    invalidateCache('employees', holders[0].companyId);
+  }
 }

@@ -1,16 +1,27 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { getDubaiTime, getDubaiTodayRange, isLateCheckIn } from '@/lib/timezone'
+import { getSessionUser } from '@/lib/auth'
 
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json()
-    const { employeeId, companyId, latitude, longitude, address, notes } = body
-
-    // Validate required fields
-    if (!employeeId || !companyId) {
+    // Identity always comes from the verified session - users can only check in themselves
+    const sessionUser = await getSessionUser(request)
+    if (!sessionUser) {
       return NextResponse.json(
-        { success: false, error: 'Missing required fields' },
+        { success: false, error: 'Unauthorized' },
+        { status: 401 }
+      )
+    }
+
+    const body = await request.json()
+    const employeeId = sessionUser.id
+    const companyId = sessionUser.companyId
+    const { latitude, longitude, notes } = body
+
+    if (typeof latitude !== 'undefined' && (isNaN(Number(latitude)) || isNaN(Number(longitude)))) {
+      return NextResponse.json(
+        { success: false, error: 'Invalid coordinates' },
         { status: 400 }
       )
     }
@@ -53,17 +64,20 @@ export async function POST(request: NextRequest) {
 
     // Validate location if provided
     let locationVerified = false
-    let checkInAddress = address
-    let checkInLat = latitude
-    let checkInLng = longitude
+    let checkInAddress: string | null = null
+    const hasCoordinates =
+      latitude !== undefined &&
+      longitude !== undefined &&
+      !isNaN(Number(latitude)) &&
+      !isNaN(Number(longitude))
+    const checkInLat = hasCoordinates ? Number(latitude) : null
+    const checkInLng = hasCoordinates ? Number(longitude) : null
 
-    if (latitude && longitude) {
-      locationVerified = await verifyLocation(latitude, longitude, companyId)
-      
-      // Get address from coordinates if not provided
-      if (!address) {
-        checkInAddress = await getAddressFromCoordinates(latitude, longitude)
-      }
+    if (hasCoordinates) {
+      locationVerified = await verifyLocation(checkInLat!, checkInLng!, companyId)
+
+      // Derive the address from real coordinates; never trust client-supplied labels
+      checkInAddress = await getAddressFromCoordinates(checkInLat!, checkInLng!)
     }
 
     // Calculate attendance status
@@ -117,7 +131,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Notify manager if location verification failed
-    if (!locationVerified && (latitude || longitude)) {
+    if (!locationVerified && hasCoordinates) {
       await db.notification.create({
         data: {
           title: 'Location Verification Failed',
@@ -126,10 +140,10 @@ export async function POST(request: NextRequest) {
           category: 'ATTENDANCE',
           companyId,
           employeeId: employee.managerId,
-          metadata: JSON.stringify({ 
-            attendanceId: attendance.id, 
-            employeeId, 
-            location: { lat: latitude, lng: longitude }
+          metadata: JSON.stringify({
+            attendanceId: attendance.id,
+            employeeId,
+            location: { lat: checkInLat, lng: checkInLng }
           })
         }
       })

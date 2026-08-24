@@ -3,6 +3,8 @@ import { db } from '@/lib/db'
 import { invalidateCache } from '@/lib/cache'
 import { mergeLeadMetadata, parseLeadMetadata } from '@/lib/lead-metadata'
 import { updateLeadSchema } from '@/lib/leads-validation'
+import { getSessionUser } from '@/lib/auth'
+import { hasPermission } from '@/lib/rbac'
 
 /** Update a lead. */
 export async function PUT(
@@ -10,6 +12,14 @@ export async function PUT(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const sessionUser = await getSessionUser(request)
+    if (!sessionUser) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+    if (!(await hasPermission(sessionUser.id, 'lead', 'UPDATE'))) {
+      return NextResponse.json({ error: 'Insufficient permissions to update leads' }, { status: 403 })
+    }
+
     const { id } = await params
     const json = await request.json()
     const parsed = updateLeadSchema.safeParse(json)
@@ -21,9 +31,35 @@ export async function PUT(
     }
     const body = parsed.data
 
-    const existingLead = await db.lead.findUnique({ where: { id } })
+    // Scoped to caller's company; non-admins may only update leads assigned to them
+    const roleLower = sessionUser.role.toLowerCase()
+    const canSeeCompanyLeads = roleLower.includes('admin') || roleLower.includes('manager')
+    const existingLead = await db.lead.findFirst({
+      where: {
+        id,
+        companyId: sessionUser.companyId,
+        ...(canSeeCompanyLeads ? {} : { assignedToId: sessionUser.id }),
+      },
+    })
     if (!existingLead) {
       return NextResponse.json({ error: 'Lead not found' }, { status: 404 })
+    }
+
+    // If reassigning, target employee must belong to the same company
+    let assignedToId = existingLead.assignedToId
+    if (body.assignedToId !== undefined) {
+      if (body.assignedToId === null || body.assignedToId === '') {
+        assignedToId = null
+      } else {
+        const assignee = await db.employee.findFirst({
+          where: { id: body.assignedToId, companyId: sessionUser.companyId },
+          select: { id: true },
+        })
+        if (!assignee) {
+          return NextResponse.json({ error: 'Invalid assignee' }, { status: 400 })
+        }
+        assignedToId = assignee.id
+      }
     }
 
     const shouldUpdateMetadata =
@@ -51,8 +87,10 @@ export async function PUT(
         loanAmount: body.loanAmount !== undefined ? body.loanAmount : existingLead.loanAmount,
         status: body.status !== undefined ? body.status : existingLead.status,
         priority: body.priority !== undefined ? body.priority : existingLead.priority,
-        assignedToId:
-          body.assignedToId !== undefined ? body.assignedToId : existingLead.assignedToId,
+        assignedToId,
+        ...(assignedToId !== existingLead.assignedToId && {
+          assignedAt: assignedToId ? new Date() : null,
+        }),
         address:
           body.propertyAddress !== undefined
             ? body.propertyAddress === ''
@@ -118,11 +156,26 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const sessionUser = await getSessionUser(request)
+    if (!sessionUser) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+    if (!(await hasPermission(sessionUser.id, 'lead', 'READ'))) {
+      return NextResponse.json({ error: 'Insufficient permissions to view leads' }, { status: 403 })
+    }
+
     const { id } = await params
 
-    const lead = await db.lead.findUnique({
-      where: { id },
-      include: { assignedTo: true },
+    // Scoped to caller's company; non-admins may only view leads assigned to them
+    const roleLower = sessionUser.role.toLowerCase()
+    const canSeeCompanyLeads = roleLower.includes('admin') || roleLower.includes('manager')
+    const lead = await db.lead.findFirst({
+      where: {
+        id,
+        companyId: sessionUser.companyId,
+        ...(canSeeCompanyLeads ? {} : { assignedToId: sessionUser.id }),
+      },
+      include: { assignedTo: { select: { id: true, firstName: true, lastName: true } } },
     })
     if (!lead) {
       return NextResponse.json({ error: 'Lead not found' }, { status: 404 })

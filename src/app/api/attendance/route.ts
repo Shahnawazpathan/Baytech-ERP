@@ -1,10 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { getDubaiTime, getDubaiTodayRange, formatDubaiTime } from '@/lib/timezone'
+import { getSessionUser } from '@/lib/auth'
 
 export async function GET(request: NextRequest) {
   try {
-    const companyId = request.headers.get('x-company-id') || 'default-company'
+    const sessionUser = await getSessionUser(request)
+    if (!sessionUser) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+    const companyId = sessionUser.companyId
 
     // Get today's date range in Dubai timezone for filtering attendance records
     const { start: todayStart, end: todayEnd } = getDubaiTodayRange()
@@ -56,7 +61,15 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
+    const sessionUser = await getSessionUser(request)
+    if (!sessionUser) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    // Identity always comes from the verified session
     const body = await request.json()
+    body.employeeId = sessionUser.id
+    body.companyId = sessionUser.companyId
 
     // This route handles check-in/check-out based on whether checkOutTime exists in the body
     // Get today's date range in Dubai timezone

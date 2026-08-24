@@ -1,14 +1,28 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { reclaimInactiveLeadsToPool } from '@/lib/lead-pool'
+import { getSessionUser } from '@/lib/auth'
 
 /**
- * Background job endpoint that returns inactive assigned leads to the pool.
- * Kept at the existing route for backwards compatibility with schedulers.
+ * Manual trigger for returning inactive assigned leads to the pool.
+ * Requires an authenticated admin/manager session; scoped to their company.
+ * (The scheduled background job runs this function directly inside server.ts.)
  */
 export async function POST(request: NextRequest) {
   try {
-    const companyId = request.headers.get('x-company-id') || undefined
-    const results = await reclaimInactiveLeadsToPool(companyId)
+    const sessionUser = await getSessionUser(request)
+    if (!sessionUser) {
+      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const roleLower = sessionUser.role.toLowerCase()
+    if (!roleLower.includes('admin') && !roleLower.includes('manager')) {
+      return NextResponse.json(
+        { success: false, error: 'Insufficient permissions' },
+        { status: 403 }
+      )
+    }
+
+    const results = await reclaimInactiveLeadsToPool(sessionUser.companyId)
 
     return NextResponse.json({
       success: true,

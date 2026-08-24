@@ -4,6 +4,7 @@ import { invalidateCache } from '@/lib/cache'
 import { parseLeadMetadata } from '@/lib/lead-metadata'
 import { updateStatusSchema } from '@/lib/leads-validation'
 import { createLeadHistory } from '@/lib/lead-history'
+import { getSessionUser } from '@/lib/auth'
 
 /** Update lead status. Records an entry in the lead history. */
 export async function PATCH(
@@ -11,8 +12,12 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const sessionUser = await getSessionUser(request)
+    if (!sessionUser) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
     const { id } = await params
-    const userId = request.headers.get('x-user-id') || undefined
 
     const json = await request.json()
     const parsed = updateStatusSchema.safeParse(json)
@@ -24,7 +29,16 @@ export async function PATCH(
     }
     const { status } = parsed.data
 
-    const existingLead = await db.lead.findUnique({ where: { id } })
+    // Scoped to caller's company; non-admins may only update leads assigned to them
+    const roleLower = sessionUser.role.toLowerCase()
+    const canSeeCompanyLeads = roleLower.includes('admin') || roleLower.includes('manager')
+    const existingLead = await db.lead.findFirst({
+      where: {
+        id,
+        companyId: sessionUser.companyId,
+        ...(canSeeCompanyLeads ? {} : { assignedToId: sessionUser.id }),
+      },
+    })
     if (!existingLead) {
       return NextResponse.json({ error: 'Lead not found' }, { status: 404 })
     }
@@ -40,10 +54,10 @@ export async function PATCH(
       include: { assignedTo: true },
     })
 
-    // Audit log: status change
+    // Audit log: status change (employeeId always from the verified session)
     await createLeadHistory({
       leadId: id,
-      employeeId: userId || null,
+      employeeId: sessionUser.id,
       action: 'STATUS_CHANGED',
       oldValue: JSON.stringify({ status: existingLead.status }),
       newValue: JSON.stringify({ status }),

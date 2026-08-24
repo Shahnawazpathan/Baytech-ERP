@@ -2,27 +2,43 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { hasPermission } from '@/lib/rbac'
 import { invalidateCache } from '@/lib/cache'
+import { getSessionUser } from '@/lib/auth'
+
+const ALLOWED_STATUSES = ['ACTIVE', 'INACTIVE', 'ON_LEAVE', 'TERMINATED', 'SUSPENDED']
 
 // Update employee status (activate/deactivate)
 export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const userId = request.headers.get('x-user-id');
+    const sessionUser = await getSessionUser(request)
+    if (!sessionUser) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+    const userId = sessionUser.id
+    const companyId = sessionUser.companyId
     const { id } = await params;
-    const { status } = await request.json()
-    
+    const body = await request.json()
+    const status = typeof body?.status === 'string' ? body.status.toUpperCase() : null
+
     // Check permission to UPDATE employees
-    if (!userId || !(await hasPermission(userId, 'employee', 'UPDATE'))) {
+    if (!(await hasPermission(userId, 'employee', 'UPDATE'))) {
       return NextResponse.json(
         { error: 'Insufficient permissions to update employee status' },
         { status: 403 }
       )
     }
-    
-    // Check if employee exists
-    const existingEmployee = await db.employee.findUnique({
-      where: { id }
+
+    if (!status || !ALLOWED_STATUSES.includes(status)) {
+      return NextResponse.json(
+        { error: `Status must be one of: ${ALLOWED_STATUSES.join(', ')}` },
+        { status: 400 }
+      )
+    }
+
+    // Check if employee exists (scoped to caller's company)
+    const existingEmployee = await db.employee.findFirst({
+      where: { id, companyId },
     })
-    
+
     if (!existingEmployee) {
       return NextResponse.json(
         { error: 'Employee not found' },
@@ -30,36 +46,30 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       )
     }
 
-    if (!existingEmployee.isActive) {
+    // Additional check: only allow updating if user is admin or a manager updating their subordinates
+    const requestingUser = await db.employee.findUnique({
+      where: { id: userId },
+      include: { role: true }
+    });
+
+    const roleNameLower = requestingUser?.role?.name.toLowerCase() || ''
+    const isAdminOrManager = roleNameLower.includes('admin') || roleNameLower.includes('manager')
+    const isOwnSubordinate = existingEmployee.managerId === userId
+
+    if (!isAdminOrManager && !isOwnSubordinate) {
       return NextResponse.json(
-        { error: 'Cannot update status for a deleted employee' },
-        { status: 400 }
+        { error: 'Insufficient permissions to update employee status' },
+        { status: 403 }
       )
     }
-    
-    // Additional check: only allow updating if user is admin or a manager updating their subordinates
-    if (userId) {
-      const requestingUser = await db.employee.findUnique({
-        where: { id: userId },
-        include: { role: true }
-      });
-      
-      // If not admin/manager, don't allow status changes
-      if (requestingUser?.role?.name !== 'Administrator' && 
-          requestingUser?.role?.name !== 'Manager') {
-        return NextResponse.json(
-          { error: 'Insufficient permissions to update employee status' },
-          { status: 403 }
-        )
-      }
-    }
-    
+
     // Update the employee status
     const updatedEmployee = await db.employee.update({
       where: { id },
       data: {
-        status: status,
+        status,
         isActive: status === 'TERMINATED' ? false : true,
+        ...(status === 'TERMINATED' && { terminationDate: new Date() }),
         updatedAt: new Date()
       },
       include: {

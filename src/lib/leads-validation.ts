@@ -15,7 +15,7 @@ export const createLeadSchema = z.object({
   creditScore: z.number().int().min(0).max(850).optional().nullable(),
   source: z.string().trim().max(100).optional().default('Website'),
   notes: z.string().trim().max(2000).optional().nullable(),
-  companyId: z.string().min(1, 'Company ID is required'),
+  // companyId intentionally excluded - bound to the verified session server-side
   notesStatus: z.enum(NOTES_STATUSES).optional().nullable(),
   followUpDate: z.string().optional().nullable(),
 })
@@ -83,9 +83,7 @@ export const deleteLeadsSchema = z.object({
 
 /** Zod schema for bulk importing leads. */
 export const bulkImportSchema = z.object({
-  leads: z.array(createLeadSchema.omit({ companyId: true }).extend({
-    // Allow partial data on import
-  })).min(1, 'No leads provided'),
+  leads: z.array(createLeadSchema).min(1, 'No leads provided'),
   autoAssign: z.boolean().optional().default(true),
-  companyId: z.string().min(1, 'Company ID is required'),
+  // companyId intentionally excluded - bound to the verified session server-side
 })

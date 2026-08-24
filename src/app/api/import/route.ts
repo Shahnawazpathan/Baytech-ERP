@@ -1,25 +1,51 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { ASSIGNABLE_EMPLOYEE_ROLE_FILTER } from '@/lib/lead-pool'
+import { getSessionUser } from '@/lib/auth'
+
+const MAX_IMPORT_FILE_BYTES = 5 * 1024 * 1024 // 5 MB
 
 export async function POST(request: NextRequest) {
   try {
+    // Identity and tenant always come from the verified session
+    const sessionUser = await getSessionUser(request)
+    if (!sessionUser) {
+      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const roleLower = sessionUser.role.toLowerCase()
+    const isAdmin = roleLower.includes('admin') || roleLower.includes('manager')
+    if (!isAdmin) {
+      return NextResponse.json(
+        { success: false, error: 'Insufficient permissions to import data' },
+        { status: 403 }
+      )
+    }
+
+    const companyId = sessionUser.companyId
+
     const formData = await request.formData()
     const file = formData.get('file') as File
-    const type = formData.get('type') as string // 'employees', 'leads', 'attendance'
-    const companyId = formData.get('companyId') as string
+    const type = formData.get('type') as string
 
-    if (!file || !type || !companyId) {
+    if (!file || !type) {
       return NextResponse.json(
         { success: false, error: 'Missing required parameters' },
         { status: 400 }
       )
     }
 
-    // Validate file type
+    // Validate file type and size
     if (!file.name.match(/\.(csv)$/)) {
       return NextResponse.json(
         { success: false, error: 'Invalid file type. Please upload a CSV file.' },
+        { status: 400 }
+      )
+    }
+
+    if (file.size > MAX_IMPORT_FILE_BYTES) {
+      return NextResponse.json(
+        { success: false, error: 'File too large. Maximum size is 5 MB.' },
         { status: 400 }
       )
     }

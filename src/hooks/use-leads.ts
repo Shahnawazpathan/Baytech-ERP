@@ -24,8 +24,6 @@ import { DEFAULT_LEADS_PAGE_SIZE, DEFAULT_POOL_PAGE_SIZE } from '@/lib/leads-con
 function authHeaders(userId: string | undefined, companyId: string | undefined): HeadersInit {
   return {
     'Content-Type': 'application/json',
-    'x-user-id': userId || '',
-    'x-company-id': companyId || '',
   }
 }
 

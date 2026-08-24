@@ -4,10 +4,25 @@ import { getSessionUser } from '@/lib/auth'
 
 export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
+    const sessionUser = await getSessionUser(request)
+    if (!sessionUser) {
+      return NextResponse.json(
+        { success: false, error: 'Unauthorized' },
+        { status: 401 }
+      )
+    }
+
     const { id } = await params;
 
-    const task = await db.task.findUnique({
-      where: { id },
+    const task = await db.task.findFirst({
+      where: {
+        id,
+        companyId: sessionUser.companyId,
+        OR: [
+          { assignedToId: sessionUser.id },
+          { assignedById: sessionUser.id },
+        ],
+      },
       include: {
         assignedTo: {
           select: {
@@ -30,6 +45,20 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     })
 
     if (!task) {
+      return NextResponse.json(
+        { success: false, error: 'Task not found' },
+        { status: 404 }
+      )
+    }
+
+    // Admins may view any task in their company
+    const roleLower = sessionUser.role.toLowerCase()
+    const isAdmin = roleLower.includes('admin') || roleLower.includes('manager')
+    if (
+      !isAdmin &&
+      task.assignedToId !== sessionUser.id &&
+      task.assignedById !== sessionUser.id
+    ) {
       return NextResponse.json(
         { success: false, error: 'Task not found' },
         { status: 404 }
@@ -110,7 +139,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
     // - Admin can update any task
     // - Assignee can update task status only
     const isCreator = existingTask.assignedById === userId
-    const isAdmin = userRole === 'Admin'
+    const isAdmin = userRole.toLowerCase().includes('admin')
     const isAssignee = existingTask.assignedToId === userId
 
     if (!isCreator && !isAdmin && !isAssignee) {
@@ -240,7 +269,7 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
 
     // Only task creator or admin can delete tasks
     const isCreator = task.assignedById === userId
-    const isAdmin = userRole === 'Admin'
+    const isAdmin = userRole.toLowerCase().includes('admin')
 
     if (!isCreator && !isAdmin) {
       return NextResponse.json(

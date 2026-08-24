@@ -11,6 +11,7 @@ import {
 import { LEADS_CACHE_TTL_MS } from '@/lib/leads-constants'
 import { ASSIGNABLE_EMPLOYEE_ROLE_FILTER } from '@/lib/lead-pool'
 import { getSessionUser } from '@/lib/auth'
+import { hasPermission } from '@/lib/rbac'
 
 export async function GET(request: NextRequest) {
   try {
@@ -164,6 +165,14 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
+    const sessionUser = await getSessionUser(request)
+    if (!sessionUser) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+    if (!(await hasPermission(sessionUser.id, 'lead', 'CREATE'))) {
+      return NextResponse.json({ error: 'Insufficient permissions to create leads' }, { status: 403 })
+    }
+
     const json = await request.json()
     const parsed = createLeadSchema.safeParse(json)
     if (!parsed.success) {
@@ -173,6 +182,22 @@ export async function POST(request: NextRequest) {
       )
     }
     const body = parsed.data
+
+    // companyId always comes from the session, never from client input
+    const companyId = sessionUser.companyId
+
+    // If assigning, the target employee must belong to the same company
+    let assignedToId: string | null = null
+    if (body.assignedToId) {
+      const assignee = await db.employee.findFirst({
+        where: { id: body.assignedToId, companyId },
+        select: { id: true },
+      })
+      if (!assignee) {
+        return NextResponse.json({ error: 'Invalid assignee' }, { status: 400 })
+      }
+      assignedToId = assignee.id
+    }
 
     const normalizedStatus = body.status || 'NEW'
     const metadata = mergeLeadMetadata(null, {
@@ -189,9 +214,9 @@ export async function POST(request: NextRequest) {
         loanAmount: body.loanAmount ?? null,
         status: normalizedStatus,
         priority: body.priority || 'MEDIUM',
-        assignedToId: body.assignedToId || null,
-        assignedAt: body.assignedToId ? new Date() : null,
-        companyId: body.companyId,
+        assignedToId,
+        assignedAt: assignedToId ? new Date() : null,
+        companyId,
         address: body.propertyAddress?.trim() || null,
         creditScore: body.creditScore ?? null,
         source: body.source?.trim() || 'Website',
@@ -248,6 +273,14 @@ export async function POST(request: NextRequest) {
 /** Bulk import with auto-assignment. */
 export async function PUT(request: NextRequest) {
   try {
+    const sessionUser = await getSessionUser(request)
+    if (!sessionUser) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+    if (!(await hasPermission(sessionUser.id, 'lead', 'CREATE'))) {
+      return NextResponse.json({ error: 'Insufficient permissions to import leads' }, { status: 403 })
+    }
+
     const json = await request.json()
     const parsed = bulkImportSchema.safeParse(json)
     if (!parsed.success) {
@@ -256,7 +289,9 @@ export async function PUT(request: NextRequest) {
         { status: 400 }
       )
     }
-    const { leads, autoAssign = true, companyId } = parsed.data
+    // companyId always comes from the session, never from client input
+    const { leads, autoAssign = true } = parsed.data
+    const companyId = sessionUser.companyId
 
     const activeEmployees = autoAssign
       ? await db.employee.findMany({
@@ -457,7 +492,15 @@ export async function PUT(request: NextRequest) {
 /** Bulk soft-delete. */
 export async function DELETE(request: NextRequest) {
   try {
-    const companyId = request.headers.get('x-company-id') || 'default-company'
+    const sessionUser = await getSessionUser(request)
+    if (!sessionUser) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+    if (!(await hasPermission(sessionUser.id, 'lead', 'DELETE'))) {
+      return NextResponse.json({ error: 'Insufficient permissions to delete leads' }, { status: 403 })
+    }
+
+    const companyId = sessionUser.companyId
     const json = await request.json()
     const parsed = deleteLeadsSchema.safeParse(json)
     if (!parsed.success) {

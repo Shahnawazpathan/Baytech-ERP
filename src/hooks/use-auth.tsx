@@ -19,8 +19,8 @@ interface User {
 interface AuthContextType {
   user: User | null
   isAuthenticated: boolean
-  login: (email: string, password: string) => Promise<boolean>
-  logout: () => void
+  login: (email: string, password: string) => Promise<{ ok: boolean; message?: string }>
+  logout: () => Promise<void>
   isLoading: boolean
 }
 
@@ -41,11 +41,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           const data = await response.json()
           setUser(data.user)
           setIsAuthenticated(true)
-          localStorage.setItem('user', JSON.stringify(data.user))
-          localStorage.setItem('isAuthenticated', 'true')
-        } else {
-          localStorage.removeItem('isAuthenticated')
-          localStorage.removeItem('user')
         }
       } catch (error) {
         console.error('Error checking authentication:', error)
@@ -57,9 +52,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     checkAuth()
   }, [])
 
-  const login = async (email: string, password: string): Promise<boolean> => {
+  const login = async (email: string, password: string): Promise<{ ok: boolean; message?: string }> => {
     try {
-      // Call the login API
       const response = await fetch('/api/auth/login', {
         method: 'POST',
         headers: {
@@ -69,31 +63,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         body: JSON.stringify({ email, password }),
       })
 
-      const data = await response.json()
+      const data = await response.json().catch(() => null)
 
-      if (response.ok && data.success) {
-        const userData = data.user
-        
-        localStorage.setItem('isAuthenticated', 'true')
-        localStorage.setItem('user', JSON.stringify(userData))
-        
-        setUser(userData)
+      if (response.ok && data?.success) {
+        setUser(data.user)
         setIsAuthenticated(true)
-        
-        return true
-      } else {
-        return false
+        return { ok: true }
       }
+
+      // Surface the server's specific reason (inactive account, rate limit...)
+      return { ok: false, message: data?.error || 'Invalid email or password' }
     } catch (error) {
       console.error('Login error:', error)
-      return false
+      return { ok: false, message: 'Unable to reach the server. Please check your connection.' }
     }
   }
 
-  const logout = () => {
-    fetch('/api/auth/logout', { method: 'POST', credentials: 'include' }).catch(() => {})
-    localStorage.removeItem('isAuthenticated')
-    localStorage.removeItem('user')
+  const logout = async (): Promise<void> => {
+    try {
+      // Await the cookie clear - navigating before this completes aborts the
+      // request and leaves the session cookie alive (the logout bug).
+      await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' })
+    } catch {
+      // Network failure should not trap the user - clear local state anyway
+    }
     setUser(null)
     setIsAuthenticated(false)
   }

@@ -32,7 +32,7 @@ interface GeofenceLocationManagerProps {
   companyId?: string
 }
 
-export function GeofenceLocationManager({ companyId = 'default-company' }: GeofenceLocationManagerProps) {
+export function GeofenceLocationManager({ companyId }: GeofenceLocationManagerProps) {
   const { toast } = useToast()
   const [locations, setLocations] = useState<GeofenceLocation[]>([])
   const [isLoading, setIsLoading] = useState(false)
@@ -53,9 +53,7 @@ export function GeofenceLocationManager({ companyId = 'default-company' }: Geofe
     setIsLoading(true)
     try {
       const response = await fetch('/api/geofence-locations', {
-        headers: {
-          'x-company-id': companyId
-        }
+        
       })
       const data = await response.json()
       if (data.success) {

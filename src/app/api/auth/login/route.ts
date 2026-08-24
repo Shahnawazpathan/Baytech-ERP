@@ -6,13 +6,26 @@ import { createSessionToken, setSessionCookie } from '@/lib/auth';
 
 export const runtime = 'nodejs';
 
+// Pre-computed hash of a random value - used to equalize response time for
+// unknown emails so attackers cannot enumerate users via timing analysis.
+const DUMMY_HASH = bcrypt.hashSync('timing-equalization-dummy-password', 10);
+
 const loginAttempts = new Map<string, { count: number; resetAt: number }>();
 const MAX_ATTEMPTS = 8;
 const WINDOW_MS = 15 * 60 * 1000;
+const MAX_TRACKED_KEYS = 10000;
 
 function checkRateLimit(key: string) {
   const now = Date.now();
   const entry = loginAttempts.get(key);
+
+  // Periodically purge expired entries to prevent unbounded memory growth
+  if (loginAttempts.size > MAX_TRACKED_KEYS) {
+    for (const [k, v] of loginAttempts) {
+      if (v.resetAt <= now) loginAttempts.delete(k);
+    }
+    if (loginAttempts.size > MAX_TRACKED_KEYS) loginAttempts.clear();
+  }
 
   if (!entry || entry.resetAt <= now) {
     loginAttempts.set(key, { count: 1, resetAt: now + WINDOW_MS });
@@ -23,11 +36,16 @@ function checkRateLimit(key: string) {
   return entry.count <= MAX_ATTEMPTS;
 }
 
+function clearRateLimit(key: string) {
+  loginAttempts.delete(key);
+}
+
 export async function POST(request: NextRequest) {
   try {
-    const { email, password } = await request.json();
-    const normalizedEmail = typeof email === 'string' ? email.trim().toLowerCase() : '';
-    const clientIp = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'local';
+    const body = await request.json().catch(() => null);
+    const email = typeof body?.email === 'string' ? body.email : '';
+    const password = typeof body?.password === 'string' ? body.password : '';
+    const normalizedEmail = email.trim().toLowerCase();
 
     if (!normalizedEmail || !password) {
       return Response.json(
@@ -35,6 +53,9 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
+
+    const clientIp =
+      request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'local';
 
     if (!checkRateLimit(`${clientIp}:${normalizedEmail}`)) {
       return Response.json(
@@ -53,17 +74,14 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    if (!employee || !employee.password) {
-      return Response.json(
-        { error: 'Invalid email or password' },
-        { status: 401 }
-      );
-    }
+    // Always run a bcrypt comparison so response timing does not reveal
+    // whether the email exists.
+    const isPasswordValid = await bcrypt.compare(
+      password,
+      employee?.password || DUMMY_HASH
+    );
 
-    // Compare the provided password with the hashed password
-    const isPasswordValid = await bcrypt.compare(password, employee.password);
-
-    if (!isPasswordValid) {
+    if (!employee || !employee.password || !isPasswordValid) {
       return Response.json(
         { error: 'Invalid email or password' },
         { status: 401 }
@@ -76,6 +94,8 @@ export async function POST(request: NextRequest) {
         { status: 403 }
       );
     }
+
+    clearRateLimit(`${clientIp}:${normalizedEmail}`);
 
     // Return user data (excluding password)
     const { password: _, ...userWithoutPassword } = employee;

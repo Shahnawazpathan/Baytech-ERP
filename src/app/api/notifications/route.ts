@@ -1,24 +1,27 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { getSessionUser } from '@/lib/auth'
 
 export async function GET(request: NextRequest) {
   try {
-    const userId = request.headers.get('x-user-id')
-    const companyId = request.headers.get('x-company-id') || 'default-company'
-    
-    // If we have a specific user ID, get their notifications; otherwise get all company notifications
-    const whereClause: any = { companyId }
-    if (userId) {
-      whereClause.OR = [
-        { employeeId: userId },
+    const sessionUser = await getSessionUser(request)
+    if (!sessionUser) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    // Notifications for the session user (or company-wide), scoped by session companyId
+    const whereClause: any = {
+      companyId: sessionUser.companyId,
+      OR: [
+        { employeeId: sessionUser.id },
         { employeeId: null } // Include company-wide notifications
       ]
     }
-    
+
     const notifications = await db.notification.findMany({
       where: whereClause,
-      orderBy: { 
-        createdAt: 'desc' 
+      orderBy: {
+        createdAt: 'desc'
       },
       take: 20
     })

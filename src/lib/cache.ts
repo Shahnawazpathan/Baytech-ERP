@@ -3,11 +3,15 @@ import { unstable_cache } from 'next/cache';
 // Enhanced cache implementation with LRU eviction
 class SimpleCache {
   private cache = new Map<string, { value: any; expiry: number }>();
-  private maxSize = 100; // Max 100 items in cache
+  private maxSize = 500; // Max items in cache
 
   set(key: string, value: any, ttl: number = 30000) {
-    // LRU eviction - remove oldest if cache is full
+    // True LRU: delete then re-insert so the key moves to the end of the
+    // iteration order (most recently used).
+    this.cache.delete(key);
+
     if (this.cache.size >= this.maxSize) {
+      // Evict the least recently used entry (front of the map)
       const firstKey = this.cache.keys().next().value;
       if (firstKey !== undefined) {
         this.cache.delete(firstKey);
@@ -27,6 +31,10 @@ class SimpleCache {
       this.cache.delete(key);
       return undefined;
     }
+
+    // Refresh recency: move to the end of the map
+    this.cache.delete(key);
+    this.cache.set(key, item);
 
     return item.value;
   }

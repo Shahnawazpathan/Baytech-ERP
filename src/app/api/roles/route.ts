@@ -1,13 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { getSessionUser } from '@/lib/auth'
 
 export async function GET(request: NextRequest) {
   try {
-    const companyId = request.headers.get('x-company-id') || 'default-company'
-    
+    const sessionUser = await getSessionUser(request)
+    if (!sessionUser) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
     const roles = await db.role.findMany({
-      where: { 
-        companyId,
+      where: {
+        companyId: sessionUser.companyId,
         isActive: true
       }
     })

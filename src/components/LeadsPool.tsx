@@ -54,9 +54,7 @@ export function LeadsPool({ user, onLeadClaimed }: LeadsPoolProps) {
       setLoading(true)
       const response = await fetch('/api/leads/pool?filter=available', {
         headers: {
-          'x-user-id': user?.id || '',
-          'x-company-id': user?.companyId || 'default-company'
-        }
+                  }
       })
 
       if (response.ok) {
@@ -116,9 +114,7 @@ export function LeadsPool({ user, onLeadClaimed }: LeadsPoolProps) {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'x-user-id': user?.id || '',
-          'x-company-id': user?.companyId || 'default-company'
-        },
+                  },
         body: JSON.stringify({
           leadId: selectedLead.id,
           employeeId: user?.id,
@@ -162,13 +158,11 @@ export function LeadsPool({ user, onLeadClaimed }: LeadsPoolProps) {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
-          'x-user-id': user?.id || '',
-          'x-company-id': user?.companyId || 'default-company'
-        },
+                  },
         body: JSON.stringify({
           leads: importedLeads,
           autoAssign: false,
-          companyId: user?.companyId || 'default-company'
+          companyId: user?.companyId || ''
         })
       })
 

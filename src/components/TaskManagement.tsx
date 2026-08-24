@@ -25,7 +25,18 @@ import {
   Loader2,
   Edit,
   Trash2
-} from 'lucide-react'
+} from 'lucide-react';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import { safeJsonParse } from '@/lib/ui-helpers'
 
 interface Task {
   id: string
@@ -61,7 +72,7 @@ interface TaskManagementProps {
   userRole?: string
 }
 
-export function TaskManagement({ companyId = 'default-company', userId, userRole }: TaskManagementProps) {
+export function TaskManagement({ companyId, userId, userRole }: TaskManagementProps) {
   const { toast } = useToast()
   const [tasks, setTasks] = useState<Task[]>([])
   const [employees, setEmployees] = useState<Employee[]>([])
@@ -105,10 +116,7 @@ export function TaskManagement({ companyId = 'default-company', userId, userRole
     setIsLoading(true)
     try {
       const response = await fetch('/api/tasks', {
-        headers: {
-          'x-company-id': companyId,
-          'x-user-id': userId || ''
-        }
+        
       })
       const data = await response.json()
       if (data.success) {
@@ -134,10 +142,7 @@ export function TaskManagement({ companyId = 'default-company', userId, userRole
     }
     try {
       const response = await fetch('/api/employees', {
-        headers: {
-          'x-company-id': companyId,
-          'x-user-id': userId || ''
-        }
+        
       })
       const data = await response.json()
 
@@ -228,11 +233,7 @@ export function TaskManagement({ companyId = 'default-company', userId, userRole
     try {
       const response = await fetch('/api/tasks', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-user-id': userId || '',
-          'x-company-id': companyId
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           title: newTask.title,
           description: newTask.description,
@@ -282,10 +283,7 @@ export function TaskManagement({ companyId = 'default-company', userId, userRole
     try {
       const response = await fetch(`/api/tasks/${taskId}`, {
         method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-user-id': userId || ''
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: newStatus })
       })
 
@@ -310,15 +308,14 @@ export function TaskManagement({ companyId = 'default-company', userId, userRole
     }
   }
 
+  const [pendingDeleteTaskId, setPendingDeleteTaskId] = useState<string | null>(null);
+
   const handleDeleteTask = async (taskId: string) => {
-    if (!confirm('Are you sure you want to delete this task?')) return
+    setPendingDeleteTaskId(null);
 
     try {
       const response = await fetch(`/api/tasks/${taskId}`, {
-        method: 'DELETE',
-        headers: {
-          'x-user-id': userId || ''
-        }
+        method: 'DELETE'
       })
 
       const result = await response.json()
@@ -528,9 +525,9 @@ export function TaskManagement({ companyId = 'default-company', userId, userRole
                         </div>
                       </div>
 
-                      {task.tags && (
+                      {Array.isArray(safeJsonParse<string[]>(task.tags, [])) && safeJsonParse<string[]>(task.tags, []).length > 0 && (
                         <div className="flex gap-1 mt-2">
-                          {JSON.parse(task.tags).map((tag: string, index: number) => (
+                          {safeJsonParse<string[]>(task.tags, []).map((tag: string, index: number) => (
                             <Badge key={index} variant="outline" className="text-xs">
                               {tag}
                             </Badge>
@@ -564,8 +561,9 @@ export function TaskManagement({ companyId = 'default-company', userId, userRole
                         <Button
                           variant="outline"
                           size="sm"
-                          onClick={() => handleDeleteTask(task.id)}
+                          onClick={() => setPendingDeleteTaskId(task.id)}
                           className="text-red-600 hover:text-red-700"
+                          aria-label={`Delete task ${task.title}`}
                         >
                           <Trash2 className="h-4 w-4" />
                         </Button>
@@ -574,6 +572,27 @@ export function TaskManagement({ companyId = 'default-company', userId, userRole
                   </div>
                 </Card>
               ))}
+
+              {/* Task delete confirm */}
+              <AlertDialog open={!!pendingDeleteTaskId} onOpenChange={(open) => !open && setPendingDeleteTaskId(null)}>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Delete this task?</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      The task will be removed from the list. This cannot be undone.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                    <AlertDialogAction
+                      onClick={() => pendingDeleteTaskId && handleDeleteTask(pendingDeleteTaskId)}
+                      className="bg-red-600 hover:bg-red-700 text-white"
+                    >
+                      Delete Task
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
 
               {filteredTasks.length === 0 && (
                 <div className="text-center py-8">

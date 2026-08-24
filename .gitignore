@@ -52,3 +52,7 @@ server.log
 .env
 .env.*
 !.env.production.example
+
+# local sqlite dev database
+prisma/dev.db
+*.db

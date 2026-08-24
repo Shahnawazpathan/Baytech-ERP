@@ -149,16 +149,45 @@ export async function POST(request: NextRequest) {
   try {
     const sessionUser = await getSessionUser(request)
     const userId = sessionUser?.id
+    if (!sessionUser || !userId) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const companyId = sessionUser.companyId
     const body = await request.json()
-    
+
     // Check permission to CREATE employees
-    if (!userId || !(await hasPermission(userId, 'employee', 'CREATE'))) {
+    if (!(await hasPermission(userId, 'employee', 'CREATE'))) {
       return NextResponse.json(
         { error: 'Insufficient permissions to create employees' },
         { status: 403 }
       )
     }
-    
+
+    // Validate required fields
+    if (
+      !body.firstName || typeof body.firstName !== 'string' ||
+      !body.email || typeof body.email !== 'string' ||
+      !body.roleId || !body.departmentId
+    ) {
+      return NextResponse.json(
+        { error: 'First name, email, role and department are required' },
+        { status: 400 }
+      )
+    }
+
+    // Prevent privilege escalation: role and department must belong to the same company
+    const [role, department] = await Promise.all([
+      db.role.findFirst({ where: { id: body.roleId, companyId } }),
+      db.department.findFirst({ where: { id: body.departmentId, companyId } }),
+    ])
+    if (!role || !department) {
+      return NextResponse.json(
+        { error: 'Invalid role or department for this company' },
+        { status: 400 }
+      )
+    }
+
     // Check if employee with this email already exists
     const existingEmployee = await db.employee.findUnique({
       where: { email: body.email }
@@ -174,6 +203,12 @@ export async function POST(request: NextRequest) {
     // Hash the password if provided
     let hashedPassword: any = null;
     if (body.password) {
+      if (typeof body.password !== 'string' || body.password.length < 8) {
+        return NextResponse.json(
+          { error: 'Password must be at least 8 characters' },
+          { status: 400 }
+        )
+      }
       hashedPassword = await bcrypt.hash(body.password, 10);
     }
 
@@ -244,7 +279,13 @@ export async function POST(request: NextRequest) {
 
 export async function PUT(request: NextRequest) {
   try {
-    const userId = request.headers.get('x-user-id');
+    const sessionUser = await getSessionUser(request)
+    if (!sessionUser) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+    const userId = sessionUser.id
+    const companyId = sessionUser.companyId
+
     const url = new URL(request.url);
     const id = url.pathname.split('/').pop(); // Get the ID from the URL path
 
@@ -258,35 +299,65 @@ export async function PUT(request: NextRequest) {
     const body = await request.json();
 
     // Check permission to UPDATE employees
-    if (!userId || !(await hasPermission(userId, 'employee', 'UPDATE'))) {
+    if (!(await hasPermission(userId, 'employee', 'UPDATE'))) {
       return NextResponse.json(
         { error: 'Insufficient permissions to update employees' },
         { status: 403 }
       );
     }
 
+    // Prevent privilege escalation: role and department must belong to the same company
+    if (body.roleId || body.departmentId) {
+      const [role, department] = await Promise.all([
+        body.roleId ? db.role.findFirst({ where: { id: body.roleId, companyId } }) : null,
+        body.departmentId ? db.department.findFirst({ where: { id: body.departmentId, companyId } }) : null,
+      ])
+      if (body.roleId && !role) {
+        return NextResponse.json({ error: 'Invalid role for this company' }, { status: 400 })
+      }
+      if (body.departmentId && !department) {
+        return NextResponse.json({ error: 'Invalid department for this company' }, { status: 400 })
+      }
+    }
+
     // Hash the password if provided
     let hashedPassword: any = undefined;
     if (body.password) {
+      if (typeof body.password !== 'string' || body.password.length < 8) {
+        return NextResponse.json(
+          { error: 'Password must be at least 8 characters' },
+          { status: 400 }
+        )
+      }
       hashedPassword = await bcrypt.hash(body.password, 10);
     }
 
-    // Update the employee
+    // Update the employee (scoped to the caller's company)
+    const existing = await db.employee.findFirst({
+      where: { id, companyId },
+      select: { id: true },
+    })
+    if (!existing) {
+      return NextResponse.json({ error: 'Employee not found' }, { status: 404 })
+    }
+
     const employee = await db.employee.update({
-      where: { id },
+      where: {
+        id,
+      },
       data: {
-        firstName: body.firstName,
-        lastName: body.lastName,
-        email: body.email,
-        phone: body.phone,
+        ...(typeof body.firstName === 'string' && { firstName: body.firstName }),
+        ...(typeof body.lastName === 'string' && { lastName: body.lastName }),
+        ...(typeof body.email === 'string' && { email: body.email }),
+        ...(typeof body.phone === 'string' && { phone: body.phone }),
         ...(hashedPassword !== undefined && { password: hashedPassword }), // Only update password if provided
-        position: body.position,
-        departmentId: body.departmentId,
-        roleId: body.roleId,
-        status: body.status,
-        hireDate: new Date(body.hireDate),
-        address: body.address,
-        ...(body.autoAssignEnabled !== undefined && { autoAssignEnabled: body.autoAssignEnabled }),
+        ...(typeof body.position === 'string' && { position: body.position }),
+        ...(body.roleId && { roleId: body.roleId }),
+        ...(body.departmentId && { departmentId: body.departmentId }),
+        ...(typeof body.status === 'string' && { status: body.status }),
+        ...(body.hireDate && !isNaN(Date.parse(body.hireDate)) && { hireDate: new Date(body.hireDate) }),
+        ...(typeof body.address === 'string' && { address: body.address }),
+        ...(body.autoAssignEnabled !== undefined && { autoAssignEnabled: Boolean(body.autoAssignEnabled) }),
       },
       include: {
         department: true,
@@ -334,7 +405,13 @@ export async function PUT(request: NextRequest) {
 
 export async function DELETE(request: NextRequest) {
   try {
-    const userId = request.headers.get('x-user-id');
+    const sessionUser = await getSessionUser(request)
+    if (!sessionUser) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+    const userId = sessionUser.id
+    const companyId = sessionUser.companyId
+
     const url = new URL(request.url);
     const id = url.pathname.split('/').pop(); // Get the ID from the URL path
 
@@ -346,16 +423,16 @@ export async function DELETE(request: NextRequest) {
     }
 
     // Check if the requesting user has permission to DELETE employees
-    if (!userId || !(await hasPermission(userId, 'employee', 'DELETE'))) {
+    if (!(await hasPermission(userId, 'employee', 'DELETE'))) {
       return NextResponse.json(
         { error: 'Insufficient permissions to delete employees' },
         { status: 403 }
       );
     }
 
-    // Check if employee exists and get their info
-    const existingEmployee = await db.employee.findUnique({
-      where: { id },
+    // Check if employee exists (scoped to caller's company)
+    const existingEmployee = await db.employee.findFirst({
+      where: { id, companyId },
       include: { role: true }
     });
 
@@ -367,8 +444,7 @@ export async function DELETE(request: NextRequest) {
     }
 
     // Prevent non-admin users from deleting admin employees
-    if (existingEmployee.role?.name === 'Administrator' &&
-        userId !== id) { // Allow admin to delete themselves, but check permissions
+    if (existingEmployee.role?.name === 'Administrator') {
       const requestingUser = await db.employee.findUnique({
         where: { id: userId },
         include: { role: true }

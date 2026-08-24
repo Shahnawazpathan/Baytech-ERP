@@ -1,25 +1,25 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { getSessionUser } from '@/lib/auth'
 
 // Mark all notifications as read
 export async function PATCH(request: NextRequest) {
   try {
-    const userId = request.headers.get('x-user-id')
-    const companyId = request.headers.get('x-company-id') || 'default-company'
-    
-    // Update all unread notifications for the user/company
-    const whereClause: any = { 
-      companyId, 
-      isRead: false
+    const sessionUser = await getSessionUser(request)
+    if (!sessionUser) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
-    
-    if (userId) {
-      whereClause.OR = [
-        { employeeId: userId },
+
+    // Update all unread notifications for the session user/company
+    const whereClause: any = {
+      companyId: sessionUser.companyId,
+      isRead: false,
+      OR: [
+        { employeeId: sessionUser.id },
         { employeeId: null } // Include company-wide notifications
       ]
     }
-    
+
     const updatedNotifications = await db.notification.updateMany({
       where: whereClause,
       data: { isRead: true }

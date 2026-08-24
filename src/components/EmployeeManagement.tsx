@@ -9,6 +9,18 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import { getStatusColor as getStatusColorBase } from '@/lib/ui-helpers';
 import { useToast } from '@/hooks/use-toast';
 import { useDebounce } from '@/hooks/use-debounce';
 import { 
@@ -119,9 +131,6 @@ export function EmployeeManagement({
   // Helper function to check if user is admin or manager (can set passwords)
   const isAdmin = useCallback(() => {
     if (!user) return false
-    // Check by email
-    if (user.email === 'admin@baytech.com') return true
-    // Check by role (case-insensitive) - Admin or Manager can set passwords
     if (user.role && (user.role.toLowerCase().includes('admin') || user.role.toLowerCase().includes('manager'))) return true
     return false
   }, [user]);
@@ -161,11 +170,7 @@ export function EmployeeManagement({
         const fullPhoneNumber = `${newEmployee.countryCode}${newEmployee.phone}`;
         const response = await fetch('/api/employees', {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'x-user-id': user?.id,
-            'x-company-id': user?.companyId
-          },
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             firstName: newEmployee.firstName,
             lastName: newEmployee.lastName,
@@ -299,11 +304,7 @@ export function EmployeeManagement({
         const fullPhoneNumber = `${newEmployee.countryCode}${newEmployee.phone}`;
         const response = await fetch(`/api/employees/${editingEmployee.id}`, {
           method: 'PUT',
-          headers: {
-            'Content-Type': 'application/json',
-            'x-user-id': user?.id,
-            'x-company-id': user?.companyId
-          },
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             firstName: newEmployee.firstName,
             lastName: newEmployee.lastName,
@@ -361,11 +362,7 @@ export function EmployeeManagement({
       const newStatus = currentStatus === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE';
       const response = await fetch(`/api/employees/${employeeId}/status`, {
         method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-user-id': user?.id,
-          'x-company-id': user?.companyId
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: newStatus })
       });
 
@@ -396,11 +393,7 @@ export function EmployeeManagement({
     try {
       const response = await fetch(`/api/employees/${employeeId}/auto-assign`, {
         method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-user-id': user?.id,
-          'x-company-id': user?.companyId
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ autoAssignEnabled: enabled })
       });
 
@@ -423,10 +416,11 @@ export function EmployeeManagement({
     }
   };
 
-  const canManageAssignments = user?.role === 'Administrator' || user?.role === 'Manager' || user?.email === 'admin@baytech.com';
+  const roleLowerLocal = (user?.role || '').toLowerCase();
+  const canManageAssignments = roleLowerLocal.includes('admin') || roleLowerLocal.includes('manager');
 
   // Check if user has delete permissions (Admin only)
-  const canDeleteEmployees = user?.role === 'Administrator' || user?.email === 'admin@baytech.com';
+  const canDeleteEmployees = roleLowerLocal.includes('admin');
 
   // Handle delete employee
   const handleDeleteEmployee = async () => {
@@ -435,11 +429,7 @@ export function EmployeeManagement({
     try {
       const response = await fetch(`/api/employees/${employeeToDelete.id}`, {
         method: 'DELETE',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-user-id': user?.id,
-          'x-company-id': user?.companyId
-        }
+        headers: { 'Content-Type': 'application/json' }
       });
 
       if (response.ok) {
@@ -525,11 +515,11 @@ export function EmployeeManagement({
 
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">Open Positions</CardTitle>
+            <CardTitle className="text-sm font-medium">Active Employees</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">8</div>
-            <p className="text-xs text-muted-foreground">Actively recruiting</p>
+            <div className="text-2xl font-bold">{employees.filter((e: any) => e.status === 'ACTIVE').length}</div>
+            <p className="text-xs text-muted-foreground">Currently active</p>
           </CardContent>
         </Card>
       </div>
@@ -714,17 +704,39 @@ export function EmployeeManagement({
                   Previous
                 </Button>
                 <div className="flex items-center gap-1">
-                  {Array.from({ length: totalEmployeePages }, (_, i) => i + 1).map(page => (
-                    <Button
-                      key={page}
-                      variant={employeePage === page ? "default" : "outline"}
-                      size="sm"
-                      onClick={() => setEmployeePage(page)}
-                      className="w-8 h-8 p-0"
-                    >
-                      {page}
-                    </Button>
-                  ))}
+                  {(() => {
+                    const windowSize = 5;
+                    let start = Math.max(1, employeePage - Math.floor(windowSize / 2));
+                    const end = Math.min(totalEmployeePages, start + windowSize - 1);
+                    start = Math.max(1, end - windowSize + 1);
+                    const pages: number[] = [];
+                    if (start > 1) {
+                      pages.push(1);
+                      if (start > 2) pages.push(-1);
+                    }
+                    for (let p = start; p <= end; p++) pages.push(p);
+                    if (end < totalEmployeePages) {
+                      if (end < totalEmployeePages - 1) pages.push(-2);
+                      pages.push(totalEmployeePages);
+                    }
+                    return pages.map(page =>
+                      page === -1 || page === -2 ? (
+                        <span key={`ellipsis-${page}`} className="px-1 text-sm text-gray-400">…</span>
+                      ) : (
+                        <Button
+                          key={page}
+                          variant={employeePage === page ? "default" : "outline"}
+                          size="sm"
+                          onClick={() => setEmployeePage(page)}
+                          className="w-8 h-8 p-0"
+                          aria-label={`Go to page ${page}`}
+                          aria-current={employeePage === page ? 'page' : undefined}
+                        >
+                          {page}
+                        </Button>
+                      )
+                    );
+                  })()}
                 </div>
                 <Button
                   variant="outline"
@@ -740,40 +752,22 @@ export function EmployeeManagement({
         </CardContent>
       </Card>
 
-      {/* Add Employee Modal */}
-      {showAddEmployeeModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="max-h-[calc(100dvh-1rem)] w-full max-w-2xl overflow-y-auto rounded-lg bg-white shadow-xl">
-            <div className="p-4 sm:p-6">
-              <div className="flex justify-between items-center mb-4">
-                <h3 className="text-xl font-semibold">
-                  {editingEmployee ? 'Edit Employee' : 'Add New Employee'}
-                </h3>
-                <Button
-                  variant="ghost"
-                  onClick={() => {
-                    setShowAddEmployeeModal(false);
-                    setEditingEmployee(null);
-                    setNewEmployee({
-                      firstName: '',
-                      lastName: '',
-                      email: '',
-                      phone: '',
-                      password: '',
-                      confirmPassword: '',
-                      position: 'Employee',
-                      countryCode: '+1',
-                      roleId: '',
-                      status: 'ACTIVE',
-                      hireDate: new Date().toISOString().split('T')[0]
-                    });
-                  }}
-                >
-                  Close
-                </Button>
-              </div>
-              
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 py-4">
+      {/* Add/Edit Employee Dialog */}
+      <Dialog open={showAddEmployeeModal} onOpenChange={(open) => {
+        if (!open) {
+          setShowAddEmployeeModal(false);
+          setEditingEmployee(null);
+        }
+      }}>
+        <DialogContent className="sm:max-w-[600px] max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>{editingEmployee ? 'Edit Employee' : 'Add New Employee'}</DialogTitle>
+            <DialogDescription>
+              Fields marked with * are required.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 py-4">
                 <div className="space-y-2">
                   <Label htmlFor="firstName" className="text-sm font-medium">
                     First Name *
@@ -934,86 +928,44 @@ export function EmployeeManagement({
                     </div>
                   </>
                 )}
-              </div>
-              
-              <div className="flex justify-end gap-2 mt-4">
-                <Button
-                  variant="outline"
-                  onClick={() => {
-                    setShowAddEmployeeModal(false);
-                    setEditingEmployee(null);
-                    setNewEmployee({
-                      firstName: '',
-                      lastName: '',
-                      email: '',
-                      phone: '',
-                      password: '',
-                      confirmPassword: '',
-                      position: 'Employee',
-                      countryCode: '+1',
-                      roleId: '',
-                      status: 'ACTIVE',
-                      hireDate: new Date().toISOString().split('T')[0]
-                    });
-                  }}
-                >
-                  Cancel
-                </Button>
-                <Button
-                  onClick={editingEmployee ? handleUpdateEmployee : handleAddEmployee}
-                  className="bg-blue-600 hover:bg-blue-700 text-white"
-                >
-                  {editingEmployee ? 'Update Employee' : 'Create Employee'}
-                </Button>
-              </div>
-            </div>
           </div>
-        </div>
-      )}
 
-      {/* Delete Confirmation Modal */}
-      {showDeleteConfirm && employeeToDelete && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg shadow-xl max-w-md w-full">
-            <div className="p-6">
-              <div className="flex items-center gap-3 mb-4">
-                <div className="bg-red-100 rounded-full p-3">
-                  <svg className="w-6 h-6 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                  </svg>
-                </div>
-                <div>
-                  <h3 className="text-xl font-semibold text-gray-900">Delete Employee</h3>
-                  <p className="text-sm text-gray-500">This action cannot be undone</p>
-                </div>
-              </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowAddEmployeeModal(false)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={editingEmployee ? handleUpdateEmployee : handleAddEmployee}
+              className="bg-blue-600 hover:bg-blue-700 text-white"
+            >
+              {editingEmployee ? 'Update Employee' : 'Create Employee'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
-              <p className="text-gray-700 mb-6">
-                Are you sure you want to delete <span className="font-semibold">{employeeToDelete.name}</span>?
-                This will permanently remove the employee from the system.
-              </p>
-
-              <div className="flex justify-end gap-2">
-                <Button
-                  variant="outline"
-                  onClick={() => {
-                    setShowDeleteConfirm(false);
-                    setEmployeeToDelete(null);
-                  }}
-                >
-                  Cancel
-                </Button>
-                <Button
-                  variant="destructive"
-                  onClick={handleDeleteEmployee}
-                >
-                  Delete Employee
-                </Button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Delete Confirmation */}
+      <AlertDialog open={showDeleteConfirm} onOpenChange={(open) => {
+        if (!open) setEmployeeToDelete(null);
+      }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete {employeeToDelete?.name}?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will deactivate the employee and release their unassigned leads back to the pool.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDeleteEmployee}
+              className="bg-red-600 hover:bg-red-700 text-white"
+            >
+              Delete Employee
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

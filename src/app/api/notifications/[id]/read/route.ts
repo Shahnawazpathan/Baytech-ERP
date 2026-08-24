@@ -1,17 +1,34 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { getSessionUser } from '@/lib/auth'
 
 // Mark a single notification as read
 export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
+    const sessionUser = await getSessionUser(request)
+    if (!sessionUser) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
     const { id } = await params;
-    
-    const updatedNotification = await db.notification.update({
-      where: { id },
-      data: { isRead: true }
+
+    // updateMany scoped to the caller's company so cross-company ids cannot be touched
+    const result = await db.notification.updateMany({
+      where: {
+        id,
+        companyId: sessionUser.companyId,
+        OR: [
+          { employeeId: sessionUser.id },
+          { employeeId: null },
+        ],
+      },
+      data: { isRead: true },
     })
 
-    return NextResponse.json(updatedNotification)
+    if (result.count === 0) {
+      return NextResponse.json({ error: 'Notification not found' }, { status: 404 })
+    }
+
+    return NextResponse.json({ success: true })
   } catch (error) {
     console.error('Error updating notification:', error)
     return NextResponse.json(
@@ -24,14 +41,15 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
 // Get all notifications for a user
 export async function GET(request: NextRequest) {
   try {
-    const userId = request.headers.get('x-user-id')
-    const companyId = request.headers.get('x-company-id') || 'default-company'
-    
-    // If we have a specific user ID, get their notifications; otherwise get all company notifications
-    const whereClause: any = { companyId }
-    if (userId) {
-      whereClause.OR = [
-        { employeeId: userId },
+    const sessionUser = await getSessionUser(request)
+    if (!sessionUser) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const whereClause: any = {
+      companyId: sessionUser.companyId,
+      OR: [
+        { employeeId: sessionUser.id },
         { employeeId: null } // Include company-wide notifications
       ]
     }
